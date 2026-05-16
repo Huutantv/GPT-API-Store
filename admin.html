@@ -252,6 +252,15 @@ function authHeaders() {
   return { "Authorization": `Bearer ${ADMIN_KEY}`, "Content-Type": "application/json" };
 }
 
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = "✓";
+    btn.classList.add("text-green-400");
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove("text-green-400"); }, 1500);
+  });
+}
+
 async function adminLogin() {
   const key = document.getElementById("adminKeyInput").value.trim();
   if (!key) return;
@@ -329,7 +338,7 @@ async function loadKeys() {
   if (!keys.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; key n&#224;o</td></tr>'; return; }
   tbody.innerHTML = keys.map(k => `
     <tr class="border-b border-white/5 hover:bg-white/2">
-      <td class="px-4 py-3 font-mono text-xs text-gray-300">${k.key.slice(0,12)}...${k.key.slice(-4)}</td>
+      <td class="px-4 py-3 font-mono text-xs text-gray-300">${k.key.slice(0,12)}...${k.key.slice(-4)} <button onclick="copyText('${k.key}',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button></td>
       <td class="px-4 py-3 text-sm">${k.label || "<span class='text-gray-500'>—</span>"}</td>
       <td class="px-4 py-3 text-right font-bold ${k.credit < 100 ? "text-red-400" : "text-green-400"}">${Number(k.credit).toLocaleString()}</td>
       <td class="px-4 py-3 text-right text-gray-300">${k.rpm_limit}</td>
@@ -445,7 +454,7 @@ async function loadMonitor() {
     <tr class="border-b border-white/5 hover:bg-white/2">
       <td class="px-4 py-2">${new Date(r.ts).toLocaleTimeString("vi-VN")}</td>
       <td class="px-4 py-2 text-gray-400">${r.client_ip || "—"}</td>
-      <td class="px-4 py-2 font-mono text-gray-400">${r.api_key_masked || "—"}</td>
+      <td class="px-4 py-2 font-mono text-gray-400">${r.api_key_masked || "—"} ${r.api_key_masked ? `<button onclick="copyText('${r.api_key_masked}',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>` : ""}</td>
       <td class="px-4 py-2 text-gray-300">${r.path || "—"}</td>
       <td class="px-4 py-2 text-gray-300">${r.model_requested || "—"}</td>
       <td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ${r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400"}">${r.status}</span></td>
@@ -491,7 +500,7 @@ async function loadOrders() {
         <div class="flex gap-1 justify-end">
           ${o.status === "pending" ? `<button onclick="manualConfirm('${o.id}')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">Xác nhận</button>` : ""}
           ${o.status === "pending" ? `<button onclick="cancelOrder('${o.id}')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">Huỷ</button>` : ""}
-          ${o.api_key ? `<span class="px-2 py-1 bg-dark-600 text-gray-400 rounded text-xs font-mono">${o.api_key.slice(0,12)}...</span>` : ""}
+          ${o.api_key ? `<span class="px-2 py-1 bg-dark-600 text-gray-400 rounded text-xs font-mono">${o.api_key.slice(0,12)}...</span> <button onclick="copyText('${o.api_key}',this)" class="px-1.5 py-1 bg-dark-600 text-gray-500 hover:text-white rounded text-xs transition">copy</button>` : ""}
         </div>
       </td>
     </tr>`;
