@@ -1251,7 +1251,7 @@ async function collectOpenAIStream(resp) {
   };
 }
 
-async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs) {
+async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId) {
   const ordered = orderedBackendKeys(apiKeys);
   let lastError;
   for (let i = 0; i < ordered.length; i += 1) {
@@ -1274,6 +1274,12 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         wroteResponse = true;
         return pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel);
       });
+      // Trừ credit sau khi stream xong
+      if (apiKeyToken && tokens > 0) {
+        const tokensIn = Math.floor(tokens * 0.4);
+        const tokensOut = tokens - tokensIn;
+        credit.deductCredit(apiKeyToken, tokensIn, tokensOut, modelName, reqId || "");
+      }
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
       return;
     } catch (err) {
@@ -1322,11 +1328,12 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
   res.end();
 }
 
-async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs) {
+async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId) {
   const ordered = orderedBackendKeys(apiKeys);
   for (let i = 0; i < ordered.length; i += 1) {
     let wroteResponse = false;
     try {
+      let totalTokens = 0;
       await withBackendKeySlot(ordered[i], async () => {
         const resp = await fetchWithTimeout(url, {
           method: "POST",
@@ -1343,46 +1350,60 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
+        let buffer = "";
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
-          const text = sanitizeBackendText(decoder.decode(value, { stream: true }), backendModel, publicModel);
+          const chunk = decoder.decode(value, { stream: true });
+          // Parse usage từ SSE chunks
+          buffer += chunk;
+          const lines = buffer.split(/\r?\n/);
+          buffer = lines.pop() || "";
+          for (const line of lines) {
+            if (!line.startsWith("data:")) continue;
+            const dataStr = line.slice(5).trim();
+            if (!dataStr || dataStr === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.usage && parsed.usage.total_tokens) {
+                totalTokens = parsed.usage.total_tokens;
+              }
+            } catch (_) {}
+          }
+          const sanitized = sanitizeBackendText(chunk, backendModel, publicModel);
           wroteResponse = true;
-          res.write(text);
+          res.write(sanitized);
         }
       });
+      // Trừ credit sau khi stream xong
+      if (apiKeyToken && totalTokens > 0) {
+        const tokensIn = Math.floor(totalTokens * 0.4);
+        const tokensOut = totalTokens - tokensIn;
+        credit.deductCredit(apiKeyToken, tokensIn, tokensOut, modelName || "", reqId || "");
+      } else if (apiKeyToken) {
+        // Fallback: ước tính từ input messages nếu backend không trả usage
+        const inputText = JSON.stringify(payload.messages || []);
+        const estTokens = Math.ceil(inputText.length / 4) + 200;
+        credit.deductCredit(apiKeyToken, Math.floor(estTokens * 0.7), Math.ceil(estTokens * 0.3), modelName || "", reqId || "");
+      }
       return res.end();
     } catch (err) {
       if (err.status) {
         if (!wroteResponse && isRetryableStatus(err.status) && i < ordered.length - 1) {
-          if (obs) {
-            obs.is_retry = true;
-            obs.retry_count += 1;
-            obs.error_type = "backend";
-          }
+          if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           continue;
         }
-        if (obs) {
-          obs.error_type = "backend";
-          obs.error_message = logPreview(err.text || err.message, 180);
-        }
+        if (obs) { obs.error_type = "backend"; obs.error_message = logPreview(err.text || err.message, 180); }
         const parsed = parseBackendError(err.status, err.text || "");
         res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code))}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
       }
       if (!wroteResponse && i < ordered.length - 1) {
-        if (obs) {
-          obs.is_retry = true;
-          obs.retry_count += 1;
-          obs.error_type = "network";
-        }
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         continue;
       }
-      if (obs) {
-        obs.error_type = "network";
-        obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180);
-      }
+      if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
       res.write(`data: ${JSON.stringify(openaiErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`))}\n\n`);
       res.write("data: [DONE]\n\n");
       return res.end();
@@ -1559,7 +1580,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Accel-Buffering", "no");
-    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs);
+    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
   }
   try {
     const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
@@ -1646,7 +1667,7 @@ app.post(["/v1/chat/completions", "/chat/completions"], async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Accel-Buffering", "no");
-    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs);
+    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
   }
   try {
     const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
