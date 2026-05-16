@@ -43,7 +43,7 @@ db.exec(`
 
 // ── Seed default packages ─────────────────────────────────────────────────────
 const seedPkgs = [
-  { id: "starter", name: "Starter", price: 30000,  credit: 10000, rpm_limit: 60, description: "10.000 credit (~10M token), 60 RPM", active: 1 },
+  { id: "starter", name: "Starter", price: 30000,  credit: 200,   rpm_limit: 60, description: "200 credit (200 requests), 60 RPM", active: 1 },
   { id: "pro",     name: "Pro",     price: 199000, credit: 10000, rpm_limit: 30, description: "10.000 credit (~10M token), 3 API key, 30 RPM", active: 0 },
   { id: "ultra",   name: "Ultra",   price: 299000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
@@ -55,7 +55,7 @@ for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_l
 
 // Cập nhật packages đã tồn tại
 const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description=?, active=? WHERE id=?");
-updatePkg.run(30000,  10000, "10.000 credit (~10M token), 60 RPM",              1, "starter");
+updatePkg.run(30000,  200,   "200 credit (200 requests), 60 RPM",              1, "starter");
 updatePkg.run(199000, 10000, "10.000 credit (~10M token), 3 API key, 30 RPM",   0, "pro");
 updatePkg.run(299000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
 
