@@ -1,0 +1,36 @@
+# ── Sensitive / Local ──
+.env
+*.env.local
+*.env.production
+
+# ── Python ──
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ── IDE ──
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── OS ──
+.DS_Store
+Thumbs.db
+
+# ── Docker (nếu dùng bind mount) ──
+docker-data/
+
+# ── Logs ──
+*.log
+
+# ── Database ──
+*.db
+*.db-shm
+*.db-wal
+logs/

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPT API - Thanh toán</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',sans-serif}
+.step-active{border-color:#6366f1;background:rgba(99,102,241,0.08)}
+</style>
+</head>
+<body class="bg-dark-900 text-white min-h-screen antialiased">
+<nav class="bg-dark-800 border-b border-white/5 px-6 py-4 flex items-center justify-between">
+  <a href="/" class="flex items-center gap-2">
+    <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    </div>
+    <span class="font-bold">GPT API Store</span>
+  </a>
+  <a href="/portal" class="text-sm text-gray-400 hover:text-white transition">Xem tài khoản →</a>
+</nav>
+
+<div class="max-w-2xl mx-auto px-4 py-10">
+  <!-- Step indicator -->
+  <div class="flex items-center gap-2 mb-8 text-sm">
+    <div id="step1ind" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary bg-primary/10 text-primary font-medium"><span class="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>Chọn gói</div>
+    <div class="flex-1 h-px bg-white/10"></div>
+    <div id="step2ind" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium"><span class="w-5 h-5 bg-dark-600 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">2</span>Thông tin</div>
+    <div class="flex-1 h-px bg-white/10"></div>
+    <div id="step3ind" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium"><span class="w-5 h-5 bg-dark-600 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">3</span>Thanh toán</div>
+  </div>
+
+  <!-- Step 1: Chọn gói -->
+  <div id="step1" class="space-y-4">
+    <h1 class="text-2xl font-bold mb-6">Chọn gói phù hợp</h1>
+    <div id="packageList" class="space-y-3">
+      <div class="text-center text-gray-500 py-8">Đang tải...</div>
+    </div>
+    <button onclick="goStep2()" id="btnStep2" class="w-full py-3.5 bg-primary hover:bg-primary/90 rounded-xl font-semibold transition mt-4 disabled:opacity-40" disabled>Tiếp tục →</button>
+  </div>
+
+  <!-- Step 2: Thông tin khách -->
+  <div id="step2" class="hidden space-y-5">
+    <h1 class="text-2xl font-bold mb-6">Thông tin của bạn</h1>
+    <div id="selectedPkgSummary" class="bg-dark-700 border border-primary/30 rounded-xl p-4 flex items-center justify-between">
+      <div><p class="font-semibold" id="sumName">—</p><p class="text-sm text-gray-400" id="sumDesc">—</p></div>
+      <div class="text-right"><p class="text-2xl font-black" id="sumPrice">—</p><button onclick="goStep1()" class="text-xs text-gray-500 hover:text-white transition">Đổi gói</button></div>
+    </div>
+    <div>
+      <label class="text-sm text-gray-400 block mb-1.5">Họ tên <span class="text-red-400">*</span></label>
+      <input id="custName" placeholder="Nguyễn Văn A" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
+    </div>
+    <div>
+      <label class="text-sm text-gray-400 block mb-1.5">Email nhận API key <span class="text-red-400">*</span></label>
+      <input id="custEmail" type="email" placeholder="email@example.com" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
+      <p class="text-xs text-gray-500 mt-1.5">API key sẽ được gửi tự động về email này sau khi thanh toán</p>
+    </div>
+    <p id="step2Err" class="text-red-400 text-sm hidden"></p>
+    <div class="flex gap-3">
+      <button onclick="goStep1()" class="px-6 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm font-semibold hover:bg-dark-600 transition">← Quay lại</button>
+      <button onclick="goStep3()" class="flex-1 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold transition">Tạo đơn hàng →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: QR thanh toán -->
+  <div id="step3" class="hidden space-y-5">
+    <h1 class="text-2xl font-bold mb-2">Quét QR để thanh toán</h1>
+    <p class="text-gray-400 text-sm mb-6">Chuyển khoản đúng số tiền và <strong class="text-white">nội dung chuyển khoản</strong> bên dưới. Hệ thống tự động xác nhận trong vòng 1–2 phút.</p>
+    <div class="bg-dark-700 border border-white/10 rounded-2xl p-6 text-center space-y-4">
+      <img id="qrImg" src="" alt="QR Code" class="w-52 h-52 mx-auto rounded-xl bg-white p-2">
+      <div class="space-y-3 text-left">
+        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+          <span class="text-sm text-gray-400">Ngân hàng</span>
+          <span class="font-semibold text-sm" id="payBank">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+          <span class="text-sm text-gray-400">Số tài khoản</span>
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-semibold text-sm" id="payAccount">—</span>
+            <button onclick="copyText('payAccount')" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-700 rounded">Copy</button>
+          </div>
+        </div>
+        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+          <span class="text-sm text-gray-400">Chủ tài khoản</span>
+          <span class="font-semibold text-sm" id="payOwner">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+          <span class="text-sm text-gray-400">Số tiền</span>
+          <span class="font-black text-lg text-primary" id="payAmount">—</span>
+        </div>
+        <div class="flex justify-between items-center bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+          <span class="text-sm text-yellow-300">Nội dung CK <span class="text-red-400">*</span></span>
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-bold text-yellow-300" id="payContent">—</span>
+            <button onclick="copyText('payContent')" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-700 rounded">Copy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- Status polling -->
+    <div id="payStatus" class="bg-dark-700 border border-white/10 rounded-xl p-4 flex items-center gap-3">
+      <div class="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0"></div>
+      <div>
+        <p class="text-sm font-medium">Đang chờ thanh toán...</p>
+        <p class="text-xs text-gray-500">Tự động kiểm tra mỗi 5 giây</p>
+      </div>
+    </div>
+    <!-- Success -->
+    <div id="paySuccess" class="hidden bg-green-500/10 border border-green-500/30 rounded-xl p-6 text-center space-y-3">
+      <div class="text-4xl">🎉</div>
+      <h3 class="text-xl font-bold text-green-400">Thanh toán thành công!</h3>
+      <p class="text-sm text-gray-300">API key đã được gửi về email <strong id="successEmail">—</strong></p>
+      <div class="bg-dark-900 rounded-xl p-4 text-left">
+        <p class="text-xs text-gray-500 mb-2">API Key của bạn</p>
+        <code class="text-sm text-primary font-mono break-all" id="successKey">—</code>
+      </div>
+      <div class="flex gap-3 justify-center">
+        <a href="/portal" class="px-5 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Xem tài khoản</a>
+        <a href="/" class="px-5 py-2.5 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition">Trang chủ</a>
+      </div>
+    </div>
+    <p class="text-xs text-gray-600 text-center">Mã đơn hàng: <span id="orderCode" class="font-mono">—</span> · <a href="/portal" class="hover:text-white transition">Tra cứu đơn hàng</a></p>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+let selectedPkg = null;
+let currentOrder = null;
+let pollTimer = null;
+
+// Load packages
+fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
+  const list = document.getElementById("packageList");
+  list.innerHTML = (data.packages || []).map(p => `
+    <div class="pkg-card border border-white/10 rounded-xl p-5 cursor-pointer hover:border-primary/50 transition bg-dark-700" data-id="${p.id}" onclick="selectPkg(${JSON.stringify(p).replace(/"/g,'&quot;')})">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center text-primary font-bold text-sm">${p.name[0]}</div>
+          <div><p class="font-bold">${p.name}</p><p class="text-xs text-gray-500">${p.description}</p></div>
+        </div>
+        <div class="text-right">
+          <p class="text-2xl font-black">${Number(p.price/1000).toFixed(0)}K</p>
+          <p class="text-xs text-gray-500">VNĐ</p>
+        </div>
+      </div>
+      <div class="flex gap-2 flex-wrap">
+        <span class="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full">${Number(p.credit).toLocaleString()} credit</span>
+        <span class="px-2 py-0.5 bg-dark-600 text-gray-400 text-xs rounded-full">${p.rpm_limit} RPM</span>
+      </div>
+    </div>`).join("");
+});
+
+function selectPkg(pkg) {
+  selectedPkg = pkg;
+  document.querySelectorAll(".pkg-card").forEach(el => {
+    el.classList.toggle("border-primary", el.dataset.id === pkg.id);
+    el.classList.toggle("bg-primary/5", el.dataset.id === pkg.id);
+    el.classList.toggle("border-white/10", el.dataset.id !== pkg.id);
+  });
+  document.getElementById("btnStep2").disabled = false;
+}
+
+function goStep1() {
+  document.getElementById("step1").classList.remove("hidden");
+  document.getElementById("step2").classList.add("hidden");
+  document.getElementById("step3").classList.add("hidden");
+  setStepInd(1);
+}
+
+function goStep2() {
+  if (!selectedPkg) return;
+  document.getElementById("step1").classList.add("hidden");
+  document.getElementById("step2").classList.remove("hidden");
+  document.getElementById("sumName").textContent = selectedPkg.name;
+  document.getElementById("sumDesc").textContent = selectedPkg.description;
+  document.getElementById("sumPrice").textContent = Number(selectedPkg.price/1000).toFixed(0) + "K VNĐ";
+  setStepInd(2);
+}
+
+async function goStep3() {
+  const name = document.getElementById("custName").value.trim();
+  const email = document.getElementById("custEmail").value.trim();
+  const err = document.getElementById("step2Err");
+  if (!name) { err.textContent = "Vui lòng nhập họ tên"; err.classList.remove("hidden"); return; }
+  if (!email || !email.includes("@")) { err.textContent = "Email không hợp lệ"; err.classList.remove("hidden"); return; }
+  err.classList.add("hidden");
+
+  const r = await fetch(`${BASE}/api/orders/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ packageId: selectedPkg.id, customerName: name, customerEmail: email }),
+  });
+  const data = await r.json();
+  if (!data.ok) { err.textContent = data.detail || "Lỗi tạo đơn hàng"; err.classList.remove("hidden"); return; }
+
+  currentOrder = data.order;
+  document.getElementById("step2").classList.add("hidden");
+  document.getElementById("step3").classList.remove("hidden");
+  setStepInd(3);
+  renderPayment(data);
+  startPolling();
+}
+
+function renderPayment(data) {
+  const o = data.order;
+  document.getElementById("qrImg").src = data.qr_url;
+  document.getElementById("payBank").textContent = data.bank_name;
+  document.getElementById("payAccount").textContent = data.bank_account;
+  document.getElementById("payOwner").textContent = data.bank_owner;
+  document.getElementById("payAmount").textContent = Number(o.amount).toLocaleString("vi-VN") + " đ";
+  document.getElementById("payContent").textContent = o.order_code;
+  document.getElementById("orderCode").textContent = o.order_code;
+  document.getElementById("successEmail").textContent = o.customer_email;
+}
+
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    if (!currentOrder) return;
+    const r = await fetch(`${BASE}/api/orders/status/${currentOrder.id}`);
+    const data = await r.json();
+    if (data.status === "paid") {
+      clearInterval(pollTimer);
+      document.getElementById("payStatus").classList.add("hidden");
+      document.getElementById("paySuccess").classList.remove("hidden");
+      document.getElementById("successKey").textContent = data.api_key || "—";
+    }
+  }, 5000);
+}
+
+function setStepInd(step) {
+  const active = "flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary bg-primary/10 text-primary font-medium";
+  const done = "flex items-center gap-2 px-3 py-1.5 rounded-full border border-green-500/50 bg-green-500/10 text-green-400 font-medium";
+  const idle = "flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium";
+  document.getElementById("step1ind").className = step > 1 ? done : step === 1 ? active : idle;
+  document.getElementById("step2ind").className = step > 2 ? done : step === 2 ? active : idle;
+  document.getElementById("step3ind").className = step === 3 ? active : idle;
+}
+
+function copyText(id) {
+  const el = document.getElementById(id);
+  navigator.clipboard.writeText(el.textContent).then(() => {
+    const orig = el.nextElementSibling?.textContent;
+    if (el.nextElementSibling) { el.nextElementSibling.textContent = "✓"; setTimeout(() => el.nextElementSibling.textContent = orig, 1500); }
+  });
+}
+</script>
+</body>
+</html>

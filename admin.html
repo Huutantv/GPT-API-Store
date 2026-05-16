@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPT API - Admin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',sans-serif}
+.tab-active{background:rgba(99,102,241,0.15);color:#6366f1;font-weight:600}
+</style>
+</head>
+<body class="bg-dark-900 text-white min-h-screen antialiased">
+
+<!-- Login overlay -->
+<div id="loginOverlay" class="fixed inset-0 z-50 bg-dark-900 flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-dark-700 border border-white/10 rounded-2xl p-8">
+    <div class="text-center mb-8">
+      <div class="w-12 h-12 bg-red-500/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      </div>
+      <h1 class="text-2xl font-bold mb-2">Admin Panel</h1>
+      <p class="text-gray-400 text-sm">Nh&#7853;p admin key &#273;&#7875; ti&#7871;p t&#7909;c</p>
+    </div>
+    <div class="space-y-4">
+      <input id="adminKeyInput" type="password" placeholder="Admin key..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" onkeydown="if(event.key==='Enter')adminLogin()">
+      <button onclick="adminLogin()" class="w-full py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition">&#272;&#259;ng nh&#7853;p</button>
+      <p id="loginErr" class="text-red-400 text-xs text-center hidden"></p>
+    </div>
+  </div>
+</div>
+
+<!-- Main layout -->
+<div id="mainContent" class="hidden flex h-screen overflow-hidden">
+  <!-- Sidebar -->
+  <div class="w-56 bg-dark-800 border-r border-white/5 flex flex-col shrink-0">
+    <div class="p-5 border-b border-white/5">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+        <span class="font-bold text-sm">GPT Admin</span>
+      </div>
+    </div>
+    <nav class="flex-1 p-3 space-y-1">
+      <button onclick="showTab('overview')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="overview">&#x1F4CA; T&#7893;ng quan</button>
+      <button onclick="showTab('keys')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keys">&#x1F511; Qu&#7843;n l&#253; Keys</button>
+      <button onclick="showTab('topup')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="topup">&#x1F4B0; N&#7841;p Credit</button>
+      <button onclick="showTab('history')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; L&#7883;ch s&#7917;</button>
+      <button onclick="showTab('monitor')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
+      <button onclick="showTab('orders')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
+    </nav>
+    <div class="p-3 border-t border-white/5">
+      <button onclick="adminLogout()" class="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-red-400 transition">&#x1F6AA; &#272;&#259;ng xu&#7845;t</button>
+    </div>
+  </div>
+  <!-- Content -->
+  <div class="flex-1 overflow-y-auto">
+    <div class="p-6 space-y-6">
+
+<!-- Tab: Overview -->
+<div id="tab-overview" class="tab-content space-y-6">
+  <h2 class="text-xl font-bold">T&#7893;ng quan</h2>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng keys</p><div class="text-3xl font-bold" id="statTotalKeys">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Keys ho&#7841;t &#273;&#7897;ng</p><div class="text-3xl font-bold text-green-400" id="statActiveKeys">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng credit c&#242;n</p><div class="text-3xl font-bold text-primary" id="statTotalCredit">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng &#273;&#227; d&#249;ng</p><div class="text-3xl font-bold text-yellow-400" id="statTotalSpent">—</div></div>
+  </div>
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng giao d&#7883;ch</p><div class="text-2xl font-bold" id="statTotalTxns">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5 flex items-center justify-between">
+      <div><p class="text-xs text-gray-500 mb-1">Proxy status</p><div class="text-sm font-semibold text-green-400" id="statProxy">&#272;ang ki&#7875;m tra...</div></div>
+      <button onclick="loadOverview()" class="text-xs text-gray-500 hover:text-white px-3 py-1.5 bg-dark-600 rounded-lg transition">L&#224;m m&#7899;i</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Keys -->
+<div id="tab-keys" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-bold">Qu&#7843;n l&#253; API Keys</h2>
+    <button onclick="document.getElementById('createKeyForm').classList.toggle('hidden')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">+ T&#7841;o key m&#7899;i</button>
+  </div>
+  <!-- Create form -->
+  <div id="createKeyForm" class="hidden bg-dark-700 border border-white/10 rounded-xl p-6 space-y-4">
+    <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
+    <div class="grid md:grid-cols-4 gap-4">
+      <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguy&#7877;n V&#259;n A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">Credit ban &#273;&#7847;u</label><input id="newCredit" type="number" placeholder="500" value="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="10" value="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">H&#7871;t h&#7841;n (&#273;&#7875; tr&#7889;ng = kh&#244;ng)</label><input id="newExpires" type="date" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+    </div>
+    <div class="flex gap-3">
+      <button onclick="createKey()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">T&#7841;o key</button>
+      <div id="createMsg" class="text-sm py-2 text-gray-400"></div>
+    </div>
+  </div>
+  <!-- Keys table -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">Key</th>
+        <th class="text-left px-4 py-3">Nh&#227;n</th>
+        <th class="text-right px-4 py-3">Credit</th>
+        <th class="text-right px-4 py-3">RPM</th>
+        <th class="text-left px-4 py-3">Tr&#7841;ng th&#225;i</th>
+        <th class="text-left px-4 py-3">H&#7871;t h&#7841;n</th>
+        <th class="text-left px-4 py-3">Ng&#224;y t&#7841;o</th>
+        <th class="text-right px-4 py-3">Thao t&#225;c</th>
+      </tr></thead>
+      <tbody id="keysTable"><tr><td colspan="8" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab: Topup -->
+<div id="tab-topup" class="tab-content hidden space-y-6">
+  <h2 class="text-xl font-bold">N&#7841;p Credit</h2>
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-6 max-w-lg space-y-4">
+    <div><label class="text-xs text-gray-400 block mb-1">API Key</label><input id="topupKey" placeholder="sk-..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"></div>
+    <div><label class="text-xs text-gray-400 block mb-1">S&#7889; credit n&#7841;p</label><input id="topupAmount" type="number" placeholder="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+    <div><label class="text-xs text-gray-400 block mb-1">Ghi ch&#250; (l&#253; do)</label><input id="topupReason" placeholder="Thanh to&#225;n g&#243;i Pro - Momo" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+    <div class="flex gap-3 items-center">
+      <button onclick="doTopup()" class="px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">N&#7841;p credit</button>
+      <span id="topupMsg" class="text-sm text-gray-400"></span>
+    </div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-6 max-w-lg">
+    <h3 class="font-semibold text-sm mb-4">Quy &#273;&#7893;i nhanh</h3>
+    <div class="space-y-2 text-sm text-gray-300">
+      <div class="flex justify-between"><span>G&#243;i Starter (49K)</span><span class="text-primary font-mono">500 credit</span></div>
+      <div class="flex justify-between"><span>G&#243;i Pro (199K)</span><span class="text-primary font-mono">10.000 credit</span></div>
+      <div class="flex justify-between"><span>G&#243;i Ultra (299K)</span><span class="text-primary font-mono">30.000 credit</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: History -->
+<div id="tab-history" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-bold">L&#7883;ch s&#7917; giao d&#7883;ch</h2>
+    <div class="flex gap-2">
+      <input id="historyKeyFilter" placeholder="L&#7885;c theo key..." class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs focus:outline-none focus:border-primary w-48">
+      <button onclick="loadHistory()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+    </div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">Th&#7901;i gian</th>
+        <th class="text-left px-4 py-3">Key</th>
+        <th class="text-left px-4 py-3">Lo&#7841;i</th>
+        <th class="text-left px-4 py-3">Model</th>
+        <th class="text-right px-4 py-3">Token In</th>
+        <th class="text-right px-4 py-3">Token Out</th>
+        <th class="text-right px-4 py-3">Credit</th>
+      </tr></thead>
+      <tbody id="historyTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Tab: Monitor -->
+<div id="tab-monitor" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-bold">Monitor</h2>
+    <button onclick="loadMonitor()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">RPM (1 ph&#250;t)</p><div class="text-2xl font-bold" id="monRpm">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Success rate</p><div class="text-2xl font-bold text-green-400" id="monSuccess">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">P95 latency</p><div class="text-2xl font-bold" id="monP95">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">502 (1m/5m)</p><div class="text-2xl font-bold text-red-400" id="mon502">—</div></div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <table class="w-full text-xs">
+      <thead><tr class="text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">Th&#7901;i gian</th>
+        <th class="text-left px-4 py-3">IP</th>
+        <th class="text-left px-4 py-3">Key</th>
+        <th class="text-left px-4 py-3">Path</th>
+        <th class="text-left px-4 py-3">Model</th>
+        <th class="text-right px-4 py-3">Status</th>
+        <th class="text-right px-4 py-3">Latency</th>
+      </tr></thead>
+      <tbody id="monitorTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+    </div><!-- end content inner -->
+  </div><!-- end content -->
+</div><!-- end main layout -->
+
+<!-- Tab Orders HTML injected via JS -->
+<template id="ordersTabTpl">
+<div id="tab-orders" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between">
+    <h2 class="text-xl font-bold">Đơn hàng</h2>
+    <div class="flex gap-2">
+      <select id="orderStatusFilter" onchange="loadOrders()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs focus:outline-none">
+        <option value="">Tất cả</option>
+        <option value="pending">Chờ thanh toán</option>
+        <option value="paid">Đã thanh toán</option>
+        <option value="cancelled">Đã huỷ</option>
+      </select>
+      <button onclick="loadOrders()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Làm mới</button>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="orderStats">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Tổng đơn</p><div class="text-2xl font-bold" id="osTotalOrders">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Đã thanh toán</p><div class="text-2xl font-bold text-green-400" id="osPaid">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Chờ thanh toán</p><div class="text-2xl font-bold text-yellow-400" id="osPending">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Doanh thu</p><div class="text-2xl font-bold text-primary" id="osRevenue">—</div></div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">Mã đơn</th>
+        <th class="text-left px-4 py-3">Khách hàng</th>
+        <th class="text-left px-4 py-3">Gói</th>
+        <th class="text-right px-4 py-3">Số tiền</th>
+        <th class="text-left px-4 py-3">Trạng thái</th>
+        <th class="text-left px-4 py-3">Ngày tạo</th>
+        <th class="text-right px-4 py-3">Thao tác</th>
+      </tr></thead>
+      <tbody id="ordersTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">Đang tải...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+</template>
+
+<script>
+const BASE = window.location.origin;
+let ADMIN_KEY = sessionStorage.getItem("gpt_admin_key") || "";
+
+function authHeaders() {
+  return { "Authorization": `Bearer ${ADMIN_KEY}`, "Content-Type": "application/json" };
+}
+
+async function adminLogin() {
+  const key = document.getElementById("adminKeyInput").value.trim();
+  if (!key) return;
+  const r = await fetch(`${BASE}/api/credit/stats`, { headers: { "Authorization": `Bearer ${key}` } });
+  if (!r.ok) {
+    const err = document.getElementById("loginErr");
+    err.textContent = "Admin key kh&#244;ng h&#7907;p l&#7879;.";
+    err.classList.remove("hidden");
+    return;
+  }
+  ADMIN_KEY = key;
+  sessionStorage.setItem("gpt_admin_key", key);
+  document.getElementById("loginOverlay").classList.add("hidden");
+  document.getElementById("mainContent").classList.remove("hidden");
+  showTab("overview");
+}
+
+function adminLogout() {
+  ADMIN_KEY = "";
+  sessionStorage.removeItem("gpt_admin_key");
+  location.reload();
+}
+
+function showTab(name) {
+  document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
+  document.getElementById(`tab-${name}`).classList.remove("hidden");
+  document.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.classList.toggle("tab-active", btn.dataset.tab === name);
+  });
+  if (name === "overview") loadOverview();
+  if (name === "keys") loadKeys();
+  if (name === "history") loadHistory();
+  if (name === "monitor") loadMonitor();
+  if (name === "orders") loadOrders();
+}
+
+async function loadOverview() {
+  const [stats, health] = await Promise.all([
+    fetch(`${BASE}/api/credit/stats`, { headers: authHeaders() }).then(r => r.json()),
+    fetch(`${BASE}/health`).then(r => r.json()).catch(() => null),
+  ]);
+  document.getElementById("statTotalKeys").textContent = stats.total || 0;
+  document.getElementById("statActiveKeys").textContent = stats.active_keys || 0;
+  document.getElementById("statTotalCredit").textContent = Number(stats.total_credit || 0).toLocaleString();
+  document.getElementById("statTotalSpent").textContent = Number(stats.total_spent || 0).toLocaleString();
+  document.getElementById("statTotalTxns").textContent = Number(stats.total_txns || 0).toLocaleString();
+  document.getElementById("statProxy").textContent = health ? `Online — ${health.virtual_keys} proxy keys` : "Offline";
+}
+
+async function loadKeys() {
+  const data = await fetch(`${BASE}/api/credit/keys`, { headers: authHeaders() }).then(r => r.json());
+  const tbody = document.getElementById("keysTable");
+  const keys = data.keys || [];
+  if (!keys.length) { tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; key n&#224;o</td></tr>'; return; }
+  tbody.innerHTML = keys.map(k => `
+    <tr class="border-b border-white/5 hover:bg-white/2">
+      <td class="px-4 py-3 font-mono text-xs text-gray-300">${k.key.slice(0,12)}...${k.key.slice(-4)}</td>
+      <td class="px-4 py-3 text-sm">${k.label || "<span class='text-gray-500'>—</span>"}</td>
+      <td class="px-4 py-3 text-right font-bold ${k.credit < 100 ? "text-red-400" : "text-green-400"}">${Number(k.credit).toLocaleString()}</td>
+      <td class="px-4 py-3 text-right text-gray-300">${k.rpm_limit}</td>
+      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ${k.active ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}">${k.active ? "Ho&#7841;t &#273;&#7897;ng" : "B&#7883; kh&#243;a"}</span></td>
+      <td class="px-4 py-3 text-xs text-gray-400">${k.expires_at ? new Date(k.expires_at).toLocaleDateString("vi-VN") : "Kh&#244;ng"}</td>
+      <td class="px-4 py-3 text-xs text-gray-500">${new Date(k.created_at).toLocaleDateString("vi-VN")}</td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex gap-1 justify-end">
+          <button onclick="quickTopup('${k.key}')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">N&#7841;p</button>
+          <button onclick="toggleKey('${k.key}', ${k.active})" class="px-2 py-1 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/40 rounded text-xs transition">${k.active ? "Kh&#243;a" : "M&#7903;"}</button>
+          <button onclick="deleteKey('${k.key}')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">X&#243;a</button>
+        </div>
+      </td>
+    </tr>`).join("");
+}
+
+async function createKey() {
+  const body = {
+    label: document.getElementById("newLabel").value.trim(),
+    credit: Number(document.getElementById("newCredit").value || 0),
+    rpm_limit: Number(document.getElementById("newRpm").value || 10),
+    expires_at: document.getElementById("newExpires").value || null,
+  };
+  const r = await fetch(`${BASE}/api/credit/keys`, { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
+  const data = await r.json();
+  const msg = document.getElementById("createMsg");
+  if (data.ok) {
+    msg.className = "text-sm py-2 text-green-400";
+    msg.textContent = `&#272;&#227; t&#7841;o: ${data.key.key}`;
+    loadKeys();
+  } else {
+    msg.className = "text-sm py-2 text-red-400";
+    msg.textContent = data.detail || "L&#7895;i";
+  }
+}
+
+function quickTopup(key) {
+  showTab("topup");
+  document.getElementById("topupKey").value = key;
+  document.getElementById("topupAmount").focus();
+}
+
+async function doTopup() {
+  const key = document.getElementById("topupKey").value.trim();
+  const amount = Number(document.getElementById("topupAmount").value);
+  const reason = document.getElementById("topupReason").value.trim() || "topup";
+  const msg = document.getElementById("topupMsg");
+  if (!key || !amount) { msg.textContent = "Vui l&#242;ng nh&#7853;p &#273;&#7847;y &#273;&#7911;"; return; }
+  const r = await fetch(`${BASE}/api/credit/topup`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ key, amount, reason }) });
+  const data = await r.json();
+  if (data.ok) {
+    msg.className = "text-sm text-green-400";
+    msg.textContent = `&#272;&#227; n&#7841;p ${amount} credit. S&#7889; d&#432; m&#7899;i: ${Number(data.credit).toLocaleString()}`;
+    document.getElementById("topupAmount").value = "";
+  } else {
+    msg.className = "text-sm text-red-400";
+    msg.textContent = data.detail || "L&#7895;i";
+  }
+}
+
+async function toggleKey(key, active) {
+  await fetch(`${BASE}/api/credit/set-active`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ key, active: !active }) });
+  loadKeys();
+}
+
+async function deleteKey(key) {
+  if (!confirm(`X&#243;a key ${key.slice(0,16)}...?`)) return;
+  await fetch(`${BASE}/api/credit/keys`, { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ key }) });
+  loadKeys();
+}
+
+async function loadHistory() {
+  const filter = document.getElementById("historyKeyFilter")?.value.trim() || "";
+  const url = filter ? `${BASE}/api/credit/history?key=${encodeURIComponent(filter)}&limit=100` : `${BASE}/api/credit/history?limit=100`;
+  const data = await fetch(url, { headers: authHeaders() }).then(r => r.json());
+  const tbody = document.getElementById("historyTable");
+  const rows = data.history || [];
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-8">Kh&#244;ng c&#243; d&#7919; li&#7879;u</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => {
+    const isUsage = r.delta < 0;
+    return `<tr class="border-b border-white/5 hover:bg-white/2">
+      <td class="px-4 py-2.5 text-gray-400 text-xs">${new Date(r.created_at).toLocaleString("vi-VN")}</td>
+      <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${r.key.slice(0,10)}...${r.key.slice(-4)}</td>
+      <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-xs ${isUsage ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}">${isUsage ? "S&#7917; d&#7909;ng" : r.reason}</span></td>
+      <td class="px-4 py-2.5 text-xs text-gray-300">${r.model || "—"}</td>
+      <td class="px-4 py-2.5 text-right text-xs text-gray-400">${r.tokens_in ? r.tokens_in.toLocaleString() : "—"}</td>
+      <td class="px-4 py-2.5 text-right text-xs text-gray-400">${r.tokens_out ? r.tokens_out.toLocaleString() : "—"}</td>
+      <td class="px-4 py-2.5 text-right font-mono text-xs ${isUsage ? "text-red-400" : "text-green-400"}">${isUsage ? r.delta : "+" + r.delta}</td>
+    </tr>`;
+  }).join("");
+}
+
+async function loadMonitor() {
+  const [summary, recent] = await Promise.all([
+    fetch(`${BASE}/api/metrics/summary`, { headers: authHeaders() }).then(r => r.json()),
+    fetch(`${BASE}/api/requests/recent?limit=100`, { headers: authHeaders() }).then(r => r.json()),
+  ]);
+  document.getElementById("monRpm").textContent = summary.rpm_total || 0;
+  document.getElementById("monSuccess").textContent = (summary.success_rate_1m ?? 100) + "%";
+  document.getElementById("monP95").textContent = (summary.p95_latency_ms || 0) + "ms";
+  document.getElementById("mon502").textContent = `${summary.count_502_1m || 0} / ${summary.count_502_5m || 0}`;
+  const tbody = document.getElementById("monitorTable");
+  const rows = (recent.requests || []).slice(0, 50);
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-6">Ch&#432;a c&#243; request</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `
+    <tr class="border-b border-white/5 hover:bg-white/2">
+      <td class="px-4 py-2">${new Date(r.ts).toLocaleTimeString("vi-VN")}</td>
+      <td class="px-4 py-2 text-gray-400">${r.client_ip || "—"}</td>
+      <td class="px-4 py-2 font-mono text-gray-400">${r.api_key_masked || "—"}</td>
+      <td class="px-4 py-2 text-gray-300">${r.path || "—"}</td>
+      <td class="px-4 py-2 text-gray-300">${r.model_requested || "—"}</td>
+      <td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ${r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400"}">${r.status}</span></td>
+      <td class="px-4 py-2 text-right text-gray-400">${r.latency_ms || 0}ms</td>
+    </tr>`).join("");
+}
+
+// Auto login
+window.addEventListener("DOMContentLoaded", () => {
+  // Inject orders tab
+  const tpl = document.getElementById("ordersTabTpl");
+  if (tpl) document.querySelector("#mainContent .flex-1 .p-6").appendChild(tpl.content.cloneNode(true));
+  if (ADMIN_KEY) {
+    document.getElementById("loginOverlay").classList.add("hidden");
+    document.getElementById("mainContent").classList.remove("hidden");
+    showTab("overview");
+  }
+});
+async function loadOrders() {
+  const status = document.getElementById("orderStatusFilter")?.value || "";
+  const [data, stats] = await Promise.all([
+    fetch(`${BASE}/api/orders${status ? "?status=" + status : ""}`, { headers: authHeaders() }).then(r => r.json()),
+    fetch(`${BASE}/api/orders/stats`, { headers: authHeaders() }).then(r => r.json()),
+  ]);
+  document.getElementById("osTotalOrders").textContent = stats.total_orders || 0;
+  document.getElementById("osPaid").textContent = stats.paid || 0;
+  document.getElementById("osPending").textContent = stats.pending || 0;
+  document.getElementById("osRevenue").textContent = Number(stats.revenue || 0).toLocaleString("vi-VN") + "đ";
+  const tbody = document.getElementById("ordersTable");
+  const rows = data.orders || [];
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-8">Không có đơn hàng</td></tr>'; return; }
+  const statusMap = { pending: ["bg-yellow-500/10 text-yellow-400", "Chờ TT"], paid: ["bg-green-500/10 text-green-400", "Đã TT"], cancelled: ["bg-red-500/10 text-red-400", "Đã huỷ"] };
+  tbody.innerHTML = rows.map(o => {
+    const [cls, label] = statusMap[o.status] || ["bg-gray-500/10 text-gray-400", o.status];
+    return `<tr class="border-b border-white/5 hover:bg-white/2">
+      <td class="px-4 py-3 font-mono text-xs text-yellow-300">${o.order_code}</td>
+      <td class="px-4 py-3"><p class="text-sm">${o.customer_name || "—"}</p><p class="text-xs text-gray-500">${o.customer_email}</p></td>
+      <td class="px-4 py-3 text-sm capitalize">${o.package_id}</td>
+      <td class="px-4 py-3 text-right font-bold">${Number(o.amount).toLocaleString("vi-VN")}đ</td>
+      <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ${cls}">${label}</span></td>
+      <td class="px-4 py-3 text-xs text-gray-500">${new Date(o.created_at).toLocaleString("vi-VN")}</td>
+      <td class="px-4 py-3 text-right">
+        <div class="flex gap-1 justify-end">
+          ${o.status === "pending" ? `<button onclick="manualConfirm('${o.id}')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">Xác nhận</button>` : ""}
+          ${o.status === "pending" ? `<button onclick="cancelOrder('${o.id}')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">Huỷ</button>` : ""}
+          ${o.api_key ? `<span class="px-2 py-1 bg-dark-600 text-gray-400 rounded text-xs font-mono">${o.api_key.slice(0,12)}...</span>` : ""}
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+async function manualConfirm(orderId) {
+  if (!confirm("Xác nhận thanh toán thủ công cho đơn này?")) return;
+  const r = await fetch(`${BASE}/api/orders/manual-confirm`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ orderId, note: "manual-admin" }) });
+  const data = await r.json();
+  if (data.ok) loadOrders();
+  else alert(data.detail || "Lỗi");
+}
+
+async function cancelOrder(orderId) {
+  if (!confirm("Huỷ đơn hàng này?")) return;
+  await fetch(`${BASE}/api/orders/cancel`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ orderId }) });
+  loadOrders();
+}
+
+setInterval(() => {
+  const active = document.querySelector(".tab-content:not(.hidden)");
+  if (active && active.id === "tab-monitor") loadMonitor();
+}, 5000);
+</script>
+</body>
+</html>

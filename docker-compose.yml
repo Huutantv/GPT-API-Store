@@ -1,0 +1,22 @@
+services:
+  doro-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: doro-proxy
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DORO_PUBLIC_IP=${DORO_PUBLIC_IP:-}
+      - TZ=${TZ:-Asia/Ho_Chi_Minh}
+    volumes:
+      - ./.env:/app/.env
+    ports:
+      - "${DORO_PROXY_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
