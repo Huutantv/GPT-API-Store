@@ -101,6 +101,12 @@ function markCancelled(orderId) {
   stmts.markCancelled.run(orderId);
 }
 
+function cancelExpiredOrders() {
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
+  const result = db.prepare("UPDATE orders SET status='cancelled' WHERE status='pending' AND created_at < ?").run(cutoff);
+  return result.changes;
+}
+
 function getStats() {
   const counts = {};
   for (const row of stmts.countByStatus.all()) counts[row.status] = row.cnt;
@@ -114,4 +120,4 @@ function getStats() {
   };
 }
 
-module.exports = { listPackages, getPackage, getOrder, getOrderByCode, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, getStats };
+module.exports = { listPackages, getPackage, getOrder, getOrderByCode, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, getStats };

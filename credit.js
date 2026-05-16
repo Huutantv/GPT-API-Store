@@ -101,7 +101,7 @@ function checkCreditAuth(apiKey) {
     return { ok: false, status: 403, message: "API key has expired" };
   }
   if (row.credit <= 0) {
-    return { ok: false, status: 429, message: "Insufficient credit. Please top up at https://your-domain.com" };
+    return { ok: false, status: 429, message: `Insufficient credit. Please top up at ${process.env.DORO_PUBLIC_URL || "https://zplay.io.vn"}` };
   }
   return { ok: true, keyRow: row };
 }

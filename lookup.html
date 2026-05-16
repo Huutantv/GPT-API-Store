@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPT API - Tra c&#7913;u &#273;&#417;n h&#224;ng</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',sans-serif}
+.status-pending{background:rgba(234,179,8,0.1);color:#fbbf24;border-color:rgba(234,179,8,0.3)}
+.status-paid{background:rgba(34,197,94,0.1);color:#4ade80;border-color:rgba(34,197,94,0.3)}
+.status-cancelled{background:rgba(239,68,68,0.1);color:#f87171;border-color:rgba(239,68,68,0.3)}
+</style>
+</head>
+<body class="bg-dark-900 text-white min-h-screen antialiased">
+
+<!-- Nav -->
+<nav class="bg-dark-800 border-b border-white/5 px-6 py-4 flex items-center justify-between">
+  <a href="/" class="flex items-center gap-2">
+    <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    </div>
+    <span class="font-bold">GPT API Store</span>
+  </a>
+  <div class="flex items-center gap-3">
+    <a href="/portal" class="text-sm text-gray-400 hover:text-white transition">Portal</a>
+    <a href="/checkout" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">Mua API Key</a>
+  </div>
+</nav>
+
+<!-- Main -->
+<div class="max-w-2xl mx-auto px-4 py-10">
+
+  <!-- Header -->
+  <div class="text-center mb-10">
+    <div class="w-14 h-14 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+      <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+      </svg>
+    </div>
+    <h1 class="text-3xl font-bold mb-2">Tra c&#7913;u &#273;&#417;n h&#224;ng</h1>
+    <p class="text-gray-400">Nh&#7853;p email ho&#7863;c m&#227; &#273;&#417;n h&#224;ng &#273;&#7875; xem tr&#7841;ng th&#225;i thanh to&#225;n</p>
+  </div>
+
+  <!-- Search form -->
+  <div class="bg-dark-700 border border-white/10 rounded-2xl p-6 mb-6">
+    <div class="space-y-4">
+      <!-- Tabs -->
+      <div class="flex gap-2 p-1 bg-dark-900 rounded-xl">
+        <button id="tabEmail" onclick="switchTab('email')" class="flex-1 py-2 rounded-lg text-sm font-medium bg-primary text-white transition">
+          &#128231; T&#236;m theo Email
+        </button>
+        <button id="tabCode" onclick="switchTab('code')" class="flex-1 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition">
+          &#128196; T&#236;m theo M&#227; &#273;&#417;n
+        </button>
+      </div>
+
+      <!-- Email input -->
+      <div id="inputEmail">
+        <label class="text-sm text-gray-400 block mb-1.5">&#272;&#7883;a ch&#7881; email</label>
+        <input id="emailInput" type="email" placeholder="email@example.com"
+          class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition"
+          onkeydown="if(event.key==='Enter')doLookup()">
+      </div>
+
+      <!-- Code input -->
+      <div id="inputCode" class="hidden">
+        <label class="text-sm text-gray-400 block mb-1.5">M&#227; &#273;&#417;n h&#224;ng</label>
+        <input id="codeInput" type="text" placeholder="GPTxxxxxx"
+          class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition uppercase"
+          onkeydown="if(event.key==='Enter')doLookup()" oninput="this.value=this.value.toUpperCase()">
+        <p class="text-xs text-gray-500 mt-1.5">M&#227; &#273;&#417;n c&#243; d&#7841;ng GPT + 6 k&#253; t&#7921; (v&#237; d&#7909;: GPT1A2B3C)</p>
+      </div>
+
+      <p id="lookupErr" class="text-red-400 text-sm hidden"></p>
+
+      <button onclick="doLookup()" id="btnLookup"
+        class="w-full py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+        Tra c&#7913;u
+      </button>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="results" class="hidden space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 class="font-semibold text-lg">K&#7871;t qu&#7843; tra c&#7913;u</h2>
+      <span id="resultCount" class="text-sm text-gray-400"></span>
+    </div>
+    <div id="orderList" class="space-y-4"></div>
+  </div>
+
+  <!-- Empty state -->
+  <div id="emptyState" class="hidden text-center py-12">
+    <div class="text-5xl mb-4">&#128269;</div>
+    <p class="text-gray-400 font-medium mb-2">Kh&#244;ng t&#236;m th&#7845;y &#273;&#417;n h&#224;ng</p>
+    <p class="text-gray-600 text-sm">Ki&#7875;m tra l&#7841;i email ho&#7863;c m&#227; &#273;&#417;n h&#224;ng c&#7911;a b&#7841;n</p>
+    <a href="/checkout" class="inline-block mt-4 px-5 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mua API Key ngay</a>
+  </div>
+
+</div>
+
+<script>
+const BASE = window.location.origin;
+let activeTab = 'email';
+
+function switchTab(tab) {
+  activeTab = tab;
+  const isEmail = tab === 'email';
+  document.getElementById('inputEmail').classList.toggle('hidden', !isEmail);
+  document.getElementById('inputCode').classList.toggle('hidden', isEmail);
+  document.getElementById('tabEmail').className = isEmail
+    ? 'flex-1 py-2 rounded-lg text-sm font-medium bg-primary text-white transition'
+    : 'flex-1 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition';
+  document.getElementById('tabCode').className = !isEmail
+    ? 'flex-1 py-2 rounded-lg text-sm font-medium bg-primary text-white transition'
+    : 'flex-1 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white transition';
+  document.getElementById('lookupErr').classList.add('hidden');
+  document.getElementById('results').classList.add('hidden');
+  document.getElementById('emptyState').classList.add('hidden');
+}
+
+async function doLookup() {
+  const err = document.getElementById('lookupErr');
+  err.classList.add('hidden');
+  document.getElementById('results').classList.add('hidden');
+  document.getElementById('emptyState').classList.add('hidden');
+
+  let query = '';
+  let param = '';
+  if (activeTab === 'email') {
+    query = document.getElementById('emailInput').value.trim();
+    if (!query || !query.includes('@')) {
+      err.textContent = 'Vui l\u00f2ng nh\u1eadp email h\u1ee3p l\u1ec7';
+      err.classList.remove('hidden');
+      return;
+    }
+    param = 'email=' + encodeURIComponent(query);
+  } else {
+    query = document.getElementById('codeInput').value.trim().toUpperCase();
+    if (!query || !/^GPT[A-Z0-9]{6}$/i.test(query)) {
+      err.textContent = 'M\u00e3 \u0111\u01a1n kh\u00f4ng h\u1ee3p l\u1ec7 (d\u1ea1ng GPTxxxxxx)';
+      err.classList.remove('hidden');
+      return;
+    }
+    param = 'code=' + encodeURIComponent(query);
+  }
+
+  const btn = document.getElementById('btnLookup');
+  btn.disabled = true;
+  btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg> \u0110ang tra c\u1ee9u...';
+
+  try {
+    const r = await fetch(`${BASE}/api/orders/lookup?${param}`);
+    const data = await r.json();
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Tra c\u1ee9u';
+
+    const orderArr = data.orders || [];
+    if (!orderArr.length) {
+      document.getElementById('emptyState').classList.remove('hidden');
+      return;
+    }
+
+    document.getElementById('resultCount').textContent = orderArr.length + ' \u0111\u01a1n h\u00e0ng';
+    document.getElementById('orderList').innerHTML = orderArr.map(renderOrder).join('');
+    document.getElementById('results').classList.remove('hidden');
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg> Tra c\u1ee9u';
+    err.textContent = 'L\u1ed7i k\u1ebft n\u1ed1i. Vui l\u00f2ng th\u1eed l\u1ea1i.';
+    err.classList.remove('hidden');
+  }
+}
+
+function statusLabel(status) {
+  if (status === 'paid')      return '<span class="px-2.5 py-1 rounded-full text-xs font-semibold border status-paid">&#10003; \u0110\u00e3 thanh to\u00e1n</span>';
+  if (status === 'cancelled') return '<span class="px-2.5 py-1 rounded-full text-xs font-semibold border status-cancelled">&#10007; \u0110\u00e3 hu\u1ef7</span>';
+  return '<span class="px-2.5 py-1 rounded-full text-xs font-semibold border status-pending">&#9679; Ch\u1edd thanh to\u00e1n</span>';
+}
+
+function fmtDate(str) {
+  if (!str) return '\u2014';
+  try { return new Date(str).toLocaleString('vi-VN'); } catch(e) { return str; }
+}
+
+function maskKey(key) {
+  if (!key) return '\u2014';
+  return key.slice(0, 10) + '...' + key.slice(-4);
+}
+
+function renderOrder(o) {
+  const isPaid = o.status === 'paid';
+  const isCancelled = o.status === 'cancelled';
+  return `
+    <div class="bg-dark-700 border ${isPaid ? 'border-green-500/20' : isCancelled ? 'border-red-500/10' : 'border-white/10'} rounded-2xl p-5 space-y-4">
+      <!-- Header -->
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono font-bold text-sm text-primary">${o.order_code || '\u2014'}</span>
+            ${statusLabel(o.status)}
+          </div>
+          <p class="text-xs text-gray-500 mt-1">T\u1ea1o l\u00fac: ${fmtDate(o.created_at)}</p>
+        </div>
+        <div class="text-right shrink-0">
+          <p class="text-xl font-black">${Number(o.amount || 0).toLocaleString('vi-VN')}<span class="text-sm font-normal text-gray-400 ml-1">\u0111</span></p>
+          <p class="text-xs text-gray-500">${o.package_id || '\u2014'}</p>
+        </div>
+      </div>
+
+      <!-- Details -->
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div class="bg-dark-900 rounded-xl px-3 py-2.5">
+          <p class="text-xs text-gray-500 mb-0.5">Kh\u00e1ch h\u00e0ng</p>
+          <p class="font-medium truncate">${o.customer_name || '\u2014'}</p>
+        </div>
+        <div class="bg-dark-900 rounded-xl px-3 py-2.5">
+          <p class="text-xs text-gray-500 mb-0.5">Credit</p>
+          <p class="font-medium">${Number(o.credit || 0).toLocaleString()}</p>
+        </div>
+      </div>
+
+      ${isPaid ? `
+      <!-- Paid info -->
+      <div class="bg-green-500/5 border border-green-500/20 rounded-xl p-4 space-y-3">
+        <p class="text-xs text-green-400 font-semibold uppercase tracking-wider">&#10003; Thanh to\u00e1n th\u00e0nh c\u00f4ng</p>
+        <div class="flex items-center justify-between">
+          <span class="text-xs text-gray-400">Ng\u00e0y thanh to\u00e1n</span>
+          <span class="text-xs font-medium">${fmtDate(o.paid_at)}</span>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-xs text-gray-400 shrink-0">API Key</span>
+          <div class="flex items-center gap-2">
+            <code class="text-xs font-mono text-primary bg-dark-900 px-2 py-1 rounded">${maskKey(o.api_key)}</code>
+            <a href="/portal" class="text-xs text-gray-400 hover:text-white px-2 py-1 bg-dark-700 rounded transition">Xem Portal</a>
+          </div>
+        </div>
+      </div>
+      ` : ''}
+
+      ${o.status === 'pending' ? `
+      <!-- Pending info -->
+      <div class="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
+        <p class="text-xs text-yellow-400 font-semibold mb-2">&#9679; \u0110ang ch\u1edd thanh to\u00e1n</p>
+        <p class="text-xs text-gray-400">Chuy\u1ec3n kho\u1ea3n v\u1edbi n\u1ed9i dung: <strong class="text-yellow-300 font-mono">${o.order_code}</strong></p>
+        <a href="/checkout" class="inline-block mt-3 px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">Ti\u1ebfp t\u1ee5c thanh to\u00e1n</a>
+      </div>
+      ` : ''}
+    </div>`;
+}
+
+// Auto-fill from URL params
+window.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const email = params.get('email');
+  const code  = params.get('code');
+  if (code) {
+    switchTab('code');
+    document.getElementById('codeInput').value = code.toUpperCase();
+    doLookup();
+  } else if (email) {
+    document.getElementById('emailInput').value = email;
+    doLookup();
+  }
+});
+</script>
+</body>
+</html>

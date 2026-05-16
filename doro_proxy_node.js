@@ -1702,6 +1702,10 @@ app.get("/portal", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "portal.html"));
 });
 
+app.get("/lookup", (_req, res) => {
+  return res.sendFile(path.join(ROOT_DIR, "lookup.html"));
+});
+
 app.get("/admin", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "admin.html"));
 });
@@ -1710,12 +1714,33 @@ app.get("/checkout", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "checkout.html"));
 });
 
+// Rate limit tạo đơn: max 5 đơn/IP/giờ
+const orderRateLimit = new Map();
+function checkOrderRateLimit(ip) {
+  const now = Date.now();
+  const key = ip;
+  const entry = orderRateLimit.get(key) || { count: 0, resetAt: now + 3600000 };
+  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 3600000; }
+  if (entry.count >= 5) return false;
+  entry.count++;
+  orderRateLimit.set(key, entry);
+  // Cleanup cũ
+  if (orderRateLimit.size > 1000) {
+    for (const [k, v] of orderRateLimit) { if (now > v.resetAt) orderRateLimit.delete(k); }
+  }
+  return true;
+}
+
 // ── Orders API (public) ───────────────────────────────────────────────────────
 app.get("/api/orders/packages", (_req, res) => {
   res.json({ packages: orders.listPackages() });
 });
 
 app.post("/api/orders/create", async (req, res) => {
+  const ip = clientIp(req);
+  if (!checkOrderRateLimit(ip)) {
+    return res.status(429).json({ detail: "Qu&#225; nhi&#7873;u y&#234;u c&#7847;u. Vui l&#242;ng th&#7917; l&#7841;i sau 1 gi&#7901;." });
+  }
   const { packageId, customerName, customerEmail } = req.body || {};
   if (!packageId || !customerEmail) return res.status(400).json({ detail: "Thiếu thông tin" });
   try {
@@ -1747,6 +1772,21 @@ app.get("/api/orders/lookup", (req, res) => {
 });
 
 // ── Webhook Sepay / Casso ─────────────────────────────────────────────────────
+async function notifyTelegram(message) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
+    });
+  } catch (err) {
+    addLog(`telegram notify error: ${err.message}`);
+  }
+}
+
 async function processPayment(orderCode, amount, note) {
   const order = orders.getOrderByCode(orderCode);
   if (!order) { addLog(`webhook: order not found code=${orderCode}`); return false; }
@@ -1757,6 +1797,7 @@ async function processPayment(orderCode, amount, note) {
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
+  notifyTelegram(`&#x2705; <b>&#272;&#417;n h&#224;ng m&#7899;i thanh to&#225;n</b>\n&#x1F4E6; G&#243;i: ${order.package_id}\n&#x1F4B0; ${Number(order.amount).toLocaleString("vi-VN")}&#273;\n&#x1F464; ${order.customer_name}\n&#x1F4E7; ${order.customer_email}\n&#x1F511; ${keyRow.key.slice(0,16)}...`);
 
   // Gửi email
   const baseUrl = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
@@ -2190,3 +2231,9 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Keys      : ${validProxyKeys.length} virtual keys | ${settings.apiKeys.length} backend keys`);
   printLog("--------------------------------------------------");
 });
+
+// Auto-cancel đơn pending quá 30 phút, chạy mỗi 5 phút
+setInterval(() => {
+  const cancelled = orders.cancelExpiredOrders();
+  if (cancelled > 0) addLog(`auto-cancelled ${cancelled} expired pending orders`);
+}, 5 * 60 * 1000);

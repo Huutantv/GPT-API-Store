@@ -152,6 +152,18 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
         <span class="px-2 py-0.5 bg-dark-600 text-gray-400 text-xs rounded-full">${p.rpm_limit} RPM</span>
       </div>
     </div>`).join("");
+
+  // Auto select từ URL param ?pkg=starter
+  const urlPkg = new URLSearchParams(window.location.search).get("pkg");
+  if (urlPkg) {
+    // Tìm package có id = urlPkg và click vào
+    setTimeout(() => {
+      const pkgCards = document.querySelectorAll(".pkg-card");
+      pkgCards.forEach(card => {
+        if (card.dataset.id === urlPkg) card.click();
+      });
+    }, 300);
+  }
 });
 
 function selectPkg(pkg) {
