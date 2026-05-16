@@ -194,11 +194,27 @@ function renderBalance(data) {
   document.getElementById("creditBalance").textContent = Number(data.credit).toLocaleString();
   document.getElementById("rpmLimit").textContent = data.rpm_limit;
   document.getElementById("keyStatus").innerHTML = data.active
-    ? '<span class="text-green-400">Ho&#7841;t &#273;&#7897;ng</span>'
-    : '<span class="text-red-400">B&#7883; kh&#243;a</span>';
-  document.getElementById("expiresAt").textContent = data.expires_at
-    ? new Date(data.expires_at).toLocaleDateString("vi-VN")
-    : "Kh&#244;ng gi&#7899;i h&#7841;n";
+    ? '<span class="text-green-400">Ho\u1ea1t \u0111\u1ed9ng</span>'
+    : '<span class="text-red-400">B\u1ecb kh\u00f3a</span>';
+
+  // Hết hạn — hiển thị ngày giờ cụ thể + còn bao nhiêu ngày
+  const expiresEl = document.getElementById("expiresAt");
+  if (!data.expires_at) {
+    expiresEl.innerHTML = '<span class="text-gray-400">Kh\u00f4ng gi\u1edbi h\u1ea1n</span>';
+  } else {
+    const exp = new Date(data.expires_at);
+    const now = new Date();
+    const diffDays = Math.ceil((exp - now) / 86400000);
+    const dateStr = exp.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    if (diffDays < 0) {
+      expiresEl.innerHTML = `<span class="text-red-400">\u0110\u00e3 h\u1ebft h\u1ea1n</span><br><span class="text-xs text-gray-500">${dateStr}</span>`;
+    } else if (diffDays <= 3) {
+      expiresEl.innerHTML = `<span class="text-yellow-400">C\u00f2n ${diffDays} ng\u00e0y</span><br><span class="text-xs text-gray-500">${dateStr}</span>`;
+    } else {
+      expiresEl.innerHTML = `<span class="text-gray-300">C\u00f2n ${diffDays} ng\u00e0y</span><br><span class="text-xs text-gray-500">${dateStr}</span>`;
+    }
+  }
+
   document.getElementById("keyMasked").textContent = data.key_masked;
   document.getElementById("keyDisplay").textContent = data.key_masked;
   document.getElementById("baseUrlDisplay").textContent = `${BASE}/v1`;
