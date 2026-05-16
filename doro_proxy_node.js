@@ -1815,16 +1815,25 @@ async function processPayment(orderCode, amount, note) {
 app.post("/webhook/sepay", async (req, res) => {
   const secret = process.env.SEPAY_WEBHOOK_SECRET || "";
   if (secret) {
-    const sig = req.headers["x-sepay-signature"] || req.headers["authorization"] || "";
-    if (!sig.includes(secret)) return res.status(401).json({ success: false });
+    // Sepay gửi header: Authorization: Apikey YOUR_SECRET
+    const auth = req.headers["authorization"] || "";
+    const token = auth.startsWith("Apikey ") ? auth.slice(7).trim() : auth.trim();
+    if (token !== secret) {
+      addLog(`webhook/sepay: invalid auth token`);
+      return res.status(401).json({ success: false, message: "Unauthorized" });
+    }
   }
   const body = req.body || {};
-  // Sepay gửi: transferAmount, content, id
+  addLog(`webhook/sepay received: ${JSON.stringify(body).slice(0, 200)}`);
+  // Sepay gửi: transferAmount, content, id, bankAccountNo, ...
   const amount = Number(body.transferAmount || body.amount || 0);
   const content = String(body.content || body.description || "");
   // Tìm mã đơn hàng trong nội dung (dạng GPTxxxxxx)
   const match = content.match(/GPT[A-Z0-9]{6}/i);
-  if (!match) return res.json({ success: false, message: "No order code found" });
+  if (!match) {
+    addLog(`webhook/sepay: no order code in content="${content}"`);
+    return res.json({ success: false, message: "No order code found in content" });
+  }
   const ok = await processPayment(match[0].toUpperCase(), amount, content);
   res.json({ success: ok });
 });
