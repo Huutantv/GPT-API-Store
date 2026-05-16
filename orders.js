@@ -43,15 +43,21 @@ db.exec(`
 
 // ── Seed default packages ─────────────────────────────────────────────────────
 const seedPkgs = [
-  { id: "starter", name: "Starter", price: 49000,  credit: 500,   rpm_limit: 10, description: "500 credit (~500K token), 1 API key, 10 RPM" },
-  { id: "pro",     name: "Pro",     price: 199000, credit: 10000, rpm_limit: 30, description: "10.000 credit (~10M token), 3 API key, 30 RPM" },
-  { id: "ultra",   name: "Ultra",   price: 299000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM" },
+  { id: "starter", name: "Starter", price: 49000,  credit: 500,   rpm_limit: 10, description: "500 credit (~500K token), 1 API key, 10 RPM", active: 0 },
+  { id: "pro",     name: "Pro",     price: 199000, credit: 10000, rpm_limit: 30, description: "10.000 credit (~10M token), 3 API key, 30 RPM", active: 0 },
+  { id: "ultra",   name: "Ultra",   price: 30000,  credit: 10000, rpm_limit: 60, description: "10.000 credit (~10M token), 5 API key, 60 RPM", active: 1 },
 ];
 const insertPkg = db.prepare(`
-  INSERT OR IGNORE INTO packages (id, name, price, credit, rpm_limit, description)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT OR IGNORE INTO packages (id, name, price, credit, rpm_limit, description, active)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
 `);
-for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_limit, p.description);
+for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_limit, p.description, p.active);
+
+// Cập nhật packages đã tồn tại
+const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description=?, active=? WHERE id=?");
+updatePkg.run(49000,  500,   "500 credit (~500K token), 1 API key, 10 RPM",   0, "starter");
+updatePkg.run(199000, 10000, "10.000 credit (~10M token), 3 API key, 30 RPM", 0, "pro");
+updatePkg.run(30000,  10000, "10.000 credit (~10M token), 5 API key, 60 RPM", 1, "ultra");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
