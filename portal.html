@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>GPT API - Qu&#7843;n l&#253; t&#224;i kho&#7843;n</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
@@ -38,7 +38,7 @@ body{font-family:'Inter',sans-serif}
       <p class="text-gray-400 text-sm">Nh&#7853;p API key c&#7911;a b&#7841;n &#273;&#7875; xem s&#7889; d&#432; v&#224; l&#7883;ch s&#7917;</p>
     </div>
     <div class="space-y-4">
-      <input id="apiKeyInput" type="password" placeholder="sk-..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" onkeydown="if(event.key==='Enter')login()">
+      <input id="apiKeyInput" type="password" placeholder="sk-..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" style="font-size:16px" onkeydown="if(event.key==='Enter')login()">
       <button onclick="login()" class="w-full py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition">Xem t&#224;i kho&#7843;n</button>
       <p id="loginErr" class="text-red-400 text-xs text-center hidden"></p>
     </div>
@@ -49,11 +49,11 @@ body{font-family:'Inter',sans-serif}
 </div>
 
 <!-- Main content -->
-<div id="mainContent" class="hidden max-w-4xl mx-auto px-6 py-8 space-y-6">
+<div id="mainContent" class="hidden max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
 
   <!-- Credit balance card -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div class="md:col-span-1 bg-gradient-to-br from-primary/20 to-purple-900/20 border border-primary/30 rounded-2xl p-6">
+    <div class="md:col-span-1 bg-gradient-to-br from-primary/20 to-purple-900/20 border border-primary/30 rounded-2xl p-5 md:p-6">
       <p class="text-sm text-gray-400 mb-1">S&#7889; d&#432; credit</p>
       <div class="text-4xl font-black text-white" id="creditBalance">—</div>
       <p class="text-xs text-gray-500 mt-2">1 credit = 1 request</p>
@@ -62,21 +62,21 @@ body{font-family:'Inter',sans-serif}
         <a href="/lookup" class="block text-center py-2 mt-2 bg-dark-600 hover:bg-dark-900 border border-white/10 rounded-lg text-sm transition">Tra c&#7913;u &#273;&#417;n h&#224;ng</a>
       </div>
     </div>
-    <div class="md:col-span-2 grid grid-cols-2 gap-4">
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+    <div class="md:col-span-2 grid grid-cols-2 gap-3 md:gap-4">
+      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
         <p class="text-xs text-gray-500 mb-1">RPM Limit</p>
         <div class="text-2xl font-bold" id="rpmLimit">—</div>
         <p class="text-xs text-gray-500 mt-1">requests/ph&#250;t</p>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
         <p class="text-xs text-gray-500 mb-1">Tr&#7841;ng th&#225;i</p>
         <div class="text-2xl font-bold" id="keyStatus">—</div>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
         <p class="text-xs text-gray-500 mb-1">H&#7871;t h&#7841;n</p>
         <div class="text-sm font-semibold" id="expiresAt">—</div>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
         <p class="text-xs text-gray-500 mb-1">T&#7893;ng &#273;&#227; d&#249;ng</p>
         <div class="text-2xl font-bold" id="totalSpent">—</div>
         <p class="text-xs text-gray-500 mt-1">credit</p>
@@ -85,21 +85,21 @@ body{font-family:'Inter',sans-serif}
   </div>
 
   <!-- API Key info -->
-  <div class="bg-dark-700 border border-white/10 rounded-2xl p-6">
+  <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-6">
     <h2 class="font-semibold mb-4">Th&#244;ng tin API Key</h2>
     <div class="space-y-3">
-      <div class="flex items-center justify-between">
-        <span class="text-sm text-gray-400">API Key</span>
-        <div class="flex items-center gap-2">
-          <code class="text-sm font-mono bg-dark-900 px-3 py-1 rounded-lg" id="keyDisplay">—</code>
-          <button onclick="copyKey()" class="text-xs text-gray-500 hover:text-white transition px-2 py-1 bg-dark-600 rounded">Copy</button>
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <span class="text-sm text-gray-400 shrink-0">API Key</span>
+        <div class="flex items-center gap-2 min-w-0">
+          <code class="text-xs sm:text-sm font-mono bg-dark-900 px-3 py-1 rounded-lg truncate max-w-[200px] sm:max-w-none" id="keyDisplay">—</code>
+          <button onclick="copyKey()" class="text-xs text-gray-500 hover:text-white transition px-2 py-1 bg-dark-600 rounded shrink-0">Copy</button>
         </div>
       </div>
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <span class="text-sm text-gray-400">Base URL</span>
-        <code class="text-sm font-mono bg-dark-900 px-3 py-1 rounded-lg text-green-400" id="baseUrlDisplay">—</code>
+        <code class="text-xs sm:text-sm font-mono bg-dark-900 px-3 py-1 rounded-lg text-green-400 break-all" id="baseUrlDisplay">—</code>
       </div>
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <span class="text-sm text-gray-400">Models</span>
         <span class="text-sm text-gray-300">gpt-5.5, gpt-5.5-turbo, gpt-5.4, gpt-4o</span>
       </div>
@@ -107,18 +107,18 @@ body{font-family:'Inter',sans-serif}
   </div>
 
   <!-- Quick setup -->
-  <div class="bg-dark-700 border border-white/10 rounded-2xl p-6">
+  <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-6">
     <h2 class="font-semibold mb-4">C&#224;i &#273;&#7863;t nhanh</h2>
     <div class="space-y-3">
       <div>
         <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Python</p>
-        <pre class="bg-dark-900 rounded-xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="pythonCode">from openai import OpenAI
+        <pre class="bg-dark-900 rounded-xl p-3 md:p-4 text-xs text-gray-300 overflow-x-auto"><code id="pythonCode">from openai import OpenAI
 client = OpenAI(api_key="sk-...", base_url="https://your-domain.com/v1")
 response = client.chat.completions.create(model="gpt-5.5", messages=[{"role":"user","content":"Hello"}])</code></pre>
       </div>
       <div>
         <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Cline / Roo Code</p>
-        <pre class="bg-dark-900 rounded-xl p-4 text-xs text-gray-300 overflow-x-auto"><code>Provider : OpenAI Compatible
+        <pre class="bg-dark-900 rounded-xl p-3 md:p-4 text-xs text-gray-300 overflow-x-auto"><code>Provider : OpenAI Compatible
 Base URL : https://your-domain.com/v1
 API Key  : <span id="clineKey">sk-...</span>
 Model    : gpt-5.5</code></pre>
@@ -127,13 +127,13 @@ Model    : gpt-5.5</code></pre>
   </div>
 
   <!-- History -->
-  <div class="bg-dark-700 border border-white/10 rounded-2xl p-6">
+  <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-6">
     <div class="flex items-center justify-between mb-4">
       <h2 class="font-semibold">L&#7883;ch s&#7917; s&#7917; d&#7909;ng</h2>
       <button onclick="loadHistory()" class="text-xs text-gray-400 hover:text-white transition">L&#224;m m&#7899;i</button>
     </div>
-    <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+    <div class="overflow-x-auto -mx-4 md:mx-0">
+      <table class="w-full text-xs md:text-sm min-w-[480px]">
         <thead>
           <tr class="text-xs text-gray-500 border-b border-white/5">
             <th class="text-left pb-3">Th&#7901;i gian</th>

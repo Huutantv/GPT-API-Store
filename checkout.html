@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>GPT API - Thanh toán</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
@@ -25,12 +25,12 @@ body{font-family:'Inter',sans-serif}
 
 <div class="max-w-2xl mx-auto px-4 py-10">
   <!-- Step indicator -->
-  <div class="flex items-center gap-2 mb-8 text-sm">
-    <div id="step1ind" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary bg-primary/10 text-primary font-medium"><span class="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>Chọn gói</div>
+  <div class="flex items-center gap-1 mb-8 text-xs md:text-sm">
+    <div id="step1ind" class="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full border border-primary bg-primary/10 text-primary font-medium"><span class="w-5 h-5 bg-primary text-white rounded-full flex items-center justify-center text-xs font-bold">1</span><span class="hidden sm:inline">Chọn gói</span></div>
     <div class="flex-1 h-px bg-white/10"></div>
-    <div id="step2ind" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium"><span class="w-5 h-5 bg-dark-600 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">2</span>Thông tin</div>
+    <div id="step2ind" class="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium"><span class="w-5 h-5 bg-dark-600 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">2</span><span class="hidden sm:inline">Thông tin</span></div>
     <div class="flex-1 h-px bg-white/10"></div>
-    <div id="step3ind" class="flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium"><span class="w-5 h-5 bg-dark-600 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">3</span>Thanh toán</div>
+    <div id="step3ind" class="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium"><span class="w-5 h-5 bg-dark-600 text-gray-500 rounded-full flex items-center justify-center text-xs font-bold">3</span><span class="hidden sm:inline">Thanh toán</span></div>
   </div>
 
   <!-- Step 1: Chọn gói -->
@@ -51,16 +51,16 @@ body{font-family:'Inter',sans-serif}
     </div>
     <div>
       <label class="text-sm text-gray-400 block mb-1.5">Họ tên <span class="text-red-400">*</span></label>
-      <input id="custName" placeholder="Nguyễn Văn A" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
+      <input id="custName" placeholder="Nguyễn Văn A" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-base focus:outline-none focus:border-primary transition" style="font-size:16px">
     </div>
     <div>
       <label class="text-sm text-gray-400 block mb-1.5">Email nhận API key <span class="text-red-400">*</span></label>
-      <input id="custEmail" type="email" placeholder="email@example.com" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
+      <input id="custEmail" type="email" placeholder="email@example.com" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-base focus:outline-none focus:border-primary transition" style="font-size:16px">
       <p class="text-xs text-gray-500 mt-1.5">API key sẽ được gửi tự động về email này sau khi thanh toán</p>
     </div>
     <div>
       <label class="text-sm text-gray-400 block mb-1.5">Số điện thoại</label>
-      <input id="custPhone" type="tel" placeholder="0912345678" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
+      <input id="custPhone" type="tel" placeholder="0912345678" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-base focus:outline-none focus:border-primary transition" style="font-size:16px">
     </div>
     <p id="step2Err" class="text-red-400 text-sm hidden"></p>
     <div class="flex gap-3">
@@ -74,28 +74,28 @@ body{font-family:'Inter',sans-serif}
     <h1 class="text-2xl font-bold mb-2">Quét QR để thanh toán</h1>
     <p class="text-gray-400 text-sm mb-6">Chuyển khoản đúng số tiền và <strong class="text-white">nội dung chuyển khoản</strong> bên dưới. Hệ thống tự động xác nhận trong vòng 1–2 phút.</p>
     <div class="bg-dark-700 border border-white/10 rounded-2xl p-6 text-center space-y-4">
-      <img id="qrImg" src="" alt="QR Code" class="w-52 h-52 mx-auto rounded-xl bg-white p-2">
+      <img id="qrImg" src="" alt="QR Code" class="w-40 h-40 sm:w-48 sm:h-48 md:w-52 md:h-52 mx-auto rounded-xl bg-white p-2 max-w-[200px]">
       <div class="space-y-3 text-left">
-        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-dark-900 rounded-xl px-4 py-3 gap-1">
           <span class="text-sm text-gray-400">Ngân hàng</span>
           <span class="font-semibold text-sm" id="payBank">—</span>
         </div>
-        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-dark-900 rounded-xl px-4 py-3 gap-1">
           <span class="text-sm text-gray-400">Số tài khoản</span>
           <div class="flex items-center gap-2">
             <span class="font-mono font-semibold text-sm" id="payAccount">—</span>
             <button onclick="copyText('payAccount')" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-700 rounded">Copy</button>
           </div>
         </div>
-        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-dark-900 rounded-xl px-4 py-3 gap-1">
           <span class="text-sm text-gray-400">Chủ tài khoản</span>
           <span class="font-semibold text-sm" id="payOwner">—</span>
         </div>
-        <div class="flex justify-between items-center bg-dark-900 rounded-xl px-4 py-3">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-dark-900 rounded-xl px-4 py-3 gap-1">
           <span class="text-sm text-gray-400">Số tiền</span>
           <span class="font-black text-lg text-primary" id="payAmount">—</span>
         </div>
-        <div class="flex justify-between items-center bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-4 py-3 gap-1">
           <span class="text-sm text-yellow-300">Nội dung CK <span class="text-red-400">*</span></span>
           <div class="flex items-center gap-2">
             <span class="font-mono font-bold text-yellow-300" id="payContent">—</span>
@@ -250,9 +250,9 @@ function startPolling() {
 }
 
 function setStepInd(step) {
-  const active = "flex items-center gap-2 px-3 py-1.5 rounded-full border border-primary bg-primary/10 text-primary font-medium";
-  const done = "flex items-center gap-2 px-3 py-1.5 rounded-full border border-green-500/50 bg-green-500/10 text-green-400 font-medium";
-  const idle = "flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium";
+  const active = "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full border border-primary bg-primary/10 text-primary font-medium";
+  const done = "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full border border-green-500/50 bg-green-500/10 text-green-400 font-medium";
+  const idle = "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1.5 rounded-full border border-white/10 text-gray-500 font-medium";
   document.getElementById("step1ind").className = step > 1 ? done : step === 1 ? active : idle;
   document.getElementById("step2ind").className = step > 2 ? done : step === 2 ? active : idle;
   document.getElementById("step3ind").className = step === 3 ? active : idle;

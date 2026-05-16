@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>GPT API - Admin</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
@@ -10,6 +10,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 body{font-family:'Inter',sans-serif}
 .tab-active{background:rgba(99,102,241,0.15);color:#6366f1;font-weight:600}
+#mobileSidebarOverlay{display:none}
+#mobileSidebarOverlay.open{display:flex}
 </style>
 </head>
 <body class="bg-dark-900 text-white min-h-screen antialiased">
@@ -25,17 +27,57 @@ body{font-family:'Inter',sans-serif}
       <p class="text-gray-400 text-sm">Nh&#7853;p admin key &#273;&#7875; ti&#7871;p t&#7909;c</p>
     </div>
     <div class="space-y-4">
-      <input id="adminKeyInput" type="password" placeholder="Admin key..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" onkeydown="if(event.key==='Enter')adminLogin()">
+      <input id="adminKeyInput" type="password" placeholder="Admin key..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" style="font-size:16px" onkeydown="if(event.key==='Enter')adminLogin()">
       <button onclick="adminLogin()" class="w-full py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition">&#272;&#259;ng nh&#7853;p</button>
       <p id="loginErr" class="text-red-400 text-xs text-center hidden"></p>
     </div>
   </div>
 </div>
 
+<!-- Mobile sidebar overlay -->
+<div id="mobileSidebarOverlay" class="fixed inset-0 z-40 bg-black/60 items-start justify-start" onclick="closeMobileSidebar()">
+  <div class="w-64 bg-dark-800 border-r border-white/5 flex flex-col h-full" onclick="event.stopPropagation()">
+    <div class="p-5 border-b border-white/5 flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        </div>
+        <span class="font-bold text-sm">GPT Admin</span>
+      </div>
+      <button onclick="closeMobileSidebar()" class="text-gray-500 hover:text-white text-xl">✕</button>
+    </div>
+    <nav class="flex-1 p-3 space-y-1">
+      <button onclick="showTab('overview');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="overview">&#x1F4CA; Tổng quan</button>
+      <button onclick="showTab('keys');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keys">&#x1F511; Quản lý Keys</button>
+      <button onclick="showTab('topup');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="topup">&#x1F4B0; Nạp Credit</button>
+      <button onclick="showTab('history');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; Lịch sử</button>
+      <button onclick="showTab('monitor');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
+      <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; Đơn hàng</button>
+      <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Khách hàng</a>
+    </nav>
+    <div class="p-3 border-t border-white/5">
+      <button onclick="adminLogout()" class="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-red-400 transition">&#x1F6AA; Đăng xuất</button>
+    </div>
+  </div>
+</div>
+
 <!-- Main layout -->
-<div id="mainContent" class="hidden flex h-screen overflow-hidden">
-  <!-- Sidebar -->
-  <div class="w-56 bg-dark-800 border-r border-white/5 flex flex-col shrink-0">
+<div id="mainContent" class="hidden flex flex-col md:flex-row h-screen overflow-hidden">
+  <!-- Mobile top bar -->
+  <div class="md:hidden bg-dark-800 border-b border-white/5 px-4 py-3 flex items-center justify-between shrink-0">
+    <button onclick="openMobileSidebar()" class="p-2 rounded-lg hover:bg-white/5 transition">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
+    <div class="flex items-center gap-2">
+      <div class="w-6 h-6 bg-primary rounded flex items-center justify-center">
+        <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      </div>
+      <span class="font-bold text-sm">GPT Admin</span>
+    </div>
+    <button onclick="adminLogout()" class="text-xs text-gray-500 hover:text-red-400 transition px-2 py-1">Exit</button>
+  </div>
+  <!-- Sidebar (desktop only) -->
+  <div class="hidden md:flex w-56 bg-dark-800 border-r border-white/5 flex-col shrink-0">
     <div class="p-5 border-b border-white/5">
       <div class="flex items-center gap-2">
         <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
@@ -59,7 +101,7 @@ body{font-family:'Inter',sans-serif}
   </div>
   <!-- Content -->
   <div class="flex-1 overflow-y-auto">
-    <div class="p-6 space-y-6">
+    <div class="p-4 md:p-6 space-y-6">
 
 <!-- Tab: Overview -->
 <div id="tab-overview" class="tab-content space-y-6">
@@ -88,7 +130,7 @@ body{font-family:'Inter',sans-serif}
   <!-- Create form -->
   <div id="createKeyForm" class="hidden bg-dark-700 border border-white/10 rounded-xl p-6 space-y-4">
     <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
-    <div class="grid md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
       <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguy&#7877;n V&#259;n A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">Credit ban &#273;&#7847;u</label><input id="newCredit" type="number" placeholder="500" value="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="10" value="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
@@ -112,7 +154,8 @@ body{font-family:'Inter',sans-serif}
   </div>
   <!-- Keys table -->
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[700px]">
       <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
         <th class="text-left px-4 py-3">Key</th>
         <th class="text-left px-4 py-3">Nh&#227;n</th>
@@ -125,22 +168,23 @@ body{font-family:'Inter',sans-serif}
       </tr></thead>
       <tbody id="keysTable"><tr><td colspan="8" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
+    </div>
   </div>
 </div>
 
 <!-- Tab: Topup -->
 <div id="tab-topup" class="tab-content hidden space-y-6">
   <h2 class="text-xl font-bold">N&#7841;p Credit</h2>
-  <div class="bg-dark-700 border border-white/10 rounded-xl p-6 max-w-lg space-y-4">
-    <div><label class="text-xs text-gray-400 block mb-1">API Key</label><input id="topupKey" placeholder="sk-..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"></div>
-    <div><label class="text-xs text-gray-400 block mb-1">S&#7889; credit n&#7841;p</label><input id="topupAmount" type="number" placeholder="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
-    <div><label class="text-xs text-gray-400 block mb-1">Ghi ch&#250; (l&#253; do)</label><input id="topupReason" placeholder="Thanh to&#225;n g&#243;i Pro - Momo" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 w-full md:max-w-lg space-y-4">
+    <div><label class="text-xs text-gray-400 block mb-1">API Key</label><input id="topupKey" placeholder="sk-..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+    <div><label class="text-xs text-gray-400 block mb-1">S&#7889; credit n&#7841;p</label><input id="topupAmount" type="number" placeholder="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px"></div>
+    <div><label class="text-xs text-gray-400 block mb-1">Ghi ch&#250; (l&#253; do)</label><input id="topupReason" placeholder="Thanh to&#225;n g&#243;i Pro - Momo" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px"></div>
     <div class="flex gap-3 items-center">
       <button onclick="doTopup()" class="px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">N&#7841;p credit</button>
       <span id="topupMsg" class="text-sm text-gray-400"></span>
     </div>
   </div>
-  <div class="bg-dark-700 border border-white/10 rounded-xl p-6 max-w-lg">
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 w-full md:max-w-lg">
     <h3 class="font-semibold text-sm mb-4">Quy &#273;&#7893;i nhanh</h3>
     <div class="space-y-2 text-sm text-gray-300">
       <div class="flex justify-between"><span>G&#243;i Starter (49K)</span><span class="text-primary font-mono">500 credit</span></div>
@@ -160,7 +204,8 @@ body{font-family:'Inter',sans-serif}
     </div>
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[600px]">
       <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
         <th class="text-left px-4 py-3">Th&#7901;i gian</th>
         <th class="text-left px-4 py-3">Key</th>
@@ -172,6 +217,7 @@ body{font-family:'Inter',sans-serif}
       </tr></thead>
       <tbody id="historyTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
+    </div>
   </div>
 </div>
 
@@ -188,7 +234,8 @@ body{font-family:'Inter',sans-serif}
     <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">502 (1m/5m)</p><div class="text-2xl font-bold text-red-400" id="mon502">—</div></div>
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
-    <table class="w-full text-xs">
+    <div class="overflow-x-auto">
+    <table class="w-full text-xs min-w-[600px]">
       <thead><tr class="text-gray-500 border-b border-white/5 bg-dark-800">
         <th class="text-left px-4 py-3">Th&#7901;i gian</th>
         <th class="text-left px-4 py-3">IP</th>
@@ -200,6 +247,7 @@ body{font-family:'Inter',sans-serif}
       </tr></thead>
       <tbody id="monitorTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
+    </div>
   </div>
 </div>
 
@@ -229,7 +277,8 @@ body{font-family:'Inter',sans-serif}
     <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Doanh thu</p><div class="text-2xl font-bold text-primary" id="osRevenue">—</div></div>
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
+    <div class="overflow-x-auto">
+    <table class="w-full text-sm min-w-[640px]">
       <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
         <th class="text-left px-4 py-3">Mã đơn</th>
         <th class="text-left px-4 py-3">Khách hàng</th>
@@ -241,6 +290,7 @@ body{font-family:'Inter',sans-serif}
       </tr></thead>
       <tbody id="ordersTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">Đang tải...</td></tr></tbody>
     </table>
+    </div>
   </div>
 </div>
 </template>
@@ -285,10 +335,21 @@ function adminLogout() {
   location.reload();
 }
 
+function openMobileSidebar() {
+  document.getElementById("mobileSidebarOverlay").classList.add("open");
+}
+
+function closeMobileSidebar() {
+  document.getElementById("mobileSidebarOverlay").classList.remove("open");
+}
+
 function showTab(name) {
   document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
   document.getElementById(`tab-${name}`).classList.remove("hidden");
   document.querySelectorAll(".nav-btn").forEach(btn => {
+    btn.classList.toggle("tab-active", btn.dataset.tab === name);
+  });
+  document.querySelectorAll(".nav-btn-m").forEach(btn => {
     btn.classList.toggle("tab-active", btn.dataset.tab === name);
   });
   if (name === "overview") loadOverview();
