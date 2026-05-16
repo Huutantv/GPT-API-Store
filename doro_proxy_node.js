@@ -1731,6 +1731,10 @@ app.get("/admin", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "admin.html"));
 });
 
+app.get("/customers", (_req, res) => {
+  return res.sendFile(path.join(ROOT_DIR, "customers.html"));
+});
+
 app.get("/checkout", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "checkout.html"));
 });
@@ -1760,12 +1764,12 @@ app.get("/api/orders/packages", (_req, res) => {
 app.post("/api/orders/create", async (req, res) => {
   const ip = clientIp(req);
   if (!checkOrderRateLimit(ip)) {
-    return res.status(429).json({ detail: "Qu&#225; nhi&#7873;u y&#234;u c&#7847;u. Vui l&#242;ng th&#7917; l&#7841;i sau 1 gi&#7901;." });
+    return res.status(429).json({ detail: "Qu\u00e1 nhi\u1ec1u y\u00eau c\u1ea7u. Vui l\u00f2ng th\u1eed l\u1ea1i sau 1 gi\u1edd." });
   }
-  const { packageId, customerName, customerEmail } = req.body || {};
-  if (!packageId || !customerEmail) return res.status(400).json({ detail: "Thiếu thông tin" });
+  const { packageId, customerName, customerEmail, customerPhone } = req.body || {};
+  if (!packageId || !customerEmail) return res.status(400).json({ detail: "Thi\u1ebfu th\u00f4ng tin" });
   try {
-    const order = orders.createOrder({ packageId, customerName, customerEmail });
+    const order = orders.createOrder({ packageId, customerName, customerEmail, customerPhone });
     const bankAccount = process.env.BANK_ACCOUNT || "0000000000";
     const bankCode    = process.env.BANK_CODE    || "MB";
     const bankOwner   = process.env.BANK_OWNER   || "NGUYEN VAN A";
@@ -2232,6 +2236,37 @@ app.get("/api/credit/my-history", (req, res) => {
   if (!row) return res.status(403).json({ detail: "Invalid API key" });
   const limit = Math.min(100, Number(req.query.limit || 50));
   res.json({ history: credit.getHistory(token, limit) });
+});
+
+// ── Customers API ─────────────────────────────────────────────────────────────
+app.get("/api/customers", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  // Group by email, lấy thông tin mới nhất
+  const rows = require("better-sqlite3")(require("path").join(__dirname, "credit.db"))
+    .prepare(`SELECT customer_email, customer_name, customer_phone,
+        COUNT(*) as total_orders,
+        SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as paid_orders,
+        SUM(CASE WHEN status='paid' THEN amount ELSE 0 END) as total_spent,
+        MAX(created_at) as last_order_at,
+        GROUP_CONCAT(CASE WHEN status='paid' THEN api_key END, ',') as api_keys
+      FROM orders
+      GROUP BY customer_email
+      ORDER BY last_order_at DESC`).all();
+  res.json({ customers: rows, total: rows.length });
+});
+
+app.get("/api/customers/:email", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const email = decodeURIComponent(req.params.email);
+  const orderList = orders.listByEmail(email);
+  // Lấy credit keys liên quan
+  const keys = orderList.filter(o => o.api_key).map(o => {
+    const keyRow = credit.getKey(o.api_key);
+    return { ...keyRow, order_code: o.order_code, package_id: o.package_id, paid_at: o.paid_at };
+  }).filter(Boolean);
+  res.json({ email, orders: orderList, keys });
 });
 
 app.use((req, res) => res.status(404).json({ detail: "Not found" }));

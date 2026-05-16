@@ -58,6 +58,10 @@ body{font-family:'Inter',sans-serif}
       <input id="custEmail" type="email" placeholder="email@example.com" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
       <p class="text-xs text-gray-500 mt-1.5">API key sẽ được gửi tự động về email này sau khi thanh toán</p>
     </div>
+    <div>
+      <label class="text-sm text-gray-400 block mb-1.5">Số điện thoại</label>
+      <input id="custPhone" type="tel" placeholder="0912345678" class="w-full px-4 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition">
+    </div>
     <p id="step2Err" class="text-red-400 text-sm hidden"></p>
     <div class="flex gap-3">
       <button onclick="goStep1()" class="px-6 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm font-semibold hover:bg-dark-600 transition">← Quay lại</button>
@@ -196,6 +200,7 @@ function goStep2() {
 async function goStep3() {
   const name = document.getElementById("custName").value.trim();
   const email = document.getElementById("custEmail").value.trim();
+  const phone = document.getElementById("custPhone").value.trim();
   const err = document.getElementById("step2Err");
   if (!name) { err.textContent = "Vui lòng nhập họ tên"; err.classList.remove("hidden"); return; }
   if (!email || !email.includes("@")) { err.textContent = "Email không hợp lệ"; err.classList.remove("hidden"); return; }
@@ -204,7 +209,7 @@ async function goStep3() {
   const r = await fetch(`${BASE}/api/orders/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ packageId: selectedPkg.id, customerName: name, customerEmail: email }),
+    body: JSON.stringify({ packageId: selectedPkg.id, customerName: name, customerEmail: email, customerPhone: phone }),
   });
   const data = await r.json();
   if (!data.ok) { err.textContent = data.detail || "Lỗi tạo đơn hàng"; err.classList.remove("hidden"); return; }

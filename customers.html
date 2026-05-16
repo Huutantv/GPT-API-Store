@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPT API - Khách hàng</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
+<style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');body{font-family:'Inter',sans-serif}</style>
+</head>
+<body class="bg-dark-900 text-white min-h-screen antialiased">
+
+<!-- Login overlay -->
+<div id="loginOverlay" class="fixed inset-0 z-50 bg-dark-900 flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-dark-700 border border-white/10 rounded-2xl p-8">
+    <div class="text-center mb-8">
+      <div class="w-12 h-12 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+      </div>
+      <h1 class="text-2xl font-bold mb-2">Quản lý khách hàng</h1>
+      <p class="text-gray-400 text-sm">Nhập admin key để tiếp tục</p>
+    </div>
+    <div class="space-y-4">
+      <input id="adminKeyInput" type="password" placeholder="Admin key..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" onkeydown="if(event.key==='Enter')doLogin()">
+      <button onclick="doLogin()" class="w-full py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition">Đăng nhập</button>
+      <p id="loginErr" class="text-red-400 text-xs text-center hidden"></p>
+    </div>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div id="detailModal" class="hidden fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-4" onclick="if(event.target===this)closeDetail()">
+  <div class="bg-dark-700 border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+    <div class="flex items-center justify-between p-6 border-b border-white/5">
+      <h2 class="font-bold text-lg" id="detailTitle">Chi tiết khách hàng</h2>
+      <button onclick="closeDetail()" class="text-gray-500 hover:text-white transition text-xl">✕</button>
+    </div>
+    <div id="detailContent" class="p-6 space-y-5"></div>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="mainContent" class="hidden">
+  <!-- Nav -->
+  <nav class="bg-dark-800 border-b border-white/5 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <a href="/admin" class="text-gray-500 hover:text-white transition text-sm">← Admin</a>
+      <span class="text-gray-600">|</span>
+      <span class="font-bold">Khách hàng</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="text-sm text-gray-400">Tổng: <span class="text-white font-bold" id="totalCount">—</span> khách</div>
+      <button onclick="loadCustomers()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Làm mới</button>
+      <button onclick="doLogout()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Đăng xuất</button>
+    </div>
+  </nav>
+
+  <div class="max-w-7xl mx-auto px-6 py-8 space-y-6">
+    <!-- Stats -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Tổng khách</p><div class="text-3xl font-bold" id="statTotal">—</div></div>
+      <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Đã mua</p><div class="text-3xl font-bold text-green-400" id="statPaid">—</div></div>
+      <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Chưa mua</p><div class="text-3xl font-bold text-yellow-400" id="statUnpaid">—</div></div>
+      <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Doanh thu</p><div class="text-2xl font-bold text-primary" id="statRevenue">—</div></div>
+    </div>
+
+    <!-- Search -->
+    <div class="flex gap-3">
+      <input id="searchInput" placeholder="Tìm theo email, tên, SĐT..." class="flex-1 px-4 py-2.5 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" oninput="filterTable()">
+      <select id="filterStatus" onchange="filterTable()" class="px-3 py-2.5 bg-dark-700 border border-white/10 rounded-xl text-sm focus:outline-none">
+        <option value="">Tất cả</option>
+        <option value="paid">Đã mua</option>
+        <option value="unpaid">Chưa mua</option>
+      </select>
+    </div>
+
+    <!-- Table -->
+    <div class="bg-dark-700 border border-white/10 rounded-2xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
+            <th class="text-left px-5 py-3">#</th>
+            <th class="text-left px-5 py-3">Khách hàng</th>
+            <th class="text-left px-5 py-3">SĐT</th>
+            <th class="text-right px-5 py-3">Đơn hàng</th>
+            <th class="text-right px-5 py-3">Đã chi</th>
+            <th class="text-left px-5 py-3">Lần cuối</th>
+            <th class="text-right px-5 py-3">Thao tác</th>
+          </tr>
+        </thead>
+        <tbody id="customerTable">
+          <tr><td colspan="7" class="text-center text-gray-500 py-10">Đang tải...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+let ADMIN_KEY = sessionStorage.getItem("gpt_admin_key") || "";
+let allCustomers = [];
+
+function authHeaders() {
+  return { "Authorization": `Bearer ${ADMIN_KEY}`, "Content-Type": "application/json" };
+}
+
+async function doLogin() {
+  const key = document.getElementById("adminKeyInput").value.trim();
+  if (!key) return;
+  const r = await fetch(`${BASE}/api/credit/stats`, { headers: { "Authorization": `Bearer ${key}` } });
+  if (!r.ok) {
+    const err = document.getElementById("loginErr");
+    err.textContent = "Admin key không hợp lệ";
+    err.classList.remove("hidden");
+    return;
+  }
+  ADMIN_KEY = key;
+  sessionStorage.setItem("gpt_admin_key", key);
+  document.getElementById("loginOverlay").classList.add("hidden");
+  document.getElementById("mainContent").classList.remove("hidden");
+  loadCustomers();
+}
+
+function doLogout() {
+  ADMIN_KEY = "";
+  sessionStorage.removeItem("gpt_admin_key");
+  location.reload();
+}
+
+async function loadCustomers() {
+  const r = await fetch(`${BASE}/api/customers`, { headers: authHeaders() });
+  const data = await r.json();
+  allCustomers = data.customers || [];
+
+  // Stats
+  const paid = allCustomers.filter(c => c.paid_orders > 0).length;
+  const revenue = allCustomers.reduce((s, c) => s + (c.total_spent || 0), 0);
+  document.getElementById("statTotal").textContent = allCustomers.length;
+  document.getElementById("totalCount").textContent = allCustomers.length;
+  document.getElementById("statPaid").textContent = paid;
+  document.getElementById("statUnpaid").textContent = allCustomers.length - paid;
+  document.getElementById("statRevenue").textContent = Number(revenue).toLocaleString("vi-VN") + "đ";
+
+  filterTable();
+}
+
+function filterTable() {
+  const q = document.getElementById("searchInput").value.toLowerCase();
+  const status = document.getElementById("filterStatus").value;
+  let rows = allCustomers.filter(c => {
+    const match = !q || (c.customer_email || "").toLowerCase().includes(q)
+      || (c.customer_name || "").toLowerCase().includes(q)
+      || (c.customer_phone || "").includes(q);
+    const statusMatch = !status
+      || (status === "paid" && c.paid_orders > 0)
+      || (status === "unpaid" && c.paid_orders === 0);
+    return match && statusMatch;
+  });
+
+  const tbody = document.getElementById("customerTable");
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-10">Không tìm thấy khách hàng</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map((c, i) => {
+    const hasPaid = c.paid_orders > 0;
+    return `<tr class="border-b border-white/5 hover:bg-white/2 cursor-pointer" onclick="showDetail('${encodeURIComponent(c.customer_email)}')">
+      <td class="px-5 py-3 text-gray-500 text-xs">${i + 1}</td>
+      <td class="px-5 py-3">
+        <p class="font-medium">${c.customer_name || '<span class="text-gray-500">—</span>'}</p>
+        <p class="text-xs text-gray-400">${c.customer_email}</p>
+      </td>
+      <td class="px-5 py-3 text-sm text-gray-300">${c.customer_phone || '<span class="text-gray-600">—</span>'}</td>
+      <td class="px-5 py-3 text-right">
+        <span class="px-2 py-0.5 rounded text-xs ${hasPaid ? "bg-green-500/10 text-green-400" : "bg-gray-500/10 text-gray-400"}">${c.paid_orders}/${c.total_orders}</span>
+      </td>
+      <td class="px-5 py-3 text-right font-semibold ${hasPaid ? "text-white" : "text-gray-500"}">${hasPaid ? Number(c.total_spent).toLocaleString("vi-VN") + "đ" : "—"}</td>
+      <td class="px-5 py-3 text-xs text-gray-400">${new Date(c.last_order_at).toLocaleString("vi-VN")}</td>
+      <td class="px-5 py-3 text-right">
+        <button class="px-3 py-1 bg-primary/20 text-primary hover:bg-primary/40 rounded text-xs transition">Chi tiết</button>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+async function showDetail(emailEncoded) {
+  const email = decodeURIComponent(emailEncoded);
+  const r = await fetch(`${BASE}/api/customers/${emailEncoded}`, { headers: authHeaders() });
+  const data = await r.json();
+  const c = allCustomers.find(x => x.customer_email === email) || {};
+
+  document.getElementById("detailTitle").textContent = c.customer_name || email;
+
+  const keys = data.keys || [];
+  const orderList = data.orders || [];
+  const paidOrders = orderList.filter(o => o.status === "paid");
+
+  document.getElementById("detailContent").innerHTML = `
+    <!-- Thông tin cơ bản -->
+    <div class="bg-dark-900 rounded-xl p-4 space-y-2">
+      <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Thông tin khách hàng</h3>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Họ tên</span><span class="font-medium">${c.customer_name || "—"}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Email</span><span class="font-mono text-primary">${email}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">SĐT</span><span>${c.customer_phone || "—"}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Tổng đơn</span><span>${c.total_orders || 0} đơn (${c.paid_orders || 0} đã TT)</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Tổng chi</span><span class="font-bold text-green-400">${Number(c.total_spent || 0).toLocaleString("vi-VN")}đ</span></div>
+    </div>
+
+    <!-- API Keys -->
+    ${keys.length ? `
+    <div>
+      <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-3">API Keys (${keys.length})</h3>
+      <div class="space-y-2">
+        ${keys.map(k => `
+        <div class="bg-dark-900 rounded-xl p-4">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-xs text-gray-500">${k.package_id || "—"} · ${k.paid_at ? new Date(k.paid_at).toLocaleDateString("vi-VN") : "—"}</span>
+            <span class="px-2 py-0.5 rounded text-xs ${k.active ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}">${k.active ? "Hoạt động" : "Bị khoá"}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <code class="text-xs font-mono text-primary flex-1 truncate">${k.key || "—"}</code>
+            <button onclick="navigator.clipboard.writeText('${k.key}');this.textContent='✓';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs px-2 py-0.5 bg-dark-700 rounded hover:bg-dark-600 transition shrink-0">Copy</button>
+          </div>
+          <div class="flex gap-4 mt-2 text-xs text-gray-500">
+            <span>Credit: <strong class="text-white">${Number(k.credit || 0).toLocaleString()}</strong></span>
+            <span>RPM: <strong class="text-white">${k.rpm_limit || 0}</strong></span>
+            ${k.expires_at ? `<span>HH: <strong class="text-yellow-400">${new Date(k.expires_at).toLocaleDateString("vi-VN")}</strong></span>` : ""}
+          </div>
+        </div>`).join("")}
+      </div>
+    </div>` : '<p class="text-gray-500 text-sm text-center py-4">Chưa có API key</p>'}
+
+    <!-- Lịch sử đơn hàng -->
+    <div>
+      <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Lịch sử đơn hàng (${orderList.length})</h3>
+      <div class="space-y-2">
+        ${orderList.map(o => {
+          const cls = o.status === "paid" ? "bg-green-500/10 text-green-400" : o.status === "cancelled" ? "bg-red-500/10 text-red-400" : "bg-yellow-500/10 text-yellow-400";
+          const label = o.status === "paid" ? "Đã TT" : o.status === "cancelled" ? "Đã huỷ" : "Chờ TT";
+          return `<div class="flex items-center justify-between bg-dark-900 rounded-xl px-4 py-3 text-sm">
+            <div>
+              <span class="font-mono text-xs text-yellow-300">${o.order_code}</span>
+              <span class="text-gray-500 text-xs ml-2">${o.package_id}</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <span class="font-bold">${Number(o.amount).toLocaleString("vi-VN")}đ</span>
+              <span class="px-2 py-0.5 rounded text-xs ${cls}">${label}</span>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+  `;
+
+  document.getElementById("detailModal").classList.remove("hidden");
+}
+
+function closeDetail() {
+  document.getElementById("detailModal").classList.add("hidden");
+}
+
+// Auto login
+window.addEventListener("DOMContentLoaded", () => {
+  if (ADMIN_KEY) {
+    document.getElementById("loginOverlay").classList.add("hidden");
+    document.getElementById("mainContent").classList.remove("hidden");
+    loadCustomers();
+  }
+});
+</script>
+</body>
+</html>

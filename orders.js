@@ -30,6 +30,7 @@ db.exec(`
     status        TEXT NOT NULL DEFAULT 'pending',
     customer_name TEXT NOT NULL DEFAULT '',
     customer_email TEXT NOT NULL DEFAULT '',
+    customer_phone TEXT NOT NULL DEFAULT '',
     api_key       TEXT,
     paid_at       TEXT,
     note          TEXT DEFAULT '',
@@ -41,7 +42,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_orders_email  ON orders(customer_email);
 `);
 
-// ── Seed default packages ─────────────────────────────────────────────────────
+// Migration: thêm cột customer_phone nếu chưa có
+try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+
+// Seed default packages
 const seedPkgs = [
   { id: "starter", name: "Starter", price: 30000,  credit: 200,   rpm_limit: 60, description: "200 credit (200 requests), 60 RPM", active: 1 },
   { id: "pro",     name: "Pro",     price: 199000, credit: 10000, rpm_limit: 30, description: "10.000 credit (~10M token), 3 API key, 30 RPM", active: 0 },
@@ -68,8 +72,8 @@ const stmts = {
   listOrders:    db.prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?"),
   listByStatus:  db.prepare("SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC"),
   listByEmail:   db.prepare("SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC"),
-  insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, rpm_limit, customer_name, customer_email)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
+  insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, rpm_limit, customer_name, customer_email, customer_phone)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
   markPaid:      db.prepare("UPDATE orders SET status='paid', api_key=?, paid_at=datetime('now'), note=? WHERE id=?"),
   markCancelled: db.prepare("UPDATE orders SET status='cancelled' WHERE id=?"),
   countByStatus: db.prepare("SELECT status, COUNT(*) as cnt FROM orders GROUP BY status"),
@@ -89,12 +93,12 @@ function listOrders(limit = 100) { return stmts.listOrders.all(limit); }
 function listByStatus(status)    { return stmts.listByStatus.all(status); }
 function listByEmail(email)      { return stmts.listByEmail.all(email); }
 
-function createOrder({ packageId, customerName, customerEmail }) {
+function createOrder({ packageId, customerName, customerEmail, customerPhone }) {
   const pkg = getPackage(packageId);
   if (!pkg) throw new Error(`Package not found: ${packageId}`);
   const id = genOrderId();
   const code = genOrderCode();
-  stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.rpm_limit, customerName || "", customerEmail || "");
+  stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.rpm_limit, customerName || "", customerEmail || "", customerPhone || "");
   return getOrder(id);
 }
 
