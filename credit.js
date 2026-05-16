@@ -74,10 +74,9 @@ function generateKey() {
   return "sk-" + crypto.randomBytes(24).toString("hex");
 }
 
-/** Tính credit cần trừ từ token usage (1 credit = 1K token, làm tròn lên) */
+/** Tính credit cần trừ: 1 credit = 1 request thành công */
 function tokensToCredit(tokensIn, tokensOut) {
-  const total = (tokensIn || 0) + (tokensOut || 0);
-  return Math.max(1, Math.ceil(total / 1000));
+  return 1;
 }
 
 /** Lấy chuỗi phút hiện tại dạng "YYYY-MM-DD HH:MM" */
