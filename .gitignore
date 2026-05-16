@@ -34,3 +34,5 @@ docker-data/
 *.db-shm
 *.db-wal
 logs/
+
+node_modules/
