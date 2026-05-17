@@ -93,6 +93,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('history')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; L&#7883;ch s&#7917;</button>
       <button onclick="showTab('monitor')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
       <button onclick="showTab('orders')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
+      <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -251,6 +252,54 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+<!-- Tab: Backend Keys -->
+<div id="tab-backend" class="tab-content hidden space-y-6">
+  <h2 class="text-xl font-bold">Backend API Keys</h2>
+  <p class="text-sm text-gray-400">Qu&#7843;n l&#253; c&#225;c key g&#7885;i t&#7899;i backend upstream. Proxy t&#7921; &#273;&#7897;ng rotate khi key b&#7883; l&#7895;i.</p>
+
+  <!-- Current config -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3" id="backendConfigInfo">
+    <div class="flex items-center justify-between">
+      <h3 class="font-semibold text-sm">C&#7845;u h&#236;nh hi&#7879;n t&#7841;i</h3>
+      <button onclick="loadBackendConfig()" class="text-xs text-gray-500 hover:text-white px-2 py-1 bg-dark-600 rounded transition">L&#224;m m&#7899;i</button>
+    </div>
+    <div id="backendConfigRows" class="space-y-2 text-sm text-gray-300">
+      <div class="text-gray-500">&#272;ang t&#7843;i...</div>
+    </div>
+  </div>
+
+  <!-- Backend 1 keys -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
+    <h3 class="font-semibold text-sm">Backend 1 — API Keys</h3>
+    <div id="backend1KeysList" class="space-y-2"></div>
+    <div class="flex gap-2">
+      <input id="newBackend1Key" placeholder="sk-new-backend-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      <button onclick="addBackendKey('1')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+    </div>
+    <p id="backend1Msg" class="text-xs text-gray-400"></p>
+  </div>
+
+  <!-- Base URL + Model -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
+    <h3 class="font-semibold text-sm">C&#7845;u h&#236;nh Backend</h3>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+        <input id="cfgBaseUrl" placeholder="https://api.example.com/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+        <input id="cfgModel" placeholder="deepseek-v4-pro" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div class="flex gap-3 items-center">
+        <button onclick="saveBackendConfig()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u c&#7845;u h&#236;nh</button>
+        <span id="cfgMsg" class="text-xs text-gray-400"></span>
+      </div>
+      <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u c&#7847;n restart proxy &#273;&#7875; &#225;p d&#7909;ng Base URL v&#224; Model m&#7899;i.</p>
+    </div>
+  </div>
+</div>
+
     </div><!-- end content inner -->
   </div><!-- end content -->
 </div><!-- end main layout -->
@@ -357,6 +406,7 @@ function showTab(name) {
   if (name === "history") loadHistory();
   if (name === "monitor") loadMonitor();
   if (name === "orders") loadOrders();
+  if (name === "backend") loadBackendConfig();
 }
 
 function formatExpiry(expiresAt) {
@@ -378,6 +428,80 @@ function updateExpiryPreview() {
   const d = new Date();
   d.setDate(d.getDate() + days);
   preview.textContent = `Hết hạn lúc: ${d.toLocaleString("vi-VN", { dateStyle: "full", timeStyle: "short" })}`;
+}
+
+async function loadBackendConfig() {
+  const data = await fetch(`${BASE}/api/config`, { headers: authHeaders() }).then(r => r.json());
+  // Hiển thị config hiện tại
+  const rows = document.getElementById("backendConfigRows");
+  rows.innerHTML = `
+    <div class="flex justify-between"><span class="text-gray-500">Base URL</span><code class="text-green-400 text-xs">${data.base_url || "—"}</code></div>
+    <div class="flex justify-between"><span class="text-gray-500">Backend Model</span><code class="text-primary text-xs">${data.backend_model || "—"}</code></div>
+    <div class="flex justify-between"><span class="text-gray-500">Số backend keys</span><span class="font-bold">${data.backend_api_keys || 0}</span></div>
+  `;
+  // Fill form
+  document.getElementById("cfgBaseUrl").value = data.base_url || "";
+  document.getElementById("cfgModel").value = data.backend_model || "";
+  // Hiển thị danh sách keys (masked)
+  const keysList = document.getElementById("backend1KeysList");
+  const masks = data.backend_api_key_masks || [];
+  if (!masks.length) {
+    keysList.innerHTML = '<p class="text-xs text-gray-500">Chưa có key nào</p>';
+  } else {
+    keysList.innerHTML = masks.map((m, i) => `
+      <div class="flex items-center justify-between bg-dark-900 rounded-lg px-3 py-2">
+        <code class="text-xs font-mono text-gray-300">${m}</code>
+        <button onclick="removeBackendKey('1','${m}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition">Xoá</button>
+      </div>`).join("");
+  }
+}
+
+async function addBackendKey(backend) {
+  const input = document.getElementById(`newBackend${backend}Key`);
+  const key = input.value.trim();
+  const msg = document.getElementById(`backend${backend}Msg`);
+  if (!key) { msg.textContent = "Vui lòng nhập key"; return; }
+  const r = await fetch(`${BASE}/api/backend-keys`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
+  const data = await r.json();
+  if (data.ok) {
+    msg.className = "text-xs text-green-400";
+    msg.textContent = `Đã thêm. Tổng: ${data.count} keys`;
+    input.value = "";
+    loadBackendConfig();
+  } else {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = data.detail || "Lỗi";
+  }
+}
+
+async function removeBackendKey(backend, masked) {
+  // Không thể xoá bằng masked key — cần full key
+  // Hiển thị prompt nhập full key
+  const key = prompt(`Nhập full key để xoá (${masked}):`);
+  if (!key) return;
+  const r = await fetch(`${BASE}/api/backend-keys`, { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
+  const data = await r.json();
+  if (data.ok) loadBackendConfig();
+  else alert(data.detail || "Lỗi — key không khớp");
+}
+
+async function saveBackendConfig() {
+  const baseUrl = document.getElementById("cfgBaseUrl").value.trim();
+  const model = document.getElementById("cfgModel").value.trim();
+  const msg = document.getElementById("cfgMsg");
+  const updates = {};
+  if (baseUrl) updates.ANTHROPIC_BASE_URL = baseUrl;
+  if (model) updates.DORO_BACKEND_MODEL = model;
+  if (!Object.keys(updates).length) { msg.textContent = "Không có gì thay đổi"; return; }
+  const r = await fetch(`${BASE}/api/config`, { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  const data = await r.json();
+  if (data.ok) {
+    msg.className = "text-xs text-green-400";
+    msg.textContent = `Đã lưu: ${data.updated.join(", ")}. Cần restart proxy.`;
+  } else {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = data.detail || "Lỗi";
+  }
 }
 
 async function loadOverview() {
