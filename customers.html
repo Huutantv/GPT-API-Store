@@ -178,7 +178,7 @@ function filterTable() {
         <span class="px-2 py-0.5 rounded text-xs ${hasPaid ? "bg-green-500/10 text-green-400" : "bg-gray-500/10 text-gray-400"}">${c.paid_orders}/${c.total_orders}</span>
       </td>
       <td class="px-5 py-3 text-right font-semibold ${hasPaid ? "text-white" : "text-gray-500"}">${hasPaid ? Number(c.total_spent).toLocaleString("vi-VN") + "đ" : "—"}</td>
-      <td class="px-5 py-3 text-xs text-gray-400">${new Date(c.last_order_at).toLocaleString("vi-VN")}</td>
+      <td class="px-5 py-3 text-xs text-gray-400">${new Date(c.last_order_at.includes("T")||c.last_order_at.includes("Z")?c.last_order_at:c.last_order_at.replace(" ","T")+"Z").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"})}</td>
       <td class="px-5 py-3 text-right">
         <button class="px-3 py-1 bg-primary/20 text-primary hover:bg-primary/40 rounded text-xs transition">Chi tiết</button>
       </td>
