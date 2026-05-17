@@ -1818,11 +1818,8 @@ async function processPayment(orderCode, amount, note) {
   if (order.status === "paid") { addLog(`webhook: already paid code=${orderCode}`); return true; }
   if (order.amount > amount) { addLog(`webhook: amount mismatch code=${orderCode} expected=${order.amount} got=${amount}`); return false; }
 
-  // Tạo API key và nạp credit
-  let expiresAt = null;
-  if (order.note && order.note.startsWith("expires:")) {
-    expiresAt = order.note.slice(8).trim();
-  }
+  // Tạo API key và nạp credit — đọc expires_at từ cột riêng
+  const expiresAt = order.expires_at || null;
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);

@@ -42,6 +42,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_orders_email  ON orders(customer_email);
 `);
 
+// Migration: thêm cột expires_at vào orders nếu chưa có
+try { db.exec("ALTER TABLE orders ADD COLUMN expires_at TEXT"); } catch (_) {}
+
 // Migration: thêm cột customer_phone nếu chưa có
 try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT ''"); } catch (_) {}
 
@@ -74,6 +77,7 @@ const stmts = {
   listByEmail:   db.prepare("SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC"),
   insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, rpm_limit, customer_name, customer_email, customer_phone)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  setOrderExpiry: db.prepare("UPDATE orders SET expires_at=? WHERE id=?"),
   markPaid:      db.prepare("UPDATE orders SET status='paid', api_key=?, paid_at=datetime('now'), note=? WHERE id=?"),
   markCancelled: db.prepare("UPDATE orders SET status='cancelled' WHERE id=?"),
   countByStatus: db.prepare("SELECT status, COUNT(*) as cnt FROM orders GROUP BY status"),
@@ -111,9 +115,9 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
 
   stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.rpm_limit, customerName || "", customerEmail || "", customerPhone || "");
 
-  // Lưu expires_at vào order (dùng khi tạo API key)
+  // Lưu expires_at vào cột riêng
   if (expiresAt) {
-    db.prepare("UPDATE orders SET note=? WHERE id=?").run(`expires:${expiresAt}`, id);
+    stmts.setOrderExpiry.run(expiresAt, id);
   }
 
   return getOrder(id);
