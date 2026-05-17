@@ -1819,7 +1819,11 @@ async function processPayment(orderCode, amount, note) {
   if (order.amount > amount) { addLog(`webhook: amount mismatch code=${orderCode} expected=${order.amount} got=${amount}`); return false; }
 
   // Tạo API key và nạp credit
-  const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit });
+  let expiresAt = null;
+  if (order.note && order.note.startsWith("expires:")) {
+    expiresAt = order.note.slice(8).trim();
+  }
+  const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
   notifyTelegram(`&#x2705; <b>&#272;&#417;n h&#224;ng m&#7899;i thanh to&#225;n</b>\n&#x1F4E6; G&#243;i: ${order.package_id}\n&#x1F4B0; ${Number(order.amount).toLocaleString("vi-VN")}&#273;\n&#x1F464; ${order.customer_name}\n&#x1F4E7; ${order.customer_email}\n&#x1F511; ${keyRow.key.slice(0,16)}...`);

@@ -98,7 +98,24 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
   if (!pkg) throw new Error(`Package not found: ${packageId}`);
   const id = genOrderId();
   const code = genOrderCode();
+
+  // Tính ngày hết hạn theo gói
+  let expiresAt = null;
+  const expiryDays = { starter: 1, pro: 30, ultra: 30 };
+  const days = expiryDays[packageId];
+  if (days) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    expiresAt = d.toISOString().slice(0, 19).replace("T", " ");
+  }
+
   stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.rpm_limit, customerName || "", customerEmail || "", customerPhone || "");
+
+  // Lưu expires_at vào order (dùng khi tạo API key)
+  if (expiresAt) {
+    db.prepare("UPDATE orders SET note=? WHERE id=?").run(`expires:${expiresAt}`, id);
+  }
+
   return getOrder(id);
 }
 
