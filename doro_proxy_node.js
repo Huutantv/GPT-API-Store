@@ -1973,6 +1973,7 @@ app.get("/api/config", (req, res) => {
       disable_tools: !!profile.disableTools,
       backend_api_keys: profile.apiKeys.length,
       backend_api_key_masks: profile.apiKeys.map(maskSecret),
+      backend_api_keys_full: profile.apiKeys,   // full keys cho admin
       api_key_masked: maskSecret(profile.apiKeys[0]),
     };
   });
@@ -1990,6 +1991,7 @@ app.get("/api/config", (req, res) => {
     disable_tools: !!settings.disableTools,
     api_key_masked: maskSecret(settings.apiKey),
     backend_api_key_masks: settings.apiKeys.map(maskSecret),
+    backend_api_keys_full: settings.apiKeys,     // full keys cho admin
     backend_api_keys: settings.apiKeys.length,
     base_url_sources: {
       DORO_API_BASE: !!String(process.env.DORO_API_BASE || "").trim(),

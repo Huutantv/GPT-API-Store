@@ -442,16 +442,17 @@ async function loadBackendConfig() {
   // Fill form
   document.getElementById("cfgBaseUrl").value = data.base_url || "";
   document.getElementById("cfgModel").value = data.backend_model || "";
-  // Hiển thị danh sách keys (masked)
+  // Hiển thị full keys
   const keysList = document.getElementById("backend1KeysList");
-  const masks = data.backend_api_key_masks || [];
-  if (!masks.length) {
+  const fullKeys = data.backend_api_keys_full || [];
+  if (!fullKeys.length) {
     keysList.innerHTML = '<p class="text-xs text-gray-500">Chưa có key nào</p>';
   } else {
-    keysList.innerHTML = masks.map((m, i) => `
-      <div class="flex items-center justify-between bg-dark-900 rounded-lg px-3 py-2">
-        <code class="text-xs font-mono text-gray-300">${m}</code>
-        <button onclick="removeBackendKey('1','${m}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition">Xoá</button>
+    keysList.innerHTML = fullKeys.map((k) => `
+      <div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">
+        <code class="text-xs font-mono text-gray-300 flex-1 break-all">${k}</code>
+        <button onclick="copyText('${k}',this)" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-600 rounded transition shrink-0">copy</button>
+        <button onclick="removeBackendKeyDirect('1','${k}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition shrink-0">Xoá</button>
       </div>`).join("");
   }
 }
@@ -474,9 +475,15 @@ async function addBackendKey(backend) {
   }
 }
 
+async function removeBackendKeyDirect(backend, key) {
+  if (!confirm(`Xoá key ${key.slice(0,20)}...?`)) return;
+  const r = await fetch(`${BASE}/api/backend-keys`, { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
+  const data = await r.json();
+  if (data.ok) loadBackendConfig();
+  else alert(data.detail || "Lỗi");
+}
+
 async function removeBackendKey(backend, masked) {
-  // Không thể xoá bằng masked key — cần full key
-  // Hiển thị prompt nhập full key
   const key = prompt(`Nhập full key để xoá (${masked}):`);
   if (!key) return;
   const r = await fetch(`${BASE}/api/backend-keys`, { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
