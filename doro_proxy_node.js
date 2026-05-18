@@ -715,15 +715,18 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       if (isRetryableStatus(resp.status) && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
         addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
+        uptimeTrackError(resp.status);
         await new Promise(r => setTimeout(r, 500 * (i + 1))); // delay tăng dần
         continue;
       }
       if (!resp.ok) {
+        uptimeTrackError(resp.status);
         const err = new Error(`Backend HTTP ${resp.status}: ${logPreview(text)}`);
         err.status = resp.status;
         err.text = text;
         throw err;
       }
+      uptimeTrackSuccess();
       return { status: resp.status, text, apiKey: ordered[i] };
     } catch (err) {
       lastError = err;
@@ -1276,6 +1279,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         credit.deductCredit(apiKeyToken, tokensIn, tokensOut, modelName, reqId || "");
       }
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
+      uptimeTrackSuccess();
       return;
     } catch (err) {
       lastError = err;
@@ -1828,6 +1832,70 @@ async function notifyTelegram(message) {
     });
   } catch (err) {
     addLog(`telegram notify error: ${err.message}`);
+  }
+}
+
+// ── Uptime Monitor — tự động cảnh báo Telegram ───────────────────────────────
+const _uptimeState = {
+  errorCount: 0,          // số lỗi 502/503 trong cửa sổ 1 phút
+  windowStart: Date.now(),
+  alertSent: false,       // đã gửi cảnh báo chưa (tránh spam)
+  lastAlertAt: 0,
+  recoveryPending: false, // đang chờ xác nhận phục hồi
+  successAfterAlert: 0,   // số request thành công sau khi alert
+};
+const UPTIME_ERROR_THRESHOLD = 3;    // ≥3 lỗi/phút → alert
+const UPTIME_WINDOW_MS = 60 * 1000;  // cửa sổ 1 phút
+const UPTIME_RECOVERY_COUNT = 3;     // 3 request thành công liên tiếp → báo phục hồi
+const UPTIME_ALERT_COOLDOWN = 5 * 60 * 1000; // không spam alert trong 5 phút
+
+function uptimeTrackError(status) {
+  const now = Date.now();
+  // Reset cửa sổ nếu đã qua 1 phút
+  if (now - _uptimeState.windowStart > UPTIME_WINDOW_MS) {
+    _uptimeState.errorCount = 0;
+    _uptimeState.windowStart = now;
+  }
+  if (status === 502 || status === 503 || status === 504) {
+    _uptimeState.errorCount += 1;
+    _uptimeState.successAfterAlert = 0; // reset recovery counter
+    // Gửi alert nếu vượt ngưỡng và chưa spam
+    if (
+      _uptimeState.errorCount >= UPTIME_ERROR_THRESHOLD &&
+      !_uptimeState.alertSent &&
+      now - _uptimeState.lastAlertAt > UPTIME_ALERT_COOLDOWN
+    ) {
+      _uptimeState.alertSent = true;
+      _uptimeState.recoveryPending = true;
+      _uptimeState.lastAlertAt = now;
+      const baseUrl = process.env.DORO_PUBLIC_URL || "https://zplay.io.vn";
+      notifyTelegram(
+        `\u26a0\ufe0f <b>C\u1ea3nh b\u00e1o: Backend c\u00f3 v\u1ea5n \u0111\u1ec1</b>\n` +
+        `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+        `\ud83d\udea8 <b>L\u1ed7i:</b> ${_uptimeState.errorCount} l\u1ed7i ${status} trong 1 ph\u00fat\n` +
+        `\ud83c\udf10 <b>Backend:</b> ${process.env.ANTHROPIC_BASE_URL || "N/A"}\n` +
+        `\ud83d\udd52 <b>Th\u1eddi gian:</b> ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}\n` +
+        `\ud83d\udd17 <b>Monitor:</b> ${baseUrl}/admin`
+      );
+      addLog(`uptime alert sent: ${_uptimeState.errorCount} errors in 1min`);
+    }
+  }
+}
+
+function uptimeTrackSuccess() {
+  if (!_uptimeState.recoveryPending) return;
+  _uptimeState.successAfterAlert += 1;
+  if (_uptimeState.successAfterAlert >= UPTIME_RECOVERY_COUNT) {
+    _uptimeState.alertSent = false;
+    _uptimeState.recoveryPending = false;
+    _uptimeState.successAfterAlert = 0;
+    notifyTelegram(
+      `\u2705 <b>Backend \u0111\u00e3 ph\u1ee5c h\u1ed3i</b>\n` +
+      `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+      `\ud83d\udfe2 H\u1ec7 th\u1ed1ng \u0111ang ho\u1ea1t \u0111\u1ed9ng b\u00ecnh th\u01b0\u1eddng tr\u1edf l\u1ea1i\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+    addLog("uptime recovery confirmed");
   }
 }
 
