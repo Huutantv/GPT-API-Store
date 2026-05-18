@@ -220,21 +220,74 @@ for chunk in response:
 
 <!-- Cline / Roo Code -->
 <div id="tab-cline" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">C&#224;i v&#224;o Cline / Roo Code (VS Code)</h3>
-<div class="space-y-4 text-sm text-gray-300">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span><p>C&#224;i extension <strong class="text-white">Cline</strong> ho&#7863;c <strong class="text-white">Roo Code</strong> trong VS Code.</p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span><p>M&#7903; Settings c&#7911;a extension.</p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span><p>Ch&#7885;n API Provider: <strong class="text-white">OpenAI Compatible</strong>. Kh&#244;ng ch&#7885;n Anthropic.</p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">4</span><p>Nh&#7853;p Base URL: <code class="bg-dark-900 px-2 py-0.5 rounded text-green-400">https://your-domain.com/v1</code></p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">5</span><p>D&#225;n API Key v&#224;o &#244; API Key.</p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">6</span><p>Nh&#7853;p model: <code class="bg-dark-900 px-2 py-0.5 rounded text-green-400">gpt-5.5</code> ho&#7863;c <code class="bg-dark-900 px-2 py-0.5 rounded text-green-400">gpt-5.5-turbo</code></p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">7</span><p>G&#7917;i th&#7917; m&#7897;t prompt ng&#7855;n &#273;&#7875; ki&#7875;m tra.</p></div>
+<h3 class="text-xl font-bold mb-6">C&#224;i v&#224;o Roo Code (VS Code)</h3>
+<div class="space-y-5">
+
+<div class="flex gap-3">
+  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span>
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-white mb-1">C&#224;i extension Roo Code</p>
+    <p class="text-xs text-gray-400">VS Code → Extensions (Ctrl+Shift+X) → T&#236;m <strong class="text-white">"Roo Code"</strong> → Install</p>
+  </div>
 </div>
-<div class="mt-6 bg-dark-900 rounded-xl p-4 text-sm"><pre class="text-gray-300">Provider : OpenAI Compatible
-Base URL : https://your-domain.com/v1
-API Key  : sk-your-api-key
-Model    : gpt-5.5</pre></div>
-<div class="mt-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm text-yellow-300">&#x26A0;&#xFE0F; Kh&#244;ng t&#7921; b&#7883;a model. Ph&#7843;i ch&#7885;n &#273;&#250;ng t&#7915; danh s&#225;ch: gpt-5.5, gpt-5.5-turbo, gpt-5.4, gpt-4o</div>
+
+<div class="flex gap-3">
+  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span>
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-white mb-1">M&#7903; Settings → Providers</p>
+    <p class="text-xs text-gray-400">Click icon Roo Code b&#234;n tr&#225;i → &#9881;&#65039; Settings → Tab <strong class="text-white">ROO CODE</strong> → <strong class="text-white">Providers</strong></p>
+  </div>
+</div>
+
+<div class="flex gap-3">
+  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span>
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-white mb-2">&#272;i&#7873;n th&#244;ng tin c&#7845;u h&#236;nh</p>
+    <div class="bg-dark-900 rounded-xl p-4 space-y-2.5">
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-gray-500 text-xs w-28 shrink-0">API Provider</span>
+        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-primary text-xs font-mono">OpenAI Compatible</code>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-gray-500 text-xs w-28 shrink-0">Base URL</span>
+        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-green-400 text-xs font-mono">https://zplay.io.vn/v1</code>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-gray-500 text-xs w-28 shrink-0">API Key</span>
+        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-yellow-400 text-xs font-mono">sk-your-api-key</code>
+      </div>
+      <div class="flex items-center gap-3 flex-wrap">
+        <span class="text-gray-500 text-xs w-28 shrink-0">Model</span>
+        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-white text-xs font-mono">gpt-5.5</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="flex gap-3">
+  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">4</span>
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-white mb-1">B&#7853;t Enable Streaming &#10003;</p>
+    <p class="text-xs text-gray-400">T&#237;ch ch&#7885;n <strong class="text-white">Enable streaming</strong> trong Settings &#273;&#7875; ph&#7843;n h&#7891;i nhanh h&#417;n</p>
+  </div>
+</div>
+
+<div class="flex gap-3">
+  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">5</span>
+  <div class="flex-1">
+    <p class="text-sm font-semibold text-white mb-1">Nh&#7845;n Save v&#224; test th&#7917;</p>
+    <p class="text-xs text-gray-400">Click <strong class="text-white">Save</strong> → M&#7903; chat Roo Code → G&#245; th&#7917; m&#7897;t c&#226;u &#273;&#7875; ki&#7875;m tra</p>
+  </div>
+</div>
+
+</div>
+
+<div class="mt-5 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">
+  &#x2139;&#xFE0F; Model c&#243; th&#7875; ch&#7885;n: <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.5</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.5-turbo</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.4</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-4o</code>
+</div>
+<div class="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-300">
+  &#x26A0;&#xFE0F; Ph&#7843;i ch&#7885;n <strong>OpenAI Compatible</strong> — kh&#244;ng ch&#7885;n Anthropic hay OpenAI m&#7863;c &#273;&#7883;nh
+</div>
 </div>
 
 <!-- OpenClaw -->

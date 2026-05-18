@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
@@ -44,19 +44,19 @@ body{font-family:'Inter',sans-serif}
         </div>
         <span class="font-bold text-sm">GPT Admin</span>
       </div>
-      <button onclick="closeMobileSidebar()" class="text-gray-500 hover:text-white text-xl">✕</button>
+      <button onclick="closeMobileSidebar()" class="text-gray-500 hover:text-white text-xl">âœ•</button>
     </div>
     <nav class="flex-1 p-3 space-y-1">
-      <button onclick="showTab('overview');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="overview">&#x1F4CA; Tổng quan</button>
-      <button onclick="showTab('keys');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keys">&#x1F511; Quản lý Keys</button>
-      <button onclick="showTab('topup');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="topup">&#x1F4B0; Nạp Credit</button>
-      <button onclick="showTab('history');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; Lịch sử</button>
+      <button onclick="showTab('overview');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="overview">&#x1F4CA; Tá»•ng quan</button>
+      <button onclick="showTab('keys');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keys">&#x1F511; Quáº£n lÃ½ Keys</button>
+      <button onclick="showTab('topup');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="topup">&#x1F4B0; Náº¡p Credit</button>
+      <button onclick="showTab('history');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; Lá»‹ch sá»­</button>
       <button onclick="showTab('monitor');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
-      <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; Đơn hàng</button>
-      <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Khách hàng</a>
+      <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; ÄÆ¡n hÃ ng</button>
+      <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; KhÃ¡ch hÃ ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
-      <button onclick="adminLogout()" class="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-red-400 transition">&#x1F6AA; Đăng xuất</button>
+      <button onclick="adminLogout()" class="w-full text-left px-3 py-2 rounded-lg text-xs text-gray-500 hover:text-red-400 transition">&#x1F6AA; ÄÄƒng xuáº¥t</button>
     </div>
   </div>
 </div>
@@ -108,13 +108,13 @@ body{font-family:'Inter',sans-serif}
 <div id="tab-overview" class="tab-content space-y-6">
   <h2 class="text-xl font-bold">T&#7893;ng quan</h2>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng keys</p><div class="text-3xl font-bold" id="statTotalKeys">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Keys ho&#7841;t &#273;&#7897;ng</p><div class="text-3xl font-bold text-green-400" id="statActiveKeys">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng credit c&#242;n</p><div class="text-3xl font-bold text-primary" id="statTotalCredit">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng &#273;&#227; d&#249;ng</p><div class="text-3xl font-bold text-yellow-400" id="statTotalSpent">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng keys</p><div class="text-3xl font-bold" id="statTotalKeys">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Keys ho&#7841;t &#273;&#7897;ng</p><div class="text-3xl font-bold text-green-400" id="statActiveKeys">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng credit c&#242;n</p><div class="text-3xl font-bold text-primary" id="statTotalCredit">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng &#273;&#227; d&#249;ng</p><div class="text-3xl font-bold text-yellow-400" id="statTotalSpent">â€”</div></div>
   </div>
   <div class="grid md:grid-cols-2 gap-4">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng giao d&#7883;ch</p><div class="text-2xl font-bold" id="statTotalTxns">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng giao d&#7883;ch</p><div class="text-2xl font-bold" id="statTotalTxns">â€”</div></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5 flex items-center justify-between">
       <div><p class="text-xs text-gray-500 mb-1">Proxy status</p><div class="text-sm font-semibold text-green-400" id="statProxy">&#272;ang ki&#7875;m tra...</div></div>
       <button onclick="loadOverview()" class="text-xs text-gray-500 hover:text-white px-3 py-1.5 bg-dark-600 rounded-lg transition">L&#224;m m&#7899;i</button>
@@ -135,15 +135,15 @@ body{font-family:'Inter',sans-serif}
       <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguy&#7877;n V&#259;n A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">Credit ban &#273;&#7847;u</label><input id="newCredit" type="number" placeholder="500" value="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="10" value="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
-      <div><label class="text-xs text-gray-400 block mb-1">Thời hạn</label>
+      <div><label class="text-xs text-gray-400 block mb-1">Thá»i háº¡n</label>
         <select id="newExpires" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" onchange="updateExpiryPreview()">
-          <option value="">Không giới hạn</option>
-          <option value="1">1 ngày</option>
-          <option value="7">7 ngày</option>
-          <option value="14">14 ngày</option>
-          <option value="30">30 ngày</option>
-          <option value="90">90 ngày</option>
-          <option value="365">1 năm</option>
+          <option value="">KhÃ´ng giá»›i háº¡n</option>
+          <option value="1">1 ngÃ y</option>
+          <option value="7">7 ngÃ y</option>
+          <option value="14">14 ngÃ y</option>
+          <option value="30">30 ngÃ y</option>
+          <option value="90">90 ngÃ y</option>
+          <option value="365">1 nÄƒm</option>
         </select>
         <p class="text-xs text-primary mt-1" id="expiryPreview"></p>
       </div>
@@ -229,10 +229,10 @@ body{font-family:'Inter',sans-serif}
     <button onclick="loadMonitor()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
   </div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">RPM (1 ph&#250;t)</p><div class="text-2xl font-bold" id="monRpm">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Success rate</p><div class="text-2xl font-bold text-green-400" id="monSuccess">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">P95 latency</p><div class="text-2xl font-bold" id="monP95">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">502 (1m/5m)</p><div class="text-2xl font-bold text-red-400" id="mon502">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">RPM (1 ph&#250;t)</p><div class="text-2xl font-bold" id="monRpm">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Success rate</p><div class="text-2xl font-bold text-green-400" id="monSuccess">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">P95 latency</p><div class="text-2xl font-bold" id="monP95">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">502 (1m/5m)</p><div class="text-2xl font-bold text-red-400" id="mon502">â€”</div></div>
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
@@ -270,7 +270,7 @@ body{font-family:'Inter',sans-serif}
 
   <!-- Backend 1 keys -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
-    <h3 class="font-semibold text-sm">Backend 1 — API Keys</h3>
+    <h3 class="font-semibold text-sm">Backend 1 â€” API Keys</h3>
     <div id="backend1KeysList" class="space-y-2"></div>
     <div class="flex gap-2">
       <input id="newBackend1Key" placeholder="sk-new-backend-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
@@ -308,36 +308,36 @@ body{font-family:'Inter',sans-serif}
 <template id="ordersTabTpl">
 <div id="tab-orders" class="tab-content hidden space-y-6">
   <div class="flex items-center justify-between">
-    <h2 class="text-xl font-bold">Đơn hàng</h2>
+    <h2 class="text-xl font-bold">ÄÆ¡n hÃ ng</h2>
     <div class="flex gap-2">
       <select id="orderStatusFilter" onchange="loadOrders()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs focus:outline-none">
-        <option value="">Tất cả</option>
-        <option value="pending">Chờ thanh toán</option>
-        <option value="paid">Đã thanh toán</option>
-        <option value="cancelled">Đã huỷ</option>
+        <option value="">Táº¥t cáº£</option>
+        <option value="pending">Chá» thanh toÃ¡n</option>
+        <option value="paid">ÄÃ£ thanh toÃ¡n</option>
+        <option value="cancelled">ÄÃ£ huá»·</option>
       </select>
-      <button onclick="loadOrders()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Làm mới</button>
+      <button onclick="loadOrders()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">LÃ m má»›i</button>
     </div>
   </div>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="orderStats">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Tổng đơn</p><div class="text-2xl font-bold" id="osTotalOrders">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Đã thanh toán</p><div class="text-2xl font-bold text-green-400" id="osPaid">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Chờ thanh toán</p><div class="text-2xl font-bold text-yellow-400" id="osPending">—</div></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Doanh thu</p><div class="text-2xl font-bold text-primary" id="osRevenue">—</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Tá»•ng Ä‘Æ¡n</p><div class="text-2xl font-bold" id="osTotalOrders">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">ÄÃ£ thanh toÃ¡n</p><div class="text-2xl font-bold text-green-400" id="osPaid">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Chá» thanh toÃ¡n</p><div class="text-2xl font-bold text-yellow-400" id="osPending">â€”</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Doanh thu</p><div class="text-2xl font-bold text-primary" id="osRevenue">â€”</div></div>
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
     <table class="w-full text-sm min-w-[640px]">
       <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
-        <th class="text-left px-4 py-3">Mã đơn</th>
-        <th class="text-left px-4 py-3">Khách hàng</th>
-        <th class="text-left px-4 py-3">Gói</th>
-        <th class="text-right px-4 py-3">Số tiền</th>
-        <th class="text-left px-4 py-3">Trạng thái</th>
-        <th class="text-left px-4 py-3">Ngày tạo</th>
-        <th class="text-right px-4 py-3">Thao tác</th>
+        <th class="text-left px-4 py-3">MÃ£ Ä‘Æ¡n</th>
+        <th class="text-left px-4 py-3">KhÃ¡ch hÃ ng</th>
+        <th class="text-left px-4 py-3">GÃ³i</th>
+        <th class="text-right px-4 py-3">Sá»‘ tiá»n</th>
+        <th class="text-left px-4 py-3">Tráº¡ng thÃ¡i</th>
+        <th class="text-left px-4 py-3">NgÃ y táº¡o</th>
+        <th class="text-right px-4 py-3">Thao tÃ¡c</th>
       </tr></thead>
-      <tbody id="ordersTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">Đang tải...</td></tr></tbody>
+      <tbody id="ordersTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">Äang táº£i...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -346,26 +346,26 @@ body{font-family:'Inter',sans-serif}
 
 <script>
 const BASE = window.location.origin;
-let ADMIN_KEY = sessionStorage.getItem("gpt_admin_key") || "";
+let ADMIN_KEY = localStorage.getItem("gpt_admin_key") || "";
 
 function authHeaders() {
   return { "Authorization": `Bearer ${ADMIN_KEY}`, "Content-Type": "application/json" };
 }
 
-// Format date sang giờ Việt Nam (UTC+7)
+// Format date sang giá» Viá»‡t Nam (UTC+7)
 function fmtVN(dateStr, opts) {
-  if (!dateStr) return "—";
+  if (!dateStr) return "â€”";
   const d = new Date(dateStr.includes("T") || dateStr.includes("Z") ? dateStr : dateStr.replace(" ", "T") + "Z");
   const defaultOpts = { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" };
   return d.toLocaleString("vi-VN", opts || defaultOpts);
 }
 function fmtDateVN(dateStr) {
-  if (!dateStr) return "—";
+  if (!dateStr) return "â€”";
   const d = new Date(dateStr.includes("T") || dateStr.includes("Z") ? dateStr : dateStr.replace(" ", "T") + "Z");
   return d.toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 function fmtTimeVN(dateStr) {
-  if (!dateStr) return "—";
+  if (!dateStr) return "â€”";
   const d = new Date(dateStr.includes("T") || dateStr.includes("Z") ? dateStr : dateStr.replace(" ", "T") + "Z");
   return d.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
@@ -373,7 +373,7 @@ function fmtTimeVN(dateStr) {
 function copyText(text, btn) {
   navigator.clipboard.writeText(text).then(() => {
     const orig = btn.textContent;
-    btn.textContent = "✓";
+    btn.textContent = "âœ“";
     btn.classList.add("text-green-400");
     setTimeout(() => { btn.textContent = orig; btn.classList.remove("text-green-400"); }, 1500);
   });
@@ -390,7 +390,7 @@ async function adminLogin() {
     return;
   }
   ADMIN_KEY = key;
-  sessionStorage.setItem("gpt_admin_key", key);
+  localStorage.setItem("gpt_admin_key", key);
   document.getElementById("loginOverlay").classList.add("hidden");
   document.getElementById("mainContent").classList.remove("hidden");
   showTab("overview");
@@ -398,7 +398,7 @@ async function adminLogin() {
 
 function adminLogout() {
   ADMIN_KEY = "";
-  sessionStorage.removeItem("gpt_admin_key");
+  localStorage.removeItem("gpt_admin_key");
   location.reload();
 }
 
@@ -428,49 +428,49 @@ function showTab(name) {
 }
 
 function formatExpiry(expiresAt) {
-  if (!expiresAt) return '<span class="text-gray-600">Không giới hạn</span>';
+  if (!expiresAt) return '<span class="text-gray-600">KhÃ´ng giá»›i háº¡n</span>';
   const exp = new Date(expiresAt.includes("T") || expiresAt.includes("Z") ? expiresAt : expiresAt.replace(" ", "T") + "Z");
   const now = new Date();
   const diffMs = exp - now;
   const diffDays = Math.ceil(diffMs / 86400000);
   const dateStr = exp.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
-  if (diffMs < 0) return `<span class="text-red-400">Đã hết hạn<br><span class="text-xs">${dateStr}</span></span>`;
-  if (diffDays <= 3) return `<span class="text-yellow-400">Còn ${diffDays} ngày<br><span class="text-xs">${dateStr}</span></span>`;
-  return `<span class="text-gray-300">Còn ${diffDays} ngày<br><span class="text-xs text-gray-500">${dateStr}</span></span>`;
+  if (diffMs < 0) return `<span class="text-red-400">ÄÃ£ háº¿t háº¡n<br><span class="text-xs">${dateStr}</span></span>`;
+  if (diffDays <= 3) return `<span class="text-yellow-400">CÃ²n ${diffDays} ngÃ y<br><span class="text-xs">${dateStr}</span></span>`;
+  return `<span class="text-gray-300">CÃ²n ${diffDays} ngÃ y<br><span class="text-xs text-gray-500">${dateStr}</span></span>`;
 }
 
 function updateExpiryPreview() {
   const days = Number(document.getElementById("newExpires").value || 0);
   const preview = document.getElementById("expiryPreview");
-  if (!days) { preview.textContent = "Không giới hạn thời gian"; return; }
+  if (!days) { preview.textContent = "KhÃ´ng giá»›i háº¡n thá»i gian"; return; }
   const d = new Date();
   d.setDate(d.getDate() + days);
-  preview.textContent = `Hết hạn lúc: ${d.toLocaleString("vi-VN", { dateStyle: "full", timeStyle: "short" })}`;
+  preview.textContent = `Háº¿t háº¡n lÃºc: ${d.toLocaleString("vi-VN", { dateStyle: "full", timeStyle: "short" })}`;
 }
 
 async function loadBackendConfig() {
   const data = await fetch(`${BASE}/api/config`, { headers: authHeaders() }).then(r => r.json());
-  // Hiển thị config hiện tại
+  // Hiá»ƒn thá»‹ config hiá»‡n táº¡i
   const rows = document.getElementById("backendConfigRows");
   rows.innerHTML = `
-    <div class="flex justify-between"><span class="text-gray-500">Base URL</span><code class="text-green-400 text-xs">${data.base_url || "—"}</code></div>
-    <div class="flex justify-between"><span class="text-gray-500">Backend Model</span><code class="text-primary text-xs">${data.backend_model || "—"}</code></div>
-    <div class="flex justify-between"><span class="text-gray-500">Số backend keys</span><span class="font-bold">${data.backend_api_keys || 0}</span></div>
+    <div class="flex justify-between"><span class="text-gray-500">Base URL</span><code class="text-green-400 text-xs">${data.base_url || "â€”"}</code></div>
+    <div class="flex justify-between"><span class="text-gray-500">Backend Model</span><code class="text-primary text-xs">${data.backend_model || "â€”"}</code></div>
+    <div class="flex justify-between"><span class="text-gray-500">Sá»‘ backend keys</span><span class="font-bold">${data.backend_api_keys || 0}</span></div>
   `;
   // Fill form
   document.getElementById("cfgBaseUrl").value = data.base_url || "";
   document.getElementById("cfgModel").value = data.backend_model || "";
-  // Hiển thị full keys
+  // Hiá»ƒn thá»‹ full keys
   const keysList = document.getElementById("backend1KeysList");
   const fullKeys = data.backend_api_keys_full || [];
   if (!fullKeys.length) {
-    keysList.innerHTML = '<p class="text-xs text-gray-500">Chưa có key nào</p>';
+    keysList.innerHTML = '<p class="text-xs text-gray-500">ChÆ°a cÃ³ key nÃ o</p>';
   } else {
     keysList.innerHTML = fullKeys.map((k) => `
       <div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">
         <code class="text-xs font-mono text-gray-300 flex-1 break-all">${k}</code>
         <button onclick="copyText('${k}',this)" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-600 rounded transition shrink-0">copy</button>
-        <button onclick="removeBackendKeyDirect('1','${k}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition shrink-0">Xoá</button>
+        <button onclick="removeBackendKeyDirect('1','${k}')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition shrink-0">XoÃ¡</button>
       </div>`).join("");
   }
 }
@@ -479,35 +479,35 @@ async function addBackendKey(backend) {
   const input = document.getElementById(`newBackend${backend}Key`);
   const key = input.value.trim();
   const msg = document.getElementById(`backend${backend}Msg`);
-  if (!key) { msg.textContent = "Vui lòng nhập key"; return; }
+  if (!key) { msg.textContent = "Vui lÃ²ng nháº­p key"; return; }
   const r = await fetch(`${BASE}/api/backend-keys`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
   const data = await r.json();
   if (data.ok) {
     msg.className = "text-xs text-green-400";
-    msg.textContent = `Đã thêm. Tổng: ${data.count} keys`;
+    msg.textContent = `ÄÃ£ thÃªm. Tá»•ng: ${data.count} keys`;
     input.value = "";
     loadBackendConfig();
   } else {
     msg.className = "text-xs text-red-400";
-    msg.textContent = data.detail || "Lỗi";
+    msg.textContent = data.detail || "Lá»—i";
   }
 }
 
 async function removeBackendKeyDirect(backend, key) {
-  if (!confirm(`Xoá key ${key.slice(0,20)}...?`)) return;
+  if (!confirm(`XoÃ¡ key ${key.slice(0,20)}...?`)) return;
   const r = await fetch(`${BASE}/api/backend-keys`, { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
   const data = await r.json();
   if (data.ok) loadBackendConfig();
-  else alert(data.detail || "Lỗi");
+  else alert(data.detail || "Lá»—i");
 }
 
 async function removeBackendKey(backend, masked) {
-  const key = prompt(`Nhập full key để xoá (${masked}):`);
+  const key = prompt(`Nháº­p full key Ä‘á»ƒ xoÃ¡ (${masked}):`);
   if (!key) return;
   const r = await fetch(`${BASE}/api/backend-keys`, { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ backend, key }) });
   const data = await r.json();
   if (data.ok) loadBackendConfig();
-  else alert(data.detail || "Lỗi — key không khớp");
+  else alert(data.detail || "Lá»—i â€” key khÃ´ng khá»›p");
 }
 
 async function saveBackendConfig() {
@@ -517,15 +517,15 @@ async function saveBackendConfig() {
   const updates = {};
   if (baseUrl) updates.ANTHROPIC_BASE_URL = baseUrl;
   if (model) updates.DORO_BACKEND_MODEL = model;
-  if (!Object.keys(updates).length) { msg.textContent = "Không có gì thay đổi"; return; }
+  if (!Object.keys(updates).length) { msg.textContent = "KhÃ´ng cÃ³ gÃ¬ thay Ä‘á»•i"; return; }
   const r = await fetch(`${BASE}/api/config`, { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   const data = await r.json();
   if (data.ok) {
     msg.className = "text-xs text-green-400";
-    msg.textContent = `Đã lưu: ${data.updated.join(", ")}. Cần restart proxy.`;
+    msg.textContent = `ÄÃ£ lÆ°u: ${data.updated.join(", ")}. Cáº§n restart proxy.`;
   } else {
     msg.className = "text-xs text-red-400";
-    msg.textContent = data.detail || "Lỗi";
+    msg.textContent = data.detail || "Lá»—i";
   }
 }
 
@@ -539,7 +539,7 @@ async function loadOverview() {
   document.getElementById("statTotalCredit").textContent = Number(stats.total_credit || 0).toLocaleString();
   document.getElementById("statTotalSpent").textContent = Number(stats.total_spent || 0).toLocaleString();
   document.getElementById("statTotalTxns").textContent = Number(stats.total_txns || 0).toLocaleString();
-  document.getElementById("statProxy").textContent = health ? `Online — ${health.virtual_keys} proxy keys` : "Offline";
+  document.getElementById("statProxy").textContent = health ? `Online â€” ${health.virtual_keys} proxy keys` : "Offline";
 }
 
 async function loadKeys() {
@@ -550,7 +550,7 @@ async function loadKeys() {
   tbody.innerHTML = keys.map(k => `
     <tr class="border-b border-white/5 hover:bg-white/2">
       <td class="px-4 py-3 font-mono text-xs text-gray-300">${k.key.slice(0,12)}...${k.key.slice(-4)} <button onclick="copyText('${k.key}',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button></td>
-      <td class="px-4 py-3 text-sm">${k.label || "<span class='text-gray-500'>—</span>"}</td>
+      <td class="px-4 py-3 text-sm">${k.label || "<span class='text-gray-500'>â€”</span>"}</td>
       <td class="px-4 py-3 text-right font-bold ${k.credit < 100 ? "text-red-400" : "text-green-400"}">${Number(k.credit).toLocaleString()}</td>
       <td class="px-4 py-3 text-right text-gray-300">${k.rpm_limit}</td>
       <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ${k.active ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}">${k.active ? "Ho&#7841;t &#273;&#7897;ng" : "B&#7883; kh&#243;a"}</span></td>
@@ -641,9 +641,9 @@ async function loadHistory() {
       <td class="px-4 py-2.5 text-gray-400 text-xs">${fmtVN(r.created_at)}</td>
       <td class="px-4 py-2.5 font-mono text-xs text-gray-300">${r.key.slice(0,10)}...${r.key.slice(-4)}</td>
       <td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-xs ${isUsage ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}">${isUsage ? "S&#7917; d&#7909;ng" : r.reason}</span></td>
-      <td class="px-4 py-2.5 text-xs text-gray-300">${r.model || "—"}</td>
-      <td class="px-4 py-2.5 text-right text-xs text-gray-400">${r.tokens_in ? r.tokens_in.toLocaleString() : "—"}</td>
-      <td class="px-4 py-2.5 text-right text-xs text-gray-400">${r.tokens_out ? r.tokens_out.toLocaleString() : "—"}</td>
+      <td class="px-4 py-2.5 text-xs text-gray-300">${r.model || "â€”"}</td>
+      <td class="px-4 py-2.5 text-right text-xs text-gray-400">${r.tokens_in ? r.tokens_in.toLocaleString() : "â€”"}</td>
+      <td class="px-4 py-2.5 text-right text-xs text-gray-400">${r.tokens_out ? r.tokens_out.toLocaleString() : "â€”"}</td>
       <td class="px-4 py-2.5 text-right font-mono text-xs ${isUsage ? "text-red-400" : "text-green-400"}">${isUsage ? r.delta : "+" + r.delta}</td>
     </tr>`;
   }).join("");
@@ -664,10 +664,10 @@ async function loadMonitor() {
   tbody.innerHTML = rows.map(r => `
     <tr class="border-b border-white/5 hover:bg-white/2">
       <td class="px-4 py-2">${fmtTimeVN(r.ts)}</td>
-      <td class="px-4 py-2 text-gray-400">${r.client_ip || "—"}</td>
-      <td class="px-4 py-2 font-mono text-gray-400">${r.api_key_masked || "—"} ${r.api_key_masked ? `<button onclick="copyText('${r.api_key_masked}',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>` : ""}</td>
-      <td class="px-4 py-2 text-gray-300">${r.path || "—"}</td>
-      <td class="px-4 py-2 text-gray-300">${r.model_requested || "—"}</td>
+      <td class="px-4 py-2 text-gray-400">${r.client_ip || "â€”"}</td>
+      <td class="px-4 py-2 font-mono text-gray-400">${r.api_key_masked || "â€”"} ${r.api_key_masked ? `<button onclick="copyText('${r.api_key_masked}',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>` : ""}</td>
+      <td class="px-4 py-2 text-gray-300">${r.path || "â€”"}</td>
+      <td class="px-4 py-2 text-gray-300">${r.model_requested || "â€”"}</td>
       <td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ${r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400"}">${r.status}</span></td>
       <td class="px-4 py-2 text-right text-gray-400">${r.latency_ms || 0}ms</td>
     </tr>`).join("");
@@ -693,24 +693,24 @@ async function loadOrders() {
   document.getElementById("osTotalOrders").textContent = stats.total_orders || 0;
   document.getElementById("osPaid").textContent = stats.paid || 0;
   document.getElementById("osPending").textContent = stats.pending || 0;
-  document.getElementById("osRevenue").textContent = Number(stats.revenue || 0).toLocaleString("vi-VN") + "đ";
+  document.getElementById("osRevenue").textContent = Number(stats.revenue || 0).toLocaleString("vi-VN") + "Ä‘";
   const tbody = document.getElementById("ordersTable");
   const rows = data.orders || [];
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-8">Không có đơn hàng</td></tr>'; return; }
-  const statusMap = { pending: ["bg-yellow-500/10 text-yellow-400", "Chờ TT"], paid: ["bg-green-500/10 text-green-400", "Đã TT"], cancelled: ["bg-red-500/10 text-red-400", "Đã huỷ"] };
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-8">KhÃ´ng cÃ³ Ä‘Æ¡n hÃ ng</td></tr>'; return; }
+  const statusMap = { pending: ["bg-yellow-500/10 text-yellow-400", "Chá» TT"], paid: ["bg-green-500/10 text-green-400", "ÄÃ£ TT"], cancelled: ["bg-red-500/10 text-red-400", "ÄÃ£ huá»·"] };
   tbody.innerHTML = rows.map(o => {
     const [cls, label] = statusMap[o.status] || ["bg-gray-500/10 text-gray-400", o.status];
     return `<tr class="border-b border-white/5 hover:bg-white/2">
       <td class="px-4 py-3 font-mono text-xs text-yellow-300">${o.order_code}</td>
-      <td class="px-4 py-3"><p class="text-sm">${o.customer_name || "—"}</p><p class="text-xs text-gray-500">${o.customer_email}</p></td>
+      <td class="px-4 py-3"><p class="text-sm">${o.customer_name || "â€”"}</p><p class="text-xs text-gray-500">${o.customer_email}</p></td>
       <td class="px-4 py-3 text-sm capitalize">${o.package_id}</td>
-      <td class="px-4 py-3 text-right font-bold">${Number(o.amount).toLocaleString("vi-VN")}đ</td>
+      <td class="px-4 py-3 text-right font-bold">${Number(o.amount).toLocaleString("vi-VN")}Ä‘</td>
       <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ${cls}">${label}</span></td>
       <td class="px-4 py-3 text-xs text-gray-500">${fmtVN(o.created_at)}</td>
       <td class="px-4 py-3 text-right">
         <div class="flex gap-1 justify-end">
-          ${o.status === "pending" ? `<button onclick="manualConfirm('${o.id}')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">Xác nhận</button>` : ""}
-          ${o.status === "pending" ? `<button onclick="cancelOrder('${o.id}')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">Huỷ</button>` : ""}
+          ${o.status === "pending" ? `<button onclick="manualConfirm('${o.id}')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">XÃ¡c nháº­n</button>` : ""}
+          ${o.status === "pending" ? `<button onclick="cancelOrder('${o.id}')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">Huá»·</button>` : ""}
           ${o.api_key ? `<span class="px-2 py-1 bg-dark-600 text-gray-400 rounded text-xs font-mono">${o.api_key.slice(0,12)}...</span> <button onclick="copyText('${o.api_key}',this)" class="px-1.5 py-1 bg-dark-600 text-gray-500 hover:text-white rounded text-xs transition">copy</button>` : ""}
         </div>
       </td>
@@ -719,15 +719,15 @@ async function loadOrders() {
 }
 
 async function manualConfirm(orderId) {
-  if (!confirm("Xác nhận thanh toán thủ công cho đơn này?")) return;
+  if (!confirm("XÃ¡c nháº­n thanh toÃ¡n thá»§ cÃ´ng cho Ä‘Æ¡n nÃ y?")) return;
   const r = await fetch(`${BASE}/api/orders/manual-confirm`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ orderId, note: "manual-admin" }) });
   const data = await r.json();
   if (data.ok) loadOrders();
-  else alert(data.detail || "Lỗi");
+  else alert(data.detail || "Lá»—i");
 }
 
 async function cancelOrder(orderId) {
-  if (!confirm("Huỷ đơn hàng này?")) return;
+  if (!confirm("Huá»· Ä‘Æ¡n hÃ ng nÃ y?")) return;
   await fetch(`${BASE}/api/orders/cancel`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ orderId }) });
   loadOrders();
 }
@@ -739,3 +739,4 @@ setInterval(() => {
 </script>
 </body>
 </html>
+
