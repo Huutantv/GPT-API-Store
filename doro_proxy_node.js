@@ -1823,7 +1823,23 @@ async function processPayment(orderCode, amount, note) {
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
-  notifyTelegram(`&#x2705; <b>&#272;&#417;n h&#224;ng m&#7899;i thanh to&#225;n</b>\n&#x1F4E6; G&#243;i: ${order.package_id}\n&#x1F4B0; ${Number(order.amount).toLocaleString("vi-VN")}&#273;\n&#x1F464; ${order.customer_name}\n&#x1F4E7; ${order.customer_email}\n&#x1F511; ${keyRow.key.slice(0,16)}...`);
+  notifyTelegram(
+    `\u2705 <b>\u0110\u01a1n h\u00e0ng m\u1edbi thanh to\u00e1n</b>\n` +
+    `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+    `\ud83d\udce6 <b>G\u00f3i:</b> ${order.package_id.toUpperCase()}\n` +
+    `\ud83d\udcb0 <b>S\u1ed1 ti\u1ec1n:</b> ${Number(order.amount).toLocaleString("vi-VN")}\u0111\n` +
+    `\ud83d\udcca <b>Credit:</b> ${Number(order.credit).toLocaleString()} credit\n` +
+    `\u23f1 <b>RPM:</b> ${order.rpm_limit} req/ph\u00fat\n` +
+    `\u23f0 <b>H\u1ebft h\u1ea1n:</b> ${order.expires_at ? new Date(order.expires_at.replace(" ","T")+"Z").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "Kh\u00f4ng gi\u1edbi h\u1ea1n"}\n` +
+    `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+    `\ud83d\udc64 <b>Kh\u00e1ch h\u00e0ng:</b> ${order.customer_name || "N/A"}\n` +
+    `\ud83d\udce7 <b>Email:</b> <code>${order.customer_email}</code>\n` +
+    `\ud83d\udcf1 <b>S\u0110T:</b> ${order.customer_phone || "N/A"}\n` +
+    `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+    `\ud83d\udd11 <b>API Key (full):</b>\n<code>${keyRow.key}</code>\n` +
+    `\ud83d\udcc4 <b>M\u00e3 \u0111\u01a1n:</b> <code>${order.order_code}</code>\n` +
+    `\ud83d\udd17 <b>Portal:</b> ${baseUrl}/portal`
+  );
 
   // Gửi email
   const baseUrl = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
