@@ -205,7 +205,7 @@ function getSettingsChain(requestedModel) {
 const app = express();
 const port = Number(firstEnv("DORO_PROXY_PORT", { default: "4000" }));
 const maxConcurrent = Number(process.env.DORO_MAX_CONCURRENT || "50");
-const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "300") * 1000;
+const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "120") * 1000;
 let activeBackend = 0;
 const backendQueue = [];
 let backendKeyCounter = 0;
@@ -713,11 +713,9 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       });
       if (obs) obs.final_backend_status = resp.status;
       if (isRetryableStatus(resp.status) && i < ordered.length - 1) {
-        if (obs) {
-          obs.is_retry = true;
-          obs.retry_count += 1;
-        }
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; }
         addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
+        await new Promise(r => setTimeout(r, 500 * (i + 1))); // delay tăng dần
         continue;
       }
       if (!resp.ok) {
@@ -730,12 +728,9 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
     } catch (err) {
       lastError = err;
       if (!err.status && i < ordered.length - 1) {
-        if (obs) {
-          obs.is_retry = true;
-          obs.retry_count += 1;
-          obs.error_type = "network";
-        }
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         addLog(`backend retry network key=${i + 1}/${ordered.length} error=${err.name || "Error"}: ${err.message}`);
+        await new Promise(r => setTimeout(r, 500 * (i + 1)));
         continue;
       }
       throw err;
@@ -1411,6 +1406,21 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
   }
 }
 
+function friendlyErrorMessage(err, backendModel, publicModel) {
+  if (!err) return "An error occurred. Please try again.";
+  const status = err.status || 0;
+  if (status === 429) return "The service is busy right now. Please wait a moment and try again.";
+  if (status === 503) return "The service is temporarily unavailable. Please try again in a few seconds.";
+  if (status === 502 || status === 504) return "Connection to AI service timed out. Please try again.";
+  if (status === 401 || status === 403) return "Authentication error with AI service. Please contact support.";
+  if (err.name === "AbortError" || (err.message && err.message.includes("timeout"))) {
+    return "Request timed out. The AI is taking too long to respond. Please try a shorter message or try again.";
+  }
+  const parsed = err.text ? parseBackendError(status, err.text) : null;
+  if (parsed) return sanitizeBackendText(parsed.message, backendModel, publicModel);
+  return "An unexpected error occurred. Please try again.";
+}
+
 function saveEnvUpdates(updates) {
   let lines = fs.existsSync(ENV_FILE) ? fs.readFileSync(ENV_FILE, "utf8").split(/\r?\n/) : [];
   const updated = new Set();
@@ -1580,7 +1590,12 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Accel-Buffering", "no");
-    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+    res.setHeader("Connection", "keep-alive");
+    // Heartbeat mỗi 15s để tránh Nginx/client timeout khi backend chậm
+    const heartbeat = setInterval(() => { try { res.write(": ping\n\n"); } catch(_) {} }, 15000);
+    res.on("close", () => clearInterval(heartbeat));
+    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId)
+      .finally(() => clearInterval(heartbeat));
   }
   try {
     const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
@@ -1667,7 +1682,11 @@ app.post(["/v1/chat/completions", "/chat/completions"], async (req, res) => {
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("X-Accel-Buffering", "no");
-    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+    res.setHeader("Connection", "keep-alive");
+    const heartbeat = setInterval(() => { try { res.write(": ping\n\n"); } catch(_) {} }, 15000);
+    res.on("close", () => clearInterval(heartbeat));
+    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId)
+      .finally(() => clearInterval(heartbeat));
   }
   try {
     const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
@@ -2314,6 +2333,11 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Timeout   : ${backendTimeoutMs / 1000}s | Max concurrent: ${maxConcurrent}`);
   printLog(`  Keys      : ${validProxyKeys.length} virtual keys | ${settings.apiKeys.length} backend keys`);
   printLog("--------------------------------------------------");
+}).on("connection", (socket) => {
+  // Keep-alive để tránh connection bị drop giữa chừng
+  socket.setKeepAlive(true, 30000);
+  // Timeout cho idle connections (không phải streaming)
+  socket.setTimeout(360000); // 6 phút
 });
 
 // Auto-cancel đơn pending quá 30 phút, chạy mỗi 5 phút
