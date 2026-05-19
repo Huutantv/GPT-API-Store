@@ -130,6 +130,39 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+<!-- Success popup: hiển thị API key nổi bật ngay khi thanh toán thành công -->
+<div id="successModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm items-center justify-center p-4">
+  <div class="w-full max-w-lg bg-dark-800 border border-green-500/30 rounded-3xl shadow-2xl shadow-green-500/10 overflow-hidden">
+    <div class="bg-green-500/10 border-b border-green-500/20 px-5 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-11 h-11 rounded-2xl bg-green-500/20 flex items-center justify-center text-2xl">🎉</div>
+        <div>
+          <h2 class="text-lg font-bold text-green-400">Thanh toán thành công!</h2>
+          <p class="text-xs text-gray-400">API key đã được kích hoạt</p>
+        </div>
+      </div>
+      <button onclick="closeSuccessModal()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition">×</button>
+    </div>
+    <div class="p-5 space-y-4">
+      <div class="bg-dark-900 border border-primary/30 rounded-2xl p-4">
+        <div class="flex items-center justify-between gap-3 mb-3">
+          <p class="text-xs text-gray-500 uppercase tracking-wider font-semibold">API Key của bạn</p>
+          <button onclick="copySuccessKey(this)" class="px-3 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">Copy key</button>
+        </div>
+        <code id="modalSuccessKey" class="block text-primary font-mono text-sm break-all leading-relaxed">—</code>
+      </div>
+      <div class="bg-yellow-500/10 border border-yellow-500/20 rounded-2xl p-4 text-sm text-yellow-100">
+        <p class="font-semibold mb-1">Lưu ý quan trọng</p>
+        <p class="text-xs text-yellow-200/80 leading-relaxed">Hãy copy và lưu API key này lại. Key cũng đã được gửi về email <strong id="modalSuccessEmail">—</strong>.</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <a href="/portal" class="text-center px-5 py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Xem tài khoản</a>
+        <button onclick="closeSuccessModal()" class="px-5 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition">Đóng popup</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const BASE = window.location.origin;
 let selectedPkg = null;
@@ -245,8 +278,32 @@ function startPolling() {
       document.getElementById("payStatus").classList.add("hidden");
       document.getElementById("paySuccess").classList.remove("hidden");
       document.getElementById("successKey").textContent = data.api_key || "—";
+      showSuccessModal(data.api_key || "—");
     }
   }, 5000);
+}
+
+function showSuccessModal(apiKey) {
+  document.getElementById("modalSuccessKey").textContent = apiKey;
+  document.getElementById("modalSuccessEmail").textContent = currentOrder?.customer_email || document.getElementById("successEmail").textContent || "—";
+  const modal = document.getElementById("successModal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+}
+
+function closeSuccessModal() {
+  const modal = document.getElementById("successModal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function copySuccessKey(btn) {
+  const key = document.getElementById("modalSuccessKey").textContent;
+  navigator.clipboard.writeText(key).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = "Đã copy ✓";
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
 }
 
 function setStepInd(step) {
