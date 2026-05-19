@@ -1823,15 +1823,26 @@ app.get("/api/orders/lookup", (req, res) => {
 async function notifyTelegram(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
+  if (!token || !chatId) {
+    addLog("telegram notify skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
+    return false;
+  }
   try {
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
     });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      addLog(`telegram notify failed: status=${response.status} detail=${detail.slice(0, 200)}`);
+      return false;
+    }
+    addLog("telegram notify sent");
+    return true;
   } catch (err) {
     addLog(`telegram notify error: ${err.message}`);
+    return false;
   }
 }
 
@@ -1910,7 +1921,8 @@ async function processPayment(orderCode, amount, note) {
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
-  notifyTelegram(
+  const baseUrl = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
+  await notifyTelegram(
     `\u2705 <b>\u0110\u01a1n h\u00e0ng m\u1edbi thanh to\u00e1n</b>\n` +
     `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
     `\ud83d\udce6 <b>G\u00f3i:</b> ${order.package_id.toUpperCase()}\n` +
@@ -1929,7 +1941,6 @@ async function processPayment(orderCode, amount, note) {
   );
 
   // Gửi email
-  const baseUrl = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
   const pkg = orders.getPackage(order.package_id);
   try {
     await mailer.sendApiKey({ to: order.customer_email, customerName: order.customer_name, packageName: pkg ? pkg.name : order.package_id, apiKey: keyRow.key, credit: order.credit, rpmLimit: order.rpm_limit, baseUrl });
