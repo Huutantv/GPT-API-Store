@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>GPT API - Kiểm tra API Key</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',sans-serif}
+</style>
+</head>
+<body class="bg-dark-900 text-white min-h-screen antialiased">
+
+<nav class="bg-dark-800 border-b border-white/5 px-6 py-4 flex items-center justify-between">
+  <a href="/" class="flex items-center gap-2">
+    <div class="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
+      <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    </div>
+    <span class="font-bold">GPT API Store</span>
+  </a>
+  <div class="flex items-center gap-3">
+    <a href="/portal" class="text-sm text-gray-400 hover:text-white transition">Portal</a>
+    <a href="/checkout" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">Mua API Key</a>
+  </div>
+</nav>
+
+<div class="max-w-3xl mx-auto px-4 py-10 md:py-14">
+  <div class="text-center mb-10">
+    <div class="w-14 h-14 bg-primary/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+      <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+    </div>
+    <h1 class="text-3xl md:text-4xl font-bold mb-2">Kiểm tra API Key</h1>
+    <p class="text-gray-400 max-w-xl mx-auto">Nhập API key để xem nhanh số dư credit, trạng thái hoạt động, thời hạn sử dụng và chuyển tiếp sang portal nếu cần.</p>
+  </div>
+
+  <div class="bg-dark-700 border border-white/10 rounded-2xl p-6 md:p-8 space-y-5">
+    <div>
+      <label for="apiKeyInput" class="text-sm text-gray-400 block mb-2">API Key</label>
+      <input id="apiKeyInput" type="password" placeholder="sk-..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" style="font-size:16px" onkeydown="if(event.key==='Enter')checkApiKey()">
+      <p class="text-xs text-gray-500 mt-2">API key hợp lệ sẽ được lưu tạm để mở nhanh trong portal.</p>
+    </div>
+
+    <div class="flex flex-col sm:flex-row gap-3">
+      <button id="checkBtn" onclick="checkApiKey()" class="flex-1 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition">Kiểm tra ngay</button>
+      <a href="/portal" class="flex-1 py-3 bg-dark-600 hover:bg-dark-900 border border-white/10 rounded-xl font-semibold text-sm transition text-center">Mở portal</a>
+    </div>
+
+    <p id="errorBox" class="hidden text-sm text-red-400"></p>
+
+    <div id="resultBox" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-dark-900 border border-white/5 rounded-2xl p-4">
+        <p class="text-xs text-gray-500 mb-1">Số dư credit</p>
+        <div id="creditBalance" class="text-2xl font-bold">—</div>
+      </div>
+      <div class="bg-dark-900 border border-white/5 rounded-2xl p-4">
+        <p class="text-xs text-gray-500 mb-1">Trạng thái</p>
+        <div id="keyStatus" class="text-lg font-semibold">—</div>
+      </div>
+      <div class="bg-dark-900 border border-white/5 rounded-2xl p-4">
+        <p class="text-xs text-gray-500 mb-1">Hết hạn</p>
+        <div id="expiresAt" class="text-sm font-semibold">—</div>
+      </div>
+    </div>
+
+    <div class="bg-primary/5 border border-primary/20 rounded-2xl p-4 text-sm text-gray-300">
+      Sau khi kiểm tra thành công, bạn có thể vào <a href="/portal" class="text-primary font-semibold hover:underline">portal</a> để xem lịch sử sử dụng, sao chép key và theo dõi chi tiết hơn.
+    </div>
+  </div>
+</div>
+
+<script>
+const BASE = window.location.origin;
+
+function setError(message) {
+  const box = document.getElementById('errorBox');
+  if (!message) {
+    box.textContent = '';
+    box.classList.add('hidden');
+    return;
+  }
+  box.textContent = message;
+  box.classList.remove('hidden');
+}
+
+function formatExpiry(value) {
+  if (!value) return 'Không giới hạn';
+  const date = new Date(value.includes('T') || value.includes('Z') ? value : value.replace(' ', 'T') + 'Z');
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function renderResult(data) {
+  document.getElementById('creditBalance').textContent = Number(data.credit || 0).toLocaleString('vi-VN');
+  document.getElementById('keyStatus').innerHTML = data.active
+    ? '<span class="text-green-400">Hoạt động</span>'
+    : '<span class="text-red-400">Bị khóa</span>';
+  document.getElementById('expiresAt').textContent = formatExpiry(data.expires_at);
+  document.getElementById('resultBox').classList.remove('hidden');
+}
+
+async function checkApiKey() {
+  const key = document.getElementById('apiKeyInput').value.trim();
+  const btn = document.getElementById('checkBtn');
+  document.getElementById('resultBox').classList.add('hidden');
+  setError('');
+
+  if (!key) {
+    setError('Vui lòng nhập API key để kiểm tra.');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Đang kiểm tra...';
+
+  try {
+    const response = await fetch(`${BASE}/api/credit/balance`, {
+      headers: { Authorization: `Bearer ${key}` }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.detail) {
+      throw new Error(data.detail || 'API key không hợp lệ hoặc không thể kiểm tra lúc này.');
+    }
+    sessionStorage.setItem('gpt_api_key', key);
+    renderResult(data);
+  } catch (error) {
+    setError(error.message || 'Không thể kết nối. Vui lòng thử lại sau.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Kiểm tra ngay';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = sessionStorage.getItem('gpt_api_key');
+  if (saved) document.getElementById('apiKeyInput').value = saved;
+});
+</script>
+</body>
+</html>

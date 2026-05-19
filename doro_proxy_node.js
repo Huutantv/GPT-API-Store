@@ -1746,6 +1746,10 @@ app.get("/lookup", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "lookup.html"));
 });
 
+app.get("/key-check", (_req, res) => {
+  return res.sendFile(path.join(ROOT_DIR, "key-check.html"));
+});
+
 app.get("/admin", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "admin.html"));
 });
