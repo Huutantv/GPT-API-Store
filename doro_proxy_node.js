@@ -532,10 +532,6 @@ function checkAuth(req) {
   // Credit-based auth
   const result = credit.checkCreditAuth(token);
   if (!result.ok) return { ok: false, status: result.status, message: result.message };
-  // RPM check
-  const rpmLimit = result.keyRow ? result.keyRow.rpm_limit : 10;
-  const rpmResult = credit.checkRpm(token, rpmLimit);
-  if (!rpmResult.ok) return { ok: false, status: rpmResult.status, message: rpmResult.message };
   return { ok: true, token, keyRow: result.keyRow };
 }
 
@@ -1762,33 +1758,12 @@ app.get("/checkout", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "checkout.html"));
 });
 
-// Rate limit tạo đơn: max 5 đơn/IP/giờ
-const orderRateLimit = new Map();
-function checkOrderRateLimit(ip) {
-  const now = Date.now();
-  const key = ip;
-  const entry = orderRateLimit.get(key) || { count: 0, resetAt: now + 3600000 };
-  if (now > entry.resetAt) { entry.count = 0; entry.resetAt = now + 3600000; }
-  if (entry.count >= 5) return false;
-  entry.count++;
-  orderRateLimit.set(key, entry);
-  // Cleanup cũ
-  if (orderRateLimit.size > 1000) {
-    for (const [k, v] of orderRateLimit) { if (now > v.resetAt) orderRateLimit.delete(k); }
-  }
-  return true;
-}
-
 // ── Orders API (public) ───────────────────────────────────────────────────────
 app.get("/api/orders/packages", (_req, res) => {
   res.json({ packages: orders.listPackages() });
 });
 
 app.post("/api/orders/create", async (req, res) => {
-  const ip = clientIp(req);
-  if (!checkOrderRateLimit(ip)) {
-    return res.status(429).json({ detail: "Qu\u00e1 nhi\u1ec1u y\u00eau c\u1ea7u. Vui l\u00f2ng th\u1eed l\u1ea1i sau 1 gi\u1edd." });
-  }
   const { packageId, customerName, customerEmail, customerPhone } = req.body || {};
   if (!packageId || !customerEmail) return res.status(400).json({ detail: "Thi\u1ebfu th\u00f4ng tin" });
   try {
