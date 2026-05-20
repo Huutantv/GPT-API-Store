@@ -2463,7 +2463,8 @@ app.get("/api/customers/:email", (req, res) => {
 app.get("/api/quota", async (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const keys = splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
+  const quotaKey = process.env.DORO_QUOTA_KEY || "";
+  const keys = quotaKey ? [quotaKey] : splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
   const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
   const results = [];
   for (const key of keys) {
@@ -2546,7 +2547,9 @@ setInterval(() => {
 
 // ── Quota Check — kiểm tra quota VietAPI backend mỗi giờ ─────────────────────
 async function checkBackendQuota() {
-  const keys = splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
+  // Ưu tiên DORO_QUOTA_KEY, fallback sang ANTHROPIC_AUTH_TOKEN
+  const quotaKey = process.env.DORO_QUOTA_KEY || "";
+  const keys = quotaKey ? [quotaKey] : splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
   const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
   for (const key of keys) {
     try {
