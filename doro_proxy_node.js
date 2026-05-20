@@ -2460,6 +2460,30 @@ app.get("/api/customers/:email", (req, res) => {
   res.json({ email, orders: orderList, keys });
 });
 
+app.get("/api/quota", async (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const keys = splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
+  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
+  const results = [];
+  for (const key of keys) {
+    try {
+      const [usageResp, subResp] = await Promise.all([
+        fetch(`${baseUrl}/v1/dashboard/billing/usage`, { headers: { Authorization: `Bearer ${key}` } }),
+        fetch(`${baseUrl}/v1/dashboard/billing/subscription`, { headers: { Authorization: `Bearer ${key}` } }),
+      ]);
+      const usage = usageResp.ok ? await usageResp.json() : {};
+      const sub = subResp.ok ? await subResp.json() : {};
+      const used = Number(usage.total_usage || 0);
+      const limit = Number(sub.hard_limit_usd || sub.soft_limit_usd || 0);
+      results.push({ key_masked: key.slice(0,8) + "..." + key.slice(-4), used, limit, remaining: limit - used, pct: limit > 0 ? Math.round((used / limit) * 100) : 0 });
+    } catch (err) {
+      results.push({ key_masked: key.slice(0,8) + "..." + key.slice(-4), error: err.message });
+    }
+  }
+  res.json({ backend_url: baseUrl, keys: results, checked_at: new Date().toISOString() });
+});
+
 app.get("/api/test-telegram", async (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
@@ -2519,3 +2543,45 @@ setInterval(() => {
   const cancelled = orders.cancelExpiredOrders();
   if (cancelled > 0) addLog(`auto-cancelled ${cancelled} expired pending orders`);
 }, 5 * 60 * 1000);
+
+// ── Quota Check — kiểm tra quota VietAPI backend mỗi giờ ─────────────────────
+async function checkBackendQuota() {
+  const keys = splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
+  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
+  for (const key of keys) {
+    try {
+      const [usageResp, subResp] = await Promise.all([
+        fetch(`${baseUrl}/v1/dashboard/billing/usage`, { headers: { Authorization: `Bearer ${key}` } }),
+        fetch(`${baseUrl}/v1/dashboard/billing/subscription`, { headers: { Authorization: `Bearer ${key}` } }),
+      ]);
+      if (!usageResp.ok || !subResp.ok) continue;
+      const usage = await usageResp.json();
+      const sub = await subResp.json();
+      const used = Number(usage.total_usage || 0);
+      const limit = Number(sub.hard_limit_usd || sub.soft_limit_usd || 0);
+      const remaining = limit - used;
+      const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
+      const keyMask = key.slice(0, 8) + "..." + key.slice(-4);
+      addLog(`quota check key=${keyMask} used=${used} limit=${limit} remaining=${remaining} (${pct}%)`);
+      // Cảnh báo khi dùng >= 80%
+      if (pct >= 80) {
+        notifyTelegram(
+          `\u26a0\ufe0f <b>Quota c\u1ea3nh b\u00e1o</b>\n` +
+          `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+          `\ud83d\udd11 Key: <code>${keyMask}</code>\n` +
+          `\ud83d\udcca \u0110\u00e3 d\u00f9ng: ${pct}%\n` +
+          `\ud83d\udcc8 Used: ${used.toLocaleString()}\n` +
+          `\ud83d\udcc9 Limit: ${limit.toLocaleString()}\n` +
+          `\ud83d\udcb0 C\u00f2n l\u1ea1i: ${remaining.toLocaleString()}\n` +
+          `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+        );
+      }
+    } catch (err) {
+      addLog(`quota check error: ${err.message}`);
+    }
+  }
+}
+// Check quota mỗi giờ
+setInterval(checkBackendQuota, 60 * 60 * 1000);
+// Check ngay khi khởi động (sau 10s)
+setTimeout(checkBackendQuota, 10000);
