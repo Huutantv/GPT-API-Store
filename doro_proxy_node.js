@@ -2365,6 +2365,27 @@ app.get("/api/customers/:email", (req, res) => {
   res.json({ email, orders: orderList, keys });
 });
 
+app.get("/api/test-telegram", async (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    return res.json({ ok: false, detail: "Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID in .env", token_set: !!token, chatId_set: !!chatId });
+  }
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: "Test message from proxy at " + new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" }) }),
+    });
+    const data = await r.json();
+    res.json({ ok: r.ok, status: r.status, telegram_response: data });
+  } catch (err) {
+    res.json({ ok: false, error: err.message });
+  }
+});
+
 app.use((req, res) => res.status(404).json({ detail: "Not found" }));
 
 function localIp() {
