@@ -325,8 +325,20 @@ body{font-family:'Inter',sans-serif}
       </select>
     </div>
     <div class="flex items-center justify-between gap-3 pt-2">
-      <span id="activeStatus" class="text-xs text-gray-500">&mdash;</span>
+      <div class="flex items-center gap-3">
+        <label class="flex items-center gap-2 bg-dark-900 border border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-green-500/50 transition">
+          <input type="checkbox" id="chkAutoMode" class="w-4 h-4 accent-green-500">
+          <span class="text-sm font-medium">Auto Mode</span>
+          <span class="text-xs text-gray-500">(t&#7921; ng&#7855;t/ph&#7909;c h&#7891;i)</span>
+        </label>
+        <span id="activeStatus" class="text-xs text-gray-500">&mdash;</span>
+      </div>
       <button onclick="saveActiveBackend()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u l&#7921;a ch&#7885;n</button>
+    </div>
+    <div id="autoModeInfo" class="hidden bg-green-500/5 border border-green-500/20 rounded-lg p-3 text-xs text-green-300 space-y-1">
+      <p><strong>Auto Mode:</strong> Khi b&#7853;t, n&#7871;u 1 backend l&#7895;i &#8805;3 l&#7847;n/ph&#250;t s&#7869; t&#7921; &#273;&#7897;ng ng&#7855;t v&#224; chuy&#7875;n sang backend c&#242;n l&#7841;i.</p>
+      <p>Sau 2 ph&#250;t s&#7869; t&#7921; th&#7917; l&#7841;i backend l&#7895;i. N&#7871;u OK s&#7869; b&#7853;t l&#7841;i c&#7843; 2.</p>
+      <p id="healthStatus"></p>
     </div>
   </div>
 
@@ -727,6 +739,22 @@ async function loadBackendConfig() {
   document.getElementById("chkBackend2").checked = (active === "2" || active === "both");
   document.getElementById("cfgRouter").value = data.backend_router_mode || "failover";
 
+  // Auto mode
+  var autoMode = !!data.auto_mode;
+  document.getElementById("chkAutoMode").checked = autoMode;
+  document.getElementById("autoModeInfo").classList.toggle("hidden", !autoMode);
+  if (autoMode && data.backend_health) {
+    var h1 = data.backend_health["1"] || {};
+    var h2 = data.backend_health["2"] || {};
+    var statusText = "B1: " + (h1.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (h1.errors||0) + " err) | B2: " + (h2.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (h2.errors||0) + " err)";
+    document.getElementById("healthStatus").textContent = statusText;
+  }
+
+  // Toggle router box + auto mode info
+  document.getElementById("chkAutoMode").addEventListener("change", function() {
+    document.getElementById("autoModeInfo").classList.toggle("hidden", !this.checked);
+  });
+
   // Backend 1 & 2 from profiles
   var profiles = data.backend_profiles || [];
   var b1 = profiles.find(function(p){return p.id==="1";}) || {};
@@ -815,9 +843,11 @@ async function saveActiveBackend() {
   var c2 = document.getElementById("chkBackend2").checked;
   if (!c1 && !c2) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backend"); return; }
   var active = (c1 && c2) ? "both" : (c1 ? "1" : "2");
+  var autoMode = document.getElementById("chkAutoMode").checked;
   var updates = {
     DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
+    DORO_AUTO_MODE: autoMode ? "1" : "0",
   };
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();

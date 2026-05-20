@@ -171,8 +171,17 @@ function getSettings(requestedModel) {
 function getSettingsChain(requestedModel) {
   loadLocalEnv(false);
   const active = activeBackendId();
+  const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
   let ids = active === "both" ? ["1", "2"] : [active];
-  if (active === "both") {
+
+  // Auto mode: lọc backend đang trong trạng thái "down"
+  if (autoMode && active === "both") {
+    const healthy = ids.filter(id => isBackendHealthy(id));
+    if (healthy.length > 0) ids = healthy;
+    // Nếu tất cả đều down, vẫn thử cả 2
+  }
+
+  if (active === "both" && ids.length > 1) {
     const mode = backendRouterMode();
     if (mode === "round_robin") {
       const first = backendRouterCounter++ % 2 === 0 ? "1" : "2";
@@ -200,6 +209,79 @@ function getSettingsChain(requestedModel) {
       disableTools: profile.disableTools,
     };
   }).filter((settings) => settings.apiKeys.length);
+}
+
+// ── Auto Mode — Backend Health Tracking ──────────────────────────────────────
+const _backendHealth = {
+  "1": { errors: 0, windowStart: Date.now(), downSince: null, downCount: 0 },
+  "2": { errors: 0, windowStart: Date.now(), downSince: null, downCount: 0 },
+};
+const AUTO_ERROR_THRESHOLD = Number(process.env.DORO_AUTO_ERROR_THRESHOLD || "3");  // 3 lỗi/phút → mark down
+const AUTO_ERROR_WINDOW_MS = 60 * 1000;
+const AUTO_RECOVERY_MS = Number(process.env.DORO_AUTO_RECOVERY_MS || "120000");    // 2 phút mới thử lại
+
+function isBackendHealthy(id) {
+  const state = _backendHealth[id];
+  if (!state || !state.downSince) return true;
+  // Đã đủ thời gian recovery → cho phép thử lại
+  if (Date.now() - state.downSince >= AUTO_RECOVERY_MS) {
+    state.downSince = null;
+    state.errors = 0;
+    state.windowStart = Date.now();
+    addLog(`auto-mode: backend ${id} recovery window expired, re-enabled for retry`);
+    notifyTelegram(
+      `\u2139\ufe0f <b>Auto mode: Th\u1eed l\u1ea1i Backend ${id}</b>\n` +
+      `\ud83d\udd04 Sau ${Math.round(AUTO_RECOVERY_MS/1000)}s, c\u1ea3 2 backend ho\u1ea1t \u0111\u1ed9ng tr\u1edf l\u1ea1i\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+    return true;
+  }
+  return false;
+}
+
+function trackBackendError(id, status) {
+  if (!_backendHealth[id]) return;
+  if (String(process.env.DORO_AUTO_MODE || "0") !== "1") return;
+  if (![502, 503, 504, 500].includes(status)) return;
+
+  const state = _backendHealth[id];
+  const now = Date.now();
+  if (now - state.windowStart > AUTO_ERROR_WINDOW_MS) {
+    state.errors = 0;
+    state.windowStart = now;
+  }
+  state.errors += 1;
+
+  if (state.errors >= AUTO_ERROR_THRESHOLD && !state.downSince) {
+    state.downSince = now;
+    state.downCount += 1;
+    addLog(`auto-mode: backend ${id} marked DOWN after ${state.errors} errors`);
+    notifyTelegram(
+      `\ud83d\udd34 <b>Auto mode: Backend ${id} t\u1ea1m ng\u1eaft</b>\n` +
+      `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+      `\u26a0\ufe0f ${state.errors} l\u1ed7i li\u00ean ti\u1ebfp\n` +
+      `\ud83d\udd04 T\u1ef1 \u0111\u1ed9ng chuy\u1ec3n sang backend c\u00f2n l\u1ea1i\n` +
+      `\u23f0 S\u1ebd th\u1eed l\u1ea1i sau ${Math.round(AUTO_RECOVERY_MS/1000)}s\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+  }
+}
+
+function trackBackendSuccess(id) {
+  if (!_backendHealth[id]) return;
+  const state = _backendHealth[id];
+  if (state.downSince) {
+    state.downSince = null;
+    state.errors = 0;
+    addLog(`auto-mode: backend ${id} recovered`);
+    notifyTelegram(
+      `\u2705 <b>Auto mode: Backend ${id} \u0111\u00e3 ph\u1ee5c h\u1ed3i</b>\n` +
+      `\ud83d\udfe2 Ho\u1ea1t \u0111\u1ed9ng b\u00ecnh th\u01b0\u1eddng tr\u1edf l\u1ea1i\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+  } else {
+    state.errors = Math.max(0, state.errors - 1);
+  }
 }
 
 const app = express();
@@ -753,9 +835,12 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
       applyBackendToolCompatibility(payload, settings);
       const url = `${settings.baseUrl}${pathSuffix}`;
       const response = await postWithKeyFailover(url, payload, settings.apiKeys, {}, obs);
+      trackBackendSuccess(settings.profileId);
       return { response, settings, payload };
     } catch (err) {
       lastError = err;
+      // Auto-mode: track backend lỗi để tự ngắt
+      if (err.status) trackBackendError(settings.profileId, err.status);
       const canTryNext = !err.status || (isRetryableStatus(err.status) && i < settingsChain.length - 1);
       if (canTryNext && i < settingsChain.length - 1) {
         if (obs) {
@@ -2073,6 +2158,12 @@ app.get("/api/config", (req, res) => {
   res.json({
     active_backend: active,
     active_backend_label: activeLabel,
+    auto_mode: String(process.env.DORO_AUTO_MODE || "0") === "1",
+    auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
+    backend_health: {
+      "1": { healthy: isBackendHealthy("1"), errors: _backendHealth["1"].errors, down_count: _backendHealth["1"].downCount, down_since: _backendHealth["1"].downSince },
+      "2": { healthy: isBackendHealthy("2"), errors: _backendHealth["2"].errors, down_count: _backendHealth["2"].downCount, down_since: _backendHealth["2"].downSince },
+    },
     backend_router_mode: backendRouterMode(),
     backend_weights: weights,
     backend_profiles: profiles,
@@ -2122,10 +2213,14 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND2_USER_ASSISTANT_ONLY",
     "DORO_BACKEND2_DISABLE_TOOLS",
     "DORO_BACKEND_TIMEOUT",
+    "DORO_AUTO_MODE",
+    "DORO_AUTO_RECOVERY_MS",
   ]) {
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") value = ["1", "2", "both"].includes(value) ? value : "";
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
+    if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_BACKEND1_WEIGHT" || field === "DORO_BACKEND2_WEIGHT") value = String(clampPercent(value, 50));
     if (field === "DORO_BACKEND1_MAX_TOKENS" || field === "DORO_BACKEND2_MAX_TOKENS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_BACKEND1_USER_ASSISTANT_ONLY" || field === "DORO_BACKEND2_USER_ASSISTANT_ONLY") value = envFlag(value) ? "1" : "0";
