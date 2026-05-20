@@ -292,43 +292,97 @@ body{font-family:'Inter',sans-serif}
 <!-- Tab: Backend Keys -->
 <div id="tab-backend" class="tab-content hidden space-y-6">
   <h2 class="text-xl font-bold">Backend API Keys</h2>
-  <p class="text-sm text-gray-400">Qu&#7843;n l&#253; c&#225;c key g&#7885;i t&#7899;i backend upstream. Proxy t&#7921; &#273;&#7897;ng rotate khi key b&#7883; l&#7895;i.</p>
-  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+  <p class="text-sm text-gray-400">Qu&#7843;n l&#253; backend upstream. Proxy t&#7921; &#273;&#7897;ng rotate keys v&#224; failover gi&#7919;a Backend 1 &amp; Backend 2 khi c&#243; l&#7895;i.</p>
+
+  <!-- Active backend selector -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
     <div class="flex items-center justify-between">
-      <h3 class="font-semibold text-sm">C&#7845;u h&#236;nh hi&#7879;n t&#7841;i</h3>
+      <h3 class="font-semibold text-sm">Ho&#7841;t &#273;&#7897;ng</h3>
       <button onclick="loadBackendConfig()" class="text-xs text-gray-500 hover:text-white px-2 py-1 bg-dark-600 rounded transition">L&#224;m m&#7899;i</button>
     </div>
-    <div id="backendConfigRows" class="space-y-2 text-sm text-gray-300">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Backend &#273;ang d&#249;ng</label>
+        <select id="cfgActive" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+          <option value="1">Ch&#7881; Backend 1</option>
+          <option value="2">Ch&#7881; Backend 2</option>
+          <option value="both">C&#7843; 2 (failover)</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Router mode (khi d&#249;ng c&#7843; 2)</label>
+        <select id="cfgRouter" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+          <option value="failover">Failover (B1 tr&#432;&#7899;c, B2 d&#7921; ph&#242;ng)</option>
+          <option value="weighted">Weighted (theo %)</option>
+          <option value="round_robin">Round-robin</option>
+        </select>
+      </div>
+      <div class="flex gap-2 items-end">
+        <button onclick="saveActiveBackend()" class="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u</button>
+      </div>
+    </div>
+    <div id="backendConfigRows" class="space-y-2 text-sm text-gray-300 pt-3 border-t border-white/5">
       <div class="text-gray-500">&#272;ang t&#7843;i...</div>
     </div>
   </div>
-  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
-    <h3 class="font-semibold text-sm">Backend 1 &mdash; API Keys</h3>
-    <div id="backend1KeysList" class="space-y-2"></div>
-    <div class="flex gap-2">
-      <input id="newBackend1Key" placeholder="sk-new-backend-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
-      <button onclick="addBackendKey('1')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+
+  <!-- Backend 1 -->
+  <div class="bg-dark-700 border border-blue-500/20 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-blue-400 rounded-full"></span> Backend 1</h3>
+      <span class="text-xs text-gray-500" id="backend1Status">&mdash;</span>
     </div>
-    <p id="backend1Msg" class="text-xs text-gray-400"></p>
-  </div>
-  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
-    <h3 class="font-semibold text-sm">C&#7845;u h&#236;nh Backend</h3>
     <div class="space-y-3">
       <div>
         <label class="text-xs text-gray-400 block mb-1">Base URL</label>
-        <input id="cfgBaseUrl" placeholder="https://api.example.com/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        <input id="cfg1BaseUrl" placeholder="https://api.vietapi.tech/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
       <div>
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
-        <input id="cfgModel" placeholder="deepseek-v4-pro" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        <input id="cfg1Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
-      <div class="flex gap-3 items-center">
-        <button onclick="saveBackendConfig()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u c&#7845;u h&#236;nh</button>
-        <span id="cfgMsg" class="text-xs text-gray-400"></span>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+        <div id="backend1KeysList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="newBackend1Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <button onclick="addBackendKey('1')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+        </div>
+        <p id="backend1Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u c&#7847;n restart proxy &#273;&#7875; &#225;p d&#7909;ng Base URL v&#224; Model m&#7899;i.</p>
+      <button onclick="saveBackend1Config()" class="w-full md:w-auto px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 1</button>
     </div>
   </div>
+
+  <!-- Backend 2 -->
+  <div class="bg-dark-700 border border-purple-500/20 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-purple-400 rounded-full"></span> Backend 2 <span class="text-xs text-gray-500 font-normal">(d&#7921; ph&#242;ng)</span></h3>
+      <span class="text-xs text-gray-500" id="backend2Status">&mdash;</span>
+    </div>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+        <input id="cfg2BaseUrl" placeholder="https://hk.doro.lol/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+        <input id="cfg2Model" placeholder="deepseek-v4-pro" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+        <div id="backend2KeysList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="newBackend2Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <button onclick="addBackendKey('2')" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+        </div>
+        <p id="backend2Msg" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+      <button onclick="saveBackend2Config()" class="w-full md:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 2</button>
+    </div>
+  </div>
+
+  <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u c&#7847;n restart proxy &#273;&#7875; &#225;p d&#7909;ng Base URL v&#224; Model m&#7899;i. Th&#234;m/x&#243;a key c&#243; hi&#7879;u l&#7921;c ngay.</p>
 </div>
 
     </div><!-- end content inner -->
@@ -646,35 +700,54 @@ async function cancelOrder(orderId) {
 
 <script>
 /* ===== BACKEND CONFIG ===== */
+function renderKeyList(listEl, keys, backendId) {
+  if (!keys || !keys.length) {
+    listEl.innerHTML = '<p class="text-xs text-gray-500">Ch\u01b0a c\u00f3 key n\u00e0o</p>';
+    return;
+  }
+  listEl.innerHTML = keys.map(function(k) {
+    return '<div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">' +
+      '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + k + '</code>' +
+      '<button onclick="copyText(\'' + k + '\',this)" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-600 rounded transition shrink-0">copy</button>' +
+      '<button onclick="removeBackendKeyDirect(\'' + backendId + '\',\'' + k + '\')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition shrink-0">X\u00f3a</button>' +
+    '</div>';
+  }).join("");
+}
+
 async function loadBackendConfig() {
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
+
+  // Active backend & router mode
+  document.getElementById("cfgActive").value = data.active_backend || "1";
+  document.getElementById("cfgRouter").value = data.backend_router_mode || "failover";
+
+  // Summary rows
   var rows = document.getElementById("backendConfigRows");
   rows.innerHTML =
-    '<div class="flex justify-between"><span class="text-gray-500">Base URL</span><code class="text-green-400 text-xs">' + (data.base_url || "\u2014") + '</code></div>' +
-    '<div class="flex justify-between"><span class="text-gray-500">Backend Model</span><code class="text-primary text-xs">' + (data.backend_model || "\u2014") + '</code></div>' +
-    '<div class="flex justify-between"><span class="text-gray-500">S\u1ed1 backend keys</span><span class="font-bold">' + (data.backend_api_keys || 0) + '</span></div>';
-  document.getElementById("cfgBaseUrl").value = data.base_url || "";
-  document.getElementById("cfgModel").value = data.backend_model || "";
-  var keysList = document.getElementById("backend1KeysList");
-  var fullKeys = data.backend_api_keys_full || [];
-  if (!fullKeys.length) {
-    keysList.innerHTML = '<p class="text-xs text-gray-500">Ch\u01b0a c\u00f3 key n\u00e0o</p>';
-  } else {
-    keysList.innerHTML = fullKeys.map(function(k) {
-      return '<div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">' +
-        '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + k + '</code>' +
-        '<button onclick="copyText(\'' + k + '\',this)" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-600 rounded transition shrink-0">copy</button>' +
-        '<button onclick="removeBackendKeyDirect(\'1\',\'' + k + '\')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition shrink-0">X\u00f3a</button>' +
-      '</div>';
-    }).join("");
-  }
+    '<div class="flex justify-between"><span class="text-gray-500">&#272;ang ho&#7841;t &#273;&#7897;ng</span><strong class="text-primary">' + (data.active_backend_label || "\u2014") + '</strong></div>' +
+    '<div class="flex justify-between"><span class="text-gray-500">Router mode</span><code class="text-xs">' + (data.backend_router_mode || "\u2014") + '</code></div>';
+
+  // Backend 1 & 2 from profiles
+  var profiles = data.backend_profiles || [];
+  var b1 = profiles.find(function(p){return p.id==="1";}) || {};
+  var b2 = profiles.find(function(p){return p.id==="2";}) || {};
+
+  document.getElementById("cfg1BaseUrl").value = b1.base_url || "";
+  document.getElementById("cfg1Model").value = b1.backend_model || "";
+  document.getElementById("backend1Status").textContent = (b1.backend_api_keys || 0) + " keys";
+  renderKeyList(document.getElementById("backend1KeysList"), b1.backend_api_keys_full || [], "1");
+
+  document.getElementById("cfg2BaseUrl").value = b2.base_url || "";
+  document.getElementById("cfg2Model").value = b2.backend_model || "";
+  document.getElementById("backend2Status").textContent = (b2.backend_api_keys || 0) + " keys";
+  renderKeyList(document.getElementById("backend2KeysList"), b2.backend_api_keys_full || [], "2");
 }
 
 async function addBackendKey(backend) {
   var input = document.getElementById("newBackend" + backend + "Key");
   var key = input.value.trim();
   var msg = document.getElementById("backend" + backend + "Msg");
-  if (!key) { msg.textContent = "Vui l\u00f2ng nh\u1eadp key"; return; }
+  if (!key) { msg.className = "text-xs text-red-400"; msg.textContent = "Vui l\u00f2ng nh\u1eadp key"; return; }
   var r = await fetch(BASE + "/api/backend-keys", { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend: backend, key: key }) });
   var data = await r.json();
   if (data.ok) {
@@ -692,20 +765,41 @@ async function removeBackendKeyDirect(backend, key) {
   if (data.ok) loadBackendConfig(); else alert(data.detail || "L\u1ed7i");
 }
 
-async function saveBackendConfig() {
-  var baseUrl = document.getElementById("cfgBaseUrl").value.trim();
-  var model = document.getElementById("cfgModel").value.trim();
-  var msg = document.getElementById("cfgMsg");
-  var updates = {};
-  if (baseUrl) updates.ANTHROPIC_BASE_URL = baseUrl;
-  if (model) updates.DORO_BACKEND_MODEL = model;
-  if (!Object.keys(updates).length) { msg.textContent = "Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"; return; }
+async function saveBackend1Config() {
+  var updates = {
+    ANTHROPIC_BASE_URL: document.getElementById("cfg1BaseUrl").value.trim(),
+    DORO_BACKEND_MODEL: document.getElementById("cfg1Model").value.trim(),
+  };
+  Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
+  if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
-  if (data.ok) {
-    msg.className = "text-xs text-green-400";
-    msg.textContent = "\u0110\u00e3 l\u01b0u: " + data.updated.join(", ") + ". C\u1ea7n restart proxy.";
-  } else { msg.className = "text-xs text-red-400"; msg.textContent = data.detail || "L\u1ed7i"; }
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 1. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  else alert(data.detail || "L\u1ed7i");
+}
+
+async function saveBackend2Config() {
+  var updates = {
+    DORO_BACKEND2_BASE_URL: document.getElementById("cfg2BaseUrl").value.trim(),
+    DORO_BACKEND2_MODEL: document.getElementById("cfg2Model").value.trim(),
+  };
+  Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
+  if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 2. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  else alert(data.detail || "L\u1ed7i");
+}
+
+async function saveActiveBackend() {
+  var updates = {
+    DORO_ACTIVE_BACKEND: document.getElementById("cfgActive").value,
+    DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
+  };
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  else alert(data.detail || "L\u1ed7i");
 }
 
 /* ===== INIT ===== */
