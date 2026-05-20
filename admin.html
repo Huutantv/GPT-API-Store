@@ -399,6 +399,17 @@ body{font-family:'Inter',sans-serif}
   </div>
 
   <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u c&#7847;n restart proxy &#273;&#7875; &#225;p d&#7909;ng Base URL v&#224; Model m&#7899;i. Th&#234;m/x&#243;a key c&#243; hi&#7879;u l&#7921;c ngay.</p>
+
+  <!-- Quota check -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2">&#x1F4CA; Quota Backend</h3>
+      <button onclick="loadQuota()" class="text-xs text-gray-500 hover:text-white px-3 py-1.5 bg-dark-600 rounded-lg transition">Check ngay</button>
+    </div>
+    <div id="quotaResults" class="space-y-3">
+      <p class="text-xs text-gray-500">Nh&#7845;n "Check ngay" &#273;&#7875; xem quota c&#225;c backend key</p>
+    </div>
+  </div>
 </div>
 
     </div><!-- end content inner -->
@@ -823,6 +834,41 @@ async function saveBackend1Config() {
   var data = await r.json();
   if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 1. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
+}
+
+async function loadQuota() {
+  var el = document.getElementById("quotaResults");
+  el.innerHTML = '<p class="text-xs text-gray-400">\u0110ang ki\u1ec3m tra...</p>';
+  try {
+    var r = await fetch(BASE + "/api/quota", { headers: authHeaders() });
+    var data = await r.json();
+    if (!data.keys || !data.keys.length) {
+      el.innerHTML = '<p class="text-xs text-gray-500">Kh\u00f4ng c\u00f3 key n\u00e0o</p>';
+      return;
+    }
+    el.innerHTML = data.keys.map(function(k) {
+      if (k.error) return '<div class="bg-dark-900 rounded-lg p-3"><code class="text-xs text-gray-400">' + k.key_masked + '</code> <span class="text-red-400 text-xs">L\u1ed7i: ' + k.error + '</span></div>';
+      var pct = k.pct || 0;
+      var barColor = pct >= 80 ? "bg-red-500" : pct >= 50 ? "bg-yellow-500" : "bg-green-500";
+      var textColor = pct >= 80 ? "text-red-400" : pct >= 50 ? "text-yellow-400" : "text-green-400";
+      return '<div class="bg-dark-900 rounded-xl p-4 space-y-2">' +
+        '<div class="flex items-center justify-between">' +
+          '<code class="text-xs font-mono text-gray-300">' + k.key_masked + '</code>' +
+          '<span class="text-sm font-bold ' + textColor + '">' + pct + '%</span>' +
+        '</div>' +
+        '<div class="w-full h-2 bg-dark-600 rounded-full overflow-hidden">' +
+          '<div class="h-full ' + barColor + ' rounded-full transition-all" style="width:' + Math.min(pct, 100) + '%"></div>' +
+        '</div>' +
+        '<div class="flex justify-between text-xs text-gray-500">' +
+          '<span>Used: ' + Number(k.used).toLocaleString() + '</span>' +
+          '<span>Limit: ' + Number(k.limit).toLocaleString() + '</span>' +
+        '</div>' +
+        '<div class="text-xs ' + textColor + '">C\u00f2n l\u1ea1i: ' + Number(k.remaining).toLocaleString() + '</div>' +
+      '</div>';
+    }).join("") + '<p class="text-xs text-gray-600 mt-2">Ki\u1ec3m tra l\u00fac: ' + new Date(data.checked_at).toLocaleString("vi-VN", {timeZone:"Asia/Ho_Chi_Minh"}) + '</p>';
+  } catch (err) {
+    el.innerHTML = '<p class="text-xs text-red-400">L\u1ed7i: ' + err.message + '</p>';
+  }
 }
 
 async function saveBackend2Config() {
