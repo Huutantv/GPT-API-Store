@@ -297,32 +297,36 @@ body{font-family:'Inter',sans-serif}
   <!-- Active backend selector -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
     <div class="flex items-center justify-between">
-      <h3 class="font-semibold text-sm">Ho&#7841;t &#273;&#7897;ng</h3>
+      <h3 class="font-semibold text-sm">Backend &#273;ang ho&#7841;t &#273;&#7897;ng</h3>
       <button onclick="loadBackendConfig()" class="text-xs text-gray-500 hover:text-white px-2 py-1 bg-dark-600 rounded transition">L&#224;m m&#7899;i</button>
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Backend &#273;ang d&#249;ng</label>
-        <select id="cfgActive" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
-          <option value="1">Ch&#7881; Backend 1</option>
-          <option value="2">Ch&#7881; Backend 2</option>
-          <option value="both">C&#7843; 2 (failover)</option>
-        </select>
-      </div>
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Router mode (khi d&#249;ng c&#7843; 2)</label>
-        <select id="cfgRouter" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
-          <option value="failover">Failover (B1 tr&#432;&#7899;c, B2 d&#7921; ph&#242;ng)</option>
-          <option value="weighted">Weighted (theo %)</option>
-          <option value="round_robin">Round-robin</option>
-        </select>
-      </div>
-      <div class="flex gap-2 items-end">
-        <button onclick="saveActiveBackend()" class="flex-1 px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u</button>
-      </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <label class="flex items-center gap-3 bg-dark-900 hover:bg-dark-600 border border-white/10 rounded-lg px-4 py-3 cursor-pointer transition">
+        <input type="checkbox" id="chkBackend1" class="w-5 h-5 accent-blue-500">
+        <div class="flex-1">
+          <p class="font-semibold text-sm flex items-center gap-2"><span class="w-2 h-2 bg-blue-400 rounded-full"></span> Backend 1</p>
+          <p class="text-xs text-gray-500" id="b1Summary">&mdash;</p>
+        </div>
+      </label>
+      <label class="flex items-center gap-3 bg-dark-900 hover:bg-dark-600 border border-white/10 rounded-lg px-4 py-3 cursor-pointer transition">
+        <input type="checkbox" id="chkBackend2" class="w-5 h-5 accent-purple-500">
+        <div class="flex-1">
+          <p class="font-semibold text-sm flex items-center gap-2"><span class="w-2 h-2 bg-purple-400 rounded-full"></span> Backend 2</p>
+          <p class="text-xs text-gray-500" id="b2Summary">&mdash;</p>
+        </div>
+      </label>
     </div>
-    <div id="backendConfigRows" class="space-y-2 text-sm text-gray-300 pt-3 border-t border-white/5">
-      <div class="text-gray-500">&#272;ang t&#7843;i...</div>
+    <div id="routerModeBox" class="hidden">
+      <label class="text-xs text-gray-400 block mb-1">Khi ch&#7841;y c&#7843; 2 backend</label>
+      <select id="cfgRouter" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+        <option value="failover">Failover (Backend 1 tr&#432;&#7899;c, Backend 2 d&#7921; ph&#242;ng khi l&#7895;i)</option>
+        <option value="round_robin">Round-robin (lu&#226;n phi&#234;n 50/50)</option>
+        <option value="weighted">Weighted (chia theo tr&#7885;ng s&#7889;)</option>
+      </select>
+    </div>
+    <div class="flex items-center justify-between gap-3 pt-2">
+      <span id="activeStatus" class="text-xs text-gray-500">&mdash;</span>
+      <button onclick="saveActiveBackend()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u l&#7921;a ch&#7885;n</button>
     </div>
   </div>
 
@@ -717,20 +721,20 @@ function renderKeyList(listEl, keys, backendId) {
 async function loadBackendConfig() {
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
 
-  // Active backend & router mode
-  document.getElementById("cfgActive").value = data.active_backend || "1";
+  // Active backend → checkbox state
+  var active = data.active_backend || "1";
+  document.getElementById("chkBackend1").checked = (active === "1" || active === "both");
+  document.getElementById("chkBackend2").checked = (active === "2" || active === "both");
   document.getElementById("cfgRouter").value = data.backend_router_mode || "failover";
-
-  // Summary rows
-  var rows = document.getElementById("backendConfigRows");
-  rows.innerHTML =
-    '<div class="flex justify-between"><span class="text-gray-500">&#272;ang ho&#7841;t &#273;&#7897;ng</span><strong class="text-primary">' + (data.active_backend_label || "\u2014") + '</strong></div>' +
-    '<div class="flex justify-between"><span class="text-gray-500">Router mode</span><code class="text-xs">' + (data.backend_router_mode || "\u2014") + '</code></div>';
 
   // Backend 1 & 2 from profiles
   var profiles = data.backend_profiles || [];
   var b1 = profiles.find(function(p){return p.id==="1";}) || {};
   var b2 = profiles.find(function(p){return p.id==="2";}) || {};
+
+  document.getElementById("b1Summary").textContent = (b1.backend_api_keys || 0) + " keys · " + (b1.backend_model || "—");
+  document.getElementById("b2Summary").textContent = (b2.backend_api_keys || 0) + " keys · " + (b2.backend_model || "—");
+  document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
 
   document.getElementById("cfg1BaseUrl").value = b1.base_url || "";
   document.getElementById("cfg1Model").value = b1.backend_model || "";
@@ -741,7 +745,22 @@ async function loadBackendConfig() {
   document.getElementById("cfg2Model").value = b2.backend_model || "";
   document.getElementById("backend2Status").textContent = (b2.backend_api_keys || 0) + " keys";
   renderKeyList(document.getElementById("backend2KeysList"), b2.backend_api_keys_full || [], "2");
+
+  toggleRouterBox();
 }
+
+function toggleRouterBox() {
+  var c1 = document.getElementById("chkBackend1").checked;
+  var c2 = document.getElementById("chkBackend2").checked;
+  document.getElementById("routerModeBox").classList.toggle("hidden", !(c1 && c2));
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  ["chkBackend1", "chkBackend2"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener("change", toggleRouterBox);
+  });
+});
 
 async function addBackendKey(backend) {
   var input = document.getElementById("newBackend" + backend + "Key");
@@ -792,8 +811,12 @@ async function saveBackend2Config() {
 }
 
 async function saveActiveBackend() {
+  var c1 = document.getElementById("chkBackend1").checked;
+  var c2 = document.getElementById("chkBackend2").checked;
+  if (!c1 && !c2) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backend"); return; }
+  var active = (c1 && c2) ? "both" : (c1 ? "1" : "2");
   var updates = {
-    DORO_ACTIVE_BACKEND: document.getElementById("cfgActive").value,
+    DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
   };
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
