@@ -2616,9 +2616,13 @@ app.get("/api/quota", async (req, res) => {
       ]);
       const usage = usageResp.ok ? await usageResp.json() : {};
       const sub = subResp.ok ? await subResp.json() : {};
-      const used = Number(usage.total_usage || 0);
+      // VietAPI trả total_usage theo đơn vị cents (1/100), cần chia 100 để cùng đơn vị với hard_limit_usd
+      const rawUsage = Number(usage.total_usage || 0);
+      const used = Math.round(rawUsage / 100);
       const limit = Number(sub.hard_limit_usd || sub.soft_limit_usd || 0);
-      results.push({ key_masked: key.slice(0,8) + "..." + key.slice(-4), used, limit, remaining: limit - used, pct: limit > 0 ? Math.round((used / limit) * 100) : 0 });
+      const remaining = Math.max(0, limit - used);
+      const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
+      results.push({ key_masked: key.slice(0,8) + "..." + key.slice(-4), used, limit, remaining, pct });
     } catch (err) {
       results.push({ key_masked: key.slice(0,8) + "..." + key.slice(-4), error: err.message });
     }
@@ -2703,9 +2707,11 @@ async function checkBackendQuota() {
       if (!usageResp.ok || !subResp.ok) continue;
       const usage = await usageResp.json();
       const sub = await subResp.json();
-      const used = Number(usage.total_usage || 0);
+      // VietAPI trả total_usage theo đơn vị cents (1/100), cần chia 100 để cùng đơn vị với hard_limit_usd
+      const rawUsage = Number(usage.total_usage || 0);
+      const used = Math.round(rawUsage / 100);
       const limit = Number(sub.hard_limit_usd || sub.soft_limit_usd || 0);
-      const remaining = limit - used;
+      const remaining = Math.max(0, limit - used);
       const pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
       const keyMask = key.slice(0, 8) + "..." + key.slice(-4);
       addLog(`quota check key=${keyMask} used=${used} limit=${limit} remaining=${remaining} (${pct}%)`);
@@ -2716,9 +2722,9 @@ async function checkBackendQuota() {
           `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
           `\ud83d\udd11 Key: <code>${keyMask}</code>\n` +
           `\ud83d\udcca \u0110\u00e3 d\u00f9ng: ${pct}%\n` +
-          `\ud83d\udcc8 Used: ${used.toLocaleString()}\n` +
-          `\ud83d\udcc9 Limit: ${limit.toLocaleString()}\n` +
-          `\ud83d\udcb0 C\u00f2n l\u1ea1i: ${remaining.toLocaleString()}\n` +
+          `\ud83d\udcc8 Used: ${used.toLocaleString("vi-VN")}\n` +
+          `\ud83d\udcc9 Limit: ${limit.toLocaleString("vi-VN")}\n` +
+          `\ud83d\udcb0 C\u00f2n l\u1ea1i: ${remaining.toLocaleString("vi-VN")}\n` +
           `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
         );
       }
