@@ -400,28 +400,40 @@ body{font-family:'Inter',sans-serif}
 
   <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u c&#7847;n restart proxy &#273;&#7875; &#225;p d&#7909;ng Base URL v&#224; Model m&#7899;i. Th&#234;m/x&#243;a key c&#243; hi&#7879;u l&#7921;c ngay.</p>
 
-  <!-- Quota check -->
+  <!-- Model Fallback & Request Tracking -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
     <div class="flex items-center justify-between">
-      <h3 class="font-bold text-base flex items-center gap-2">&#x1F504; Model Fallback</h3>
-      <button onclick="saveModelFallback()" class="px-4 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">L&#432;u</button>
+      <h3 class="font-bold text-base flex items-center gap-2">&#x1F504; Model Fallback &amp; Request Tracking</h3>
+      <div class="flex gap-2">
+        <button onclick="loadModelFallback()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs font-semibold transition">&#x1F504; Refresh</button>
+        <button onclick="saveModelFallback()" class="px-4 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">L&#432;u</button>
+      </div>
     </div>
-    <p class="text-xs text-gray-400">Th&#7913; t&#7921; &#432;u ti&#234;n model. Khi model &#273;&#7847;u h&#7871;t quota s&#7869; t&#7921; chuy&#7875;n sang model ti&#7871;p theo.</p>
+    <p class="text-xs text-gray-400">Th&#7913; t&#7921; &#432;u ti&#234;n model. Khi model &#273;&#7847;u h&#7871;t quota (&#273;&#7841;t ng&#432;&#7905;ng ho&#7863;c b&#7883; 429) s&#7869; t&#7921; chuy&#7875;n sang model ti&#7871;p theo.</p>
+
+    <!-- Priority list visual -->
     <div class="space-y-2">
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Danh s&#225;ch model (th&#7913; t&#7921; &#432;u ti&#234;n, c&#225;ch nhau b&#7903;i d&#7845;u ph&#7849;y)</label>
-        <input id="cfgModelFallback" placeholder="gpt-5.5,gpt-5.5-high,gpt-5.4,gpt-5.3-codex" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
-      </div>
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Ng&#432;&#7905;ng chuy&#7875;n model (requests/ng&#224;y)</label>
-        <input id="cfgModelLimit" type="number" placeholder="1800" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
-        <p class="text-xs text-gray-500 mt-1">VietAPI limit 2000 rq/ng&#224;y. &#272;&#7863;t 1800 &#273;&#7875; chuy&#7875;n tr&#432;&#7899;c khi h&#7871;t.</p>
-      </div>
+      <label class="text-xs text-gray-400 block">Th&#7913; t&#7921; &#432;u ti&#234;n (k&#233;o th&#7843; ho&#7863;c nh&#7853;p tr&#7921;c ti&#7871;p)</label>
+      <div id="modelPriorityList" class="space-y-1"></div>
+      <input id="cfgModelFallback" placeholder="gpt-5.5,gpt-5.5-high,gpt-5.4,gpt-5.3-codex" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px" oninput="renderPriorityList()">
+      <p class="text-xs text-gray-500">Nh&#7853;p danh s&#225;ch model c&#225;ch nhau b&#7903;i d&#7845;u ph&#7849;y. Model &#273;&#7847;u ti&#234;n = &#432;u ti&#234;n cao nh&#7845;t.</p>
     </div>
-    <!-- Model usage today -->
-    <div id="modelUsageToday" class="space-y-2 pt-3 border-t border-white/5">
-      <p class="text-xs text-gray-500">S&#7917; d&#7909;ng h&#244;m nay:</p>
-      <div id="modelUsageList" class="space-y-1"></div>
+
+    <!-- Daily limit -->
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Ng&#432;&#7905;ng chuy&#7875;n model (requests/ng&#224;y)</label>
+      <input id="cfgModelLimit" type="number" placeholder="1800" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+      <p class="text-xs text-gray-500 mt-1">VietAPI limit 2000 rq/ng&#224;y. &#272;&#7863;t 1800 &#273;&#7875; chuy&#7875;n tr&#432;&#7899;c khi h&#7871;t.</p>
+    </div>
+
+    <!-- Request usage today - real-time -->
+    <div class="pt-3 border-t border-white/5 space-y-3">
+      <div class="flex items-center justify-between">
+        <p class="text-xs text-gray-400 font-semibold">&#x1F4CA; Request h&#244;m nay (proxy t&#7921; &#273;&#7871;m)</p>
+        <span id="modelUsageTime" class="text-xs text-gray-600"></span>
+      </div>
+      <div id="modelUsageList" class="space-y-2"></div>
+      <div id="modelBlockedList" class="space-y-1"></div>
     </div>
     <p id="modelFallbackMsg" class="text-xs text-gray-400"></p>
   </div>
@@ -545,7 +557,8 @@ function showTab(name) {
   if (name === "history") loadHistory();
   if (name === "monitor") loadMonitor();
   if (name === "orders") loadOrders();
-  if (name === "backend") loadBackendConfig();
+  if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
+  if (name !== "backend") stopModelUsageRefresh();
 }
 </script>
 
@@ -867,29 +880,119 @@ async function loadModelFallback() {
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
   document.getElementById("cfgModelFallback").value = data.model_fallback_chain || "";
   document.getElementById("cfgModelLimit").value = data.model_daily_limit || "1800";
+  renderPriorityList();
   // Load usage
   try {
     var usage = await fetch(BASE + "/api/model-usage", { headers: authHeaders() }).then(function(r) { return r.json(); });
     var list = document.getElementById("modelUsageList");
+    var blockedList = document.getElementById("modelBlockedList");
+    var timeEl = document.getElementById("modelUsageTime");
     var models = usage.usage || {};
     var limit = Number(document.getElementById("cfgModelLimit").value || 1800);
-    var entries = Object.entries(models);
-    if (!entries.length) {
-      list.innerHTML = '<p class="text-xs text-gray-600">Chua co request hom nay</p>';
+    var chain = (document.getElementById("cfgModelFallback").value || "").split(",").map(function(s){return s.trim();}).filter(Boolean);
+    var blocked = usage.blocked || [];
+
+    timeEl.textContent = "C\u1eadp nh\u1eadt: " + new Date().toLocaleTimeString("vi-VN");
+
+    // Show all models in chain + any extra used models
+    var allModels = chain.slice();
+    Object.keys(models).forEach(function(m) { if (allModels.indexOf(m) === -1) allModels.push(m); });
+
+    if (!allModels.length) {
+      list.innerHTML = '<p class="text-xs text-gray-600">Ch\u01b0a c\u00f3 request h\u00f4m nay</p>';
     } else {
-      list.innerHTML = entries.map(function(e) {
-        var pct = limit > 0 ? Math.round((e[1] / limit) * 100) : 0;
+      list.innerHTML = allModels.map(function(model, idx) {
+        var used = models[model] || 0;
+        var remaining = Math.max(0, limit - used);
+        var pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
         var color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
-        var blocked = (usage.blocked || []).includes(e[0]);
-        return '<div class="flex items-center gap-2">' +
-          '<code class="text-xs text-gray-300 w-32 shrink-0">' + e[0] + '</code>' +
-          '<div class="flex-1 h-2 bg-dark-600 rounded-full overflow-hidden"><div class="h-full ' + color + ' rounded-full" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
-          '<span class="text-xs text-gray-400 w-20 text-right">' + e[1] + '/' + limit + '</span>' +
-          (blocked ? '<span class="text-xs text-red-400">BLOCKED</span>' : '') +
+        var textColor = pct >= 90 ? "text-red-400" : pct >= 70 ? "text-yellow-400" : "text-green-400";
+        var isBlocked = blocked.indexOf(model) !== -1;
+        var statusBadge = isBlocked
+          ? '<span class="px-2 py-0.5 bg-red-500/20 text-red-400 rounded text-xs font-semibold">BLOCKED</span>'
+          : (used > 0 ? '<span class="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs">ACTIVE</span>' : '<span class="px-2 py-0.5 bg-gray-500/20 text-gray-500 rounded text-xs">STANDBY</span>');
+        return '<div class="bg-dark-900 rounded-lg p-3 space-y-2' + (isBlocked ? ' border border-red-500/30' : '') + '">' +
+          '<div class="flex items-center justify-between">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-xs text-gray-500 font-mono w-5">#' + (idx+1) + '</span>' +
+              '<code class="text-sm text-white font-semibold">' + model + '</code>' +
+            '</div>' +
+            statusBadge +
+          '</div>' +
+          '<div class="flex items-center gap-3">' +
+            '<div class="flex-1 h-2 bg-dark-600 rounded-full overflow-hidden"><div class="h-full ' + color + ' rounded-full transition-all" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
+            '<span class="text-xs font-mono ' + textColor + ' w-12 text-right">' + pct + '%</span>' +
+          '</div>' +
+          '<div class="flex justify-between text-xs text-gray-500">' +
+            '<span>\u0110\u00e3 d\u00f9ng: <b class="text-gray-300">' + used + '</b> / ' + limit + '</span>' +
+            '<span>C\u00f2n l\u1ea1i: <b class="' + (remaining <= 100 ? 'text-red-400' : 'text-green-400') + '">' + remaining + '</b> requests</span>' +
+          '</div>' +
         '</div>';
       }).join("");
     }
+
+    // Blocked models warning
+    if (blocked.length) {
+      blockedList.innerHTML = '<div class="bg-red-500/10 border border-red-500/20 rounded-lg p-3">' +
+        '<p class="text-xs text-red-400 font-semibold mb-1">\u26a0\ufe0f Model \u0111ang b\u1ecb t\u1ea1m ng\u1eaft:</p>' +
+        blocked.map(function(m) { return '<span class="inline-block px-2 py-0.5 bg-red-500/20 text-red-300 rounded text-xs mr-1 mb-1">' + m + '</span>'; }).join("") +
+        '<p class="text-xs text-gray-500 mt-1">S\u1ebd t\u1ef1 \u0111\u1ed9ng m\u1edf l\u1ea1i sau 1 gi\u1edd</p>' +
+      '</div>';
+    } else {
+      blockedList.innerHTML = '';
+    }
   } catch (_) {}
+}
+
+function renderPriorityList() {
+  var input = document.getElementById("cfgModelFallback");
+  var container = document.getElementById("modelPriorityList");
+  var models = (input.value || "").split(",").map(function(s){return s.trim();}).filter(Boolean);
+  if (!models.length) { container.innerHTML = '<p class="text-xs text-gray-600">Nh\u1eadp model v\u00e0o \u00f4 b\u00ean d\u01b0\u1edbi</p>'; return; }
+  container.innerHTML = models.map(function(model, idx) {
+    return '<div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-1.5">' +
+      '<span class="text-xs text-primary font-bold w-5">' + (idx+1) + '</span>' +
+      '<code class="text-xs text-gray-200 flex-1">' + model + '</code>' +
+      '<button onclick="moveModelUp(' + idx + ')" class="text-xs text-gray-500 hover:text-white px-1' + (idx === 0 ? ' opacity-30 pointer-events-none' : '') + '">\u25b2</button>' +
+      '<button onclick="moveModelDown(' + idx + ')" class="text-xs text-gray-500 hover:text-white px-1' + (idx === models.length-1 ? ' opacity-30 pointer-events-none' : '') + '">\u25bc</button>' +
+      '<button onclick="removeModel(' + idx + ')" class="text-xs text-red-400 hover:text-red-300 px-1">\u2715</button>' +
+    '</div>';
+  }).join("");
+}
+
+function moveModelUp(idx) {
+  var input = document.getElementById("cfgModelFallback");
+  var models = input.value.split(",").map(function(s){return s.trim();}).filter(Boolean);
+  if (idx <= 0) return;
+  var tmp = models[idx-1]; models[idx-1] = models[idx]; models[idx] = tmp;
+  input.value = models.join(",");
+  renderPriorityList();
+}
+
+function moveModelDown(idx) {
+  var input = document.getElementById("cfgModelFallback");
+  var models = input.value.split(",").map(function(s){return s.trim();}).filter(Boolean);
+  if (idx >= models.length - 1) return;
+  var tmp = models[idx+1]; models[idx+1] = models[idx]; models[idx] = tmp;
+  input.value = models.join(",");
+  renderPriorityList();
+}
+
+function removeModel(idx) {
+  var input = document.getElementById("cfgModelFallback");
+  var models = input.value.split(",").map(function(s){return s.trim();}).filter(Boolean);
+  models.splice(idx, 1);
+  input.value = models.join(",");
+  renderPriorityList();
+}
+
+var _modelUsageInterval = null;
+function startModelUsageRefresh() {
+  stopModelUsageRefresh();
+  _modelUsageInterval = setInterval(function() { loadModelFallback(); }, 30000); // refresh mỗi 30s
+}
+function stopModelUsageRefresh() {
+  if (_modelUsageInterval) { clearInterval(_modelUsageInterval); _modelUsageInterval = null; }
 }
 
 async function saveModelFallback() {

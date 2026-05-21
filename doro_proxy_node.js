@@ -2585,7 +2585,19 @@ app.get("/api/model-usage", (req, res) => {
   const day = todayKey();
   const usage = _modelUsage[day] || {};
   const blocked = Object.keys(_modelBlocked).filter(m => isModelBlocked(m));
-  res.json({ date: day, usage, blocked, fallback_chain: getModelFallbackChain(), daily_limit: MODEL_DAILY_LIMIT });
+  const chain = getModelFallbackChain();
+  const limit = MODEL_DAILY_LIMIT;
+  // Tính remaining cho từng model
+  const details = {};
+  for (const model of chain) {
+    const used = usage[model] || 0;
+    details[model] = { used, limit, remaining: Math.max(0, limit - used), blocked: blocked.includes(model) };
+  }
+  // Thêm model ngoài chain nếu có usage
+  for (const [model, used] of Object.entries(usage)) {
+    if (!details[model]) details[model] = { used, limit, remaining: Math.max(0, limit - used), blocked: blocked.includes(model) };
+  }
+  res.json({ date: day, usage, details, blocked, fallback_chain: chain, daily_limit: limit, checked_at: new Date().toISOString() });
 });
 
 app.get("/api/quota", async (req, res) => {
