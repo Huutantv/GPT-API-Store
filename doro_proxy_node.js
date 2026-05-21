@@ -2634,95 +2634,54 @@ app.get("/api/model-limits", async (req, res) => {
   const quotaKey = process.env.DORO_QUOTA_KEY || splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "")[0] || "";
   if (!quotaKey) return res.json({ error: "No quota key configured" });
 
-  // Scrape VietAPI dashboard HTML (server-side render khi có cookie apiKey)
   try {
-    const dashResp = await fetch("https://vietapi.tech/dashboard.html", {
-      headers: {
-        Cookie: `apiKey=${quotaKey}`,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-      }
+    // Bước 1: Login vào VietAPI portal để lấy session cookie
+    const loginResp = await fetch("https://vietapi.tech/api/portal/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ api_key: quotaKey }),
     });
-    const html = await dashResp.text();
-
-    // Parse model data từ HTML table
-    // Format: <td><b>gpt-5.5</b><br><small>GPT premium</small></td>
-    //         <td><span class="model-rate"><b>581rq / 2.000rq</b><small>Hôm nay: 581 requests</small></span></td>
-    //         <td><b>1.419 rq</b></td>
-    const models = [];
-    const rowRegex = /<tr>\s*<td><b>([^<]+)<\/b>.*?<\/td>\s*<td>.*?<\/td>\s*<td>.*?<b>(.*?)<\/b>.*?<small>.*?(\d+)\s*requests<\/small>.*?<\/td>\s*<td><b>(.*?)<\/b><\/td>/gs;
-    let match;
-    while ((match = rowRegex.exec(html)) !== null) {
-      const modelId = match[1].trim();
-      const rateText = match[2].trim(); // "581rq / 2.000rq" hoặc "Theo quota"
-      const todayRequests = Number(match[3]) || 0;
-      const remainingText = match[4].trim(); // "1.419 rq" hoặc "Dùng trong quota token/ngày"
-
-      let limit = 0;
-      let used = todayRequests;
-      let remaining = 0;
-      let limitType = "quota"; // mặc định theo quota token
-
-      // Parse rate: "581rq / 2.000rq"
-      const rateMatch = rateText.match(/(\d[\d.]*)\s*rq\s*\/\s*([\d.]+)\s*rq/);
-      if (rateMatch) {
-        used = Number(rateMatch[1].replace(/\./g, "")) || 0;
-        limit = Number(rateMatch[2].replace(/\./g, "")) || 0;
-        limitType = "request";
-      }
-
-      // Parse remaining: "1.419 rq"
-      const remainMatch = remainingText.match(/([\d.]+)\s*rq/);
-      if (remainMatch) {
-        remaining = Number(remainMatch[1].replace(/\./g, "")) || 0;
-      } else if (limit > 0) {
-        remaining = Math.max(0, limit - used);
-      }
-
-      models.push({ id: modelId, used, limit, remaining, limit_type: limitType, status: "available" });
+    if (!loginResp.ok) {
+      const errData = await loginResp.json().catch(() => ({}));
+      return res.json({ models: [], error: `Login failed: ${errData.message || loginResp.status}`, checked_at: new Date().toISOString() });
     }
-
-    // Fallback: parse đơn giản hơn nếu regex phức tạp không match
-    if (!models.length) {
-      // Thử parse từng dòng data-model
-      const modelIds = [];
-      const dataModelRegex = /data-model="([^"]+)"/g;
-      let dm;
-      while ((dm = dataModelRegex.exec(html)) !== null) modelIds.push(dm[1]);
-
-      // Parse rates
-      const rates = [];
-      const rateBlockRegex = /<b>(\d[\d.]*rq\s*\/\s*[\d.]+rq|Theo quota)<\/b>/g;
-      let rb;
-      while ((rb = rateBlockRegex.exec(html)) !== null) rates.push(rb[1]);
-
-      // Parse today requests
-      const todays = [];
-      const todayRegex = /H(?:ô|&ocirc;)m nay:\s*(\d+)\s*requests/g;
-      let td;
-      while ((td = todayRegex.exec(html)) !== null) todays.push(Number(td[1]));
-
-      for (let i = 0; i < modelIds.length; i++) {
-        const rateStr = rates[i] || "";
-        const today = todays[i] || 0;
-        let limit = 0, used = today, remaining = 0, limitType = "quota";
-        const rm = rateStr.match(/(\d[\d.]*)\s*rq\s*\/\s*([\d.]+)\s*rq/);
-        if (rm) {
-          used = Number(rm[1].replace(/\./g, "")) || 0;
-          limit = Number(rm[2].replace(/\./g, "")) || 0;
-          remaining = Math.max(0, limit - used);
-          limitType = "request";
-        }
-        models.push({ id: modelIds[i], used, limit, remaining, limit_type: limitType, status: "available" });
-      }
-    }
-
-    if (models.length > 0) {
-      res.json({ models, source: "vietapi.tech/dashboard.html (scraped)", checked_at: new Date().toISOString() });
+    // Lấy cookies từ response (compatible Node 18+)
+    let cookieStr = "";
+    const rawSetCookie = loginResp.headers.raw ? loginResp.headers.raw()["set-cookie"] : null;
+    if (rawSetCookie && Array.isArray(rawSetCookie)) {
+      cookieStr = rawSetCookie.map(c => c.split(";")[0]).join("; ");
+    } else if (loginResp.headers.getSetCookie) {
+      cookieStr = loginResp.headers.getSetCookie().map(c => c.split(";")[0]).join("; ");
     } else {
-      res.json({ models: [], source: null, error: "Could not parse dashboard HTML", html_size: html.length, checked_at: new Date().toISOString() });
+      const sc = loginResp.headers.get("set-cookie") || "";
+      cookieStr = sc.split(",").map(c => c.split(";")[0].trim()).filter(Boolean).join("; ");
     }
+
+    // Bước 2: Gọi /api/portal/models với session cookie
+    const modelsResp = await fetch("https://vietapi.tech/api/portal/models", {
+      headers: { Cookie: cookieStr, "Content-Type": "application/json" },
+    });
+    if (!modelsResp.ok) {
+      return res.json({ models: [], error: `Models API failed: HTTP ${modelsResp.status}`, checked_at: new Date().toISOString() });
+    }
+    const modelsData = await modelsResp.json();
+    const d = modelsData.data || modelsData;
+    const modelList = d.models || [];
+
+    const models = modelList.map(m => ({
+      id: m.model || m.id,
+      tag: m.tag || "",
+      status: m.status || "available",
+      used: m.request_used_24h || 0,
+      limit: m.request_limit >= 0 ? m.request_limit : 0,
+      remaining: typeof m.request_remain === "number" ? m.request_remain : 0,
+      limit_type: m.request_limit < 0 ? "quota" : "request",
+      remain_text: typeof m.request_remain === "string" ? m.request_remain : null,
+    }));
+
+    res.json({ models, source: "vietapi.tech/api/portal/models", checked_at: new Date().toISOString() });
   } catch (err) {
-    res.json({ models: [], source: null, error: err.message, checked_at: new Date().toISOString() });
+    res.json({ models: [], error: err.message, checked_at: new Date().toISOString() });
   }
 });
 
