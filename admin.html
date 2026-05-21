@@ -405,7 +405,7 @@ body{font-family:'Inter',sans-serif}
     <div class="flex items-center justify-between">
       <h3 class="font-bold text-base flex items-center gap-2">&#x1F504; Model Fallback &amp; Request Tracking</h3>
       <div class="flex gap-2">
-        <button onclick="loadModelFallback()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs font-semibold transition">&#x1F504; Refresh</button>
+        <button onclick="_vietapiSynced=false;loadModelFallback()" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs font-semibold transition">&#x1F504; Proxy</button>
         <button onclick="saveModelFallback()" class="px-4 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">L&#432;u</button>
       </div>
     </div>
@@ -891,6 +891,7 @@ async function saveBackend1Config() {
 }
 
 async function loadModelFallback() {
+  _vietapiSynced = false; // reset flag - hiển thị proxy data
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
   document.getElementById("cfgModelFallback").value = data.model_fallback_chain || "";
   document.getElementById("cfgModelLimit").value = data.model_daily_limit || "1800";
@@ -1006,15 +1007,19 @@ function removeModel(idx) {
 }
 
 var _modelUsageInterval = null;
+var _vietapiSynced = false; // flag: đang hiển thị data VietAPI
 function startModelUsageRefresh() {
   stopModelUsageRefresh();
-  _modelUsageInterval = setInterval(function() { loadModelFallback(); }, 30000); // refresh mỗi 30s
+  _modelUsageInterval = setInterval(function() {
+    if (!_vietapiSynced) loadModelFallback(); // chỉ refresh nếu không đang hiển thị VietAPI data
+  }, 30000);
 }
 function stopModelUsageRefresh() {
   if (_modelUsageInterval) { clearInterval(_modelUsageInterval); _modelUsageInterval = null; }
 }
 
 async function syncVietAPIUsage() {
+  _vietapiSynced = true; // tạm dừng auto-refresh proxy data
   var list = document.getElementById("modelUsageList");
   var timeEl = document.getElementById("modelUsageTime");
   list.innerHTML = '<p class="text-xs text-gray-400">\u0110ang l\u1ea5y data t\u1eeb VietAPI dashboard...</p>';
