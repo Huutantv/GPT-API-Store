@@ -2465,7 +2465,8 @@ app.get("/api/quota", async (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const quotaKey = process.env.DORO_QUOTA_KEY || "";
   const keys = quotaKey ? [quotaKey] : splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
-  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
+  const rawBase = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
+  const baseUrl = rawBase.replace(/\/v1$/, "");
   const results = [];
   for (const key of keys) {
     try {
@@ -2550,7 +2551,9 @@ async function checkBackendQuota() {
   // Ưu tiên DORO_QUOTA_KEY, fallback sang ANTHROPIC_AUTH_TOKEN
   const quotaKey = process.env.DORO_QUOTA_KEY || "";
   const keys = quotaKey ? [quotaKey] : splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "");
-  const baseUrl = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
+  // Base URL cho billing: bỏ /v1 ở cuối nếu có
+  const rawBase = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "");
+  const baseUrl = rawBase.replace(/\/v1$/, "");
   for (const key of keys) {
     try {
       const [usageResp, subResp] = await Promise.all([
