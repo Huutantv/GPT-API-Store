@@ -421,9 +421,16 @@ body{font-family:'Inter',sans-serif}
 
     <!-- Daily limit -->
     <div>
-      <label class="text-xs text-gray-400 block mb-1">Ng&#432;&#7905;ng chuy&#7875;n model (requests/ng&#224;y)</label>
+      <label class="text-xs text-gray-400 block mb-1">Ng&#432;&#7905;ng m&#7863;c &#273;&#7883;nh (requests/ng&#224;y)</label>
       <input id="cfgModelLimit" type="number" placeholder="1800" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
-      <p class="text-xs text-gray-500 mt-1">VietAPI limit 2000 rq/ng&#224;y. &#272;&#7863;t 1800 &#273;&#7875; chuy&#7875;n tr&#432;&#7899;c khi h&#7871;t.</p>
+      <p class="text-xs text-gray-500 mt-1">Ng&#432;&#7905;ng chung cho model kh&#244;ng c&#243; limit ri&#234;ng.</p>
+    </div>
+
+    <!-- Per-model limits -->
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Limit ri&#234;ng per model (t&#7915; VietAPI)</label>
+      <input id="cfgModelLimits" placeholder="gpt-5.5:2000,gpt-5.5-high:2000,claude-opus-4.6:200" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      <p class="text-xs text-gray-500 mt-1">Format: model:limit c&#225;ch nhau b&#7903;i d&#7845;u ph&#7849;y. V&#237; d&#7909;: gpt-5.5:2000,claude-opus-4.6:200</p>
     </div>
 
     <!-- Request usage today - real-time -->
@@ -884,6 +891,7 @@ async function loadModelFallback() {
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
   document.getElementById("cfgModelFallback").value = data.model_fallback_chain || "";
   document.getElementById("cfgModelLimit").value = data.model_daily_limit || "1800";
+  document.getElementById("cfgModelLimits").value = data.model_limits || "";
   renderPriorityList();
   // Load usage
   try {
@@ -891,10 +899,12 @@ async function loadModelFallback() {
     var list = document.getElementById("modelUsageList");
     var blockedList = document.getElementById("modelBlockedList");
     var timeEl = document.getElementById("modelUsageTime");
+    var details = usage.details || {};
     var models = usage.usage || {};
-    var limit = Number(document.getElementById("cfgModelLimit").value || 1800);
+    var defaultLimit = Number(document.getElementById("cfgModelLimit").value || 1800);
     var chain = (document.getElementById("cfgModelFallback").value || "").split(",").map(function(s){return s.trim();}).filter(Boolean);
     var blocked = usage.blocked || [];
+    var perModelLimits = usage.per_model_limits || {};
 
     timeEl.textContent = "C\u1eadp nh\u1eadt: " + new Date().toLocaleTimeString("vi-VN");
 
@@ -906,7 +916,9 @@ async function loadModelFallback() {
       list.innerHTML = '<p class="text-xs text-gray-600">Ch\u01b0a c\u00f3 request h\u00f4m nay</p>';
     } else {
       list.innerHTML = allModels.map(function(model, idx) {
-        var used = models[model] || 0;
+        var d = details[model] || {};
+        var used = d.used || models[model] || 0;
+        var limit = d.limit || perModelLimits[model] || defaultLimit;
         var remaining = Math.max(0, limit - used);
         var pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
         var color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
@@ -918,7 +930,7 @@ async function loadModelFallback() {
         return '<div class="bg-dark-900 rounded-lg p-3 space-y-2' + (isBlocked ? ' border border-red-500/30' : '') + '">' +
           '<div class="flex items-center justify-between">' +
             '<div class="flex items-center gap-2">' +
-              '<span class="text-xs text-gray-500 font-mono w-5">#' + (idx+1) + '</span>' +
+              '<span class="text-xs text-primary font-mono w-5">#' + (idx+1) + '</span>' +
               '<code class="text-sm text-white font-semibold">' + model + '</code>' +
             '</div>' +
             statusBadge +
@@ -928,8 +940,8 @@ async function loadModelFallback() {
             '<span class="text-xs font-mono ' + textColor + ' w-12 text-right">' + pct + '%</span>' +
           '</div>' +
           '<div class="flex justify-between text-xs text-gray-500">' +
-            '<span>\u0110\u00e3 d\u00f9ng: <b class="text-gray-300">' + used + '</b> / ' + limit + '</span>' +
-            '<span>C\u00f2n l\u1ea1i: <b class="' + (remaining <= 100 ? 'text-red-400' : 'text-green-400') + '">' + remaining + '</b> requests</span>' +
+            '<span>\u0110\u00e3 d\u00f9ng: <b class="text-gray-300">' + used.toLocaleString("vi-VN") + '</b> / ' + limit.toLocaleString("vi-VN") + ' rq</span>' +
+            '<span>C\u00f2n: <b class="' + (remaining <= 100 ? 'text-red-400' : 'text-green-400') + '">' + remaining.toLocaleString("vi-VN") + '</b> rq</span>' +
           '</div>' +
         '</div>';
       }).join("");
@@ -1002,16 +1014,19 @@ function stopModelUsageRefresh() {
 async function saveModelFallback() {
   var chain = document.getElementById("cfgModelFallback").value.trim();
   var limit = document.getElementById("cfgModelLimit").value.trim();
+  var modelLimits = document.getElementById("cfgModelLimits").value.trim();
   var msg = document.getElementById("modelFallbackMsg");
   var updates = {};
   if (chain) updates.DORO_MODEL_FALLBACK = chain;
   if (limit) updates.DORO_MODEL_DAILY_LIMIT = limit;
+  if (modelLimits) updates.DORO_MODEL_LIMITS = modelLimits;
   if (!Object.keys(updates).length) { msg.textContent = "Khong co gi thay doi"; return; }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
   if (data.ok) {
     msg.className = "text-xs text-green-400";
-    msg.textContent = "Da luu. Can restart proxy de ap dung.";
+    msg.textContent = "\u0110\u00e3 l\u01b0u. Reload proxy \u0111\u1ec3 \u00e1p d\u1ee5ng.";
+    loadModelFallback();
   } else {
     msg.className = "text-xs text-red-400";
     msg.textContent = data.detail || "Loi";
@@ -1071,61 +1086,66 @@ async function checkModelLimits() {
     var r = await fetch(BASE + "/api/model-limits", { headers: authHeaders() });
     var data = await r.json();
     if (data.error) { el.innerHTML = '<p class="text-xs text-red-400">' + data.error + '</p>'; return; }
-    var endpoints = data.endpoints || {};
-    var found = null;
-    // T\u00ecm endpoint n\u00e0o tr\u1ea3 v\u1ec1 data h\u1ee3p l\u1ec7
-    for (var ep in endpoints) {
-      var info = endpoints[ep];
-      if (info.status === 200 && info.data && typeof info.data === "object") {
-        found = { endpoint: ep, data: info.data };
-        break;
-      }
-    }
-    if (found && found.data) {
-      // Th\u1eed parse data - c\u00f3 th\u1ec3 l\u00e0 array ho\u1eb7c object
-      var models = [];
-      if (Array.isArray(found.data)) {
-        models = found.data;
-      } else if (found.data.data && Array.isArray(found.data.data)) {
-        models = found.data.data;
-      } else if (found.data.models && Array.isArray(found.data.models)) {
-        models = found.data.models;
-      }
-      if (models.length) {
-        el.innerHTML = '<p class="text-xs text-green-400 mb-2">\u2705 T\u00ecm th\u1ea5y data t\u1eeb: ' + found.endpoint + '</p>' +
-          '<div class="space-y-2">' + models.map(function(m) {
-            var name = m.model || m.id || m.name || "unknown";
-            var limit = m.limit || m.rate_limit || m.daily_limit || m.request_limit || 0;
-            var used = m.used || m.usage || m.requests_today || 0;
-            var remaining = m.remaining || (limit > 0 ? limit - used : 0);
-            var status = m.status || m.available || "unknown";
-            return '<div class="bg-dark-900 rounded-lg p-3 flex items-center justify-between">' +
-              '<div><code class="text-xs text-white">' + name + '</code>' +
-              (status ? ' <span class="text-xs text-gray-500">(' + status + ')</span>' : '') + '</div>' +
-              '<div class="text-right text-xs">' +
-                (limit > 0 ? '<span class="text-gray-400">' + used + ' / ' + limit + ' rq</span> <span class="text-green-400 ml-2">C\u00f2n: ' + remaining + '</span>' : '<span class="text-gray-500">N/A</span>') +
-              '</div>' +
-            '</div>';
-          }).join("") + '</div>';
-      } else {
-        // Hi\u1ec3n raw data
-        el.innerHTML = '<p class="text-xs text-yellow-400 mb-2">\u26a0\ufe0f Data t\u1eeb ' + found.endpoint + ' (raw):</p>' +
-          '<pre class="text-xs text-gray-300 bg-dark-900 rounded-lg p-3 overflow-auto max-h-60 whitespace-pre-wrap">' + JSON.stringify(found.data, null, 2) + '</pre>';
-      }
-    } else {
-      // Kh\u00f4ng t\u00ecm th\u1ea5y endpoint n\u00e0o ho\u1ea1t \u0111\u1ed9ng - hi\u1ec3n t\u1ea5t c\u1ea3 k\u1ebft qu\u1ea3
-      var html = '<p class="text-xs text-yellow-400 mb-2">\u26a0\ufe0f Kh\u00f4ng t\u00ecm th\u1ea5y endpoint model limits. K\u1ebft qu\u1ea3 th\u1eed:</p>';
-      for (var ep2 in endpoints) {
-        var info2 = endpoints[ep2];
-        html += '<div class="bg-dark-900 rounded-lg p-2 mb-1"><code class="text-xs text-gray-400">' + ep2 + '</code> <span class="text-xs ' + (info2.status === 200 ? 'text-green-400' : 'text-red-400') + '">HTTP ' + info2.status + '</span>';
-        if (info2.data && typeof info2.data === "object") {
-          html += '<pre class="text-xs text-gray-500 mt-1 overflow-auto max-h-20 whitespace-pre-wrap">' + JSON.stringify(info2.data, null, 2).slice(0, 300) + '</pre>';
+
+    var models = data.models || [];
+    var source = data.source || "";
+    var html = '';
+
+    if (models.length > 0) {
+      html += '<div class="flex items-center justify-between mb-3">';
+      html += '<p class="text-xs text-green-400 font-semibold">\u2705 ' + models.length + ' models t\u1eeb VietAPI</p>';
+      html += '<span class="text-xs text-gray-600">Ngu\u1ed3n: ' + source + '</span>';
+      html += '</div>';
+      html += '<div class="space-y-1.5 max-h-96 overflow-y-auto">';
+      models.forEach(function(m) {
+        var name = m.id || m.model || m.name || "unknown";
+        var limit = Number(m.limit || m.rate_limit || m.daily_limit || 0);
+        var used = Number(m.used || m.usage || 0);
+        var remaining = m.remaining != null ? Number(m.remaining) : (limit > 0 ? limit - used : 0);
+        var limitType = m.limit_type || (limit > 0 ? "request" : "quota");
+        var status = m.status || "available";
+        var pct = limit > 0 ? Math.round((used / limit) * 100) : 0;
+        var barColor = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
+        var remainColor = remaining <= 100 && limit > 0 ? "text-red-400" : "text-green-400";
+
+        html += '<div class="bg-dark-900 rounded-lg p-3 space-y-1.5">';
+        html += '<div class="flex items-center justify-between">';
+        html += '<div class="flex items-center gap-2">';
+        html += '<code class="text-xs text-white font-semibold">' + name + '</code>';
+        html += '<span class="text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400">' + status + '</span>';
+        html += '</div>';
+        if (limit > 0) {
+          html += '<span class="text-xs font-bold ' + remainColor + '">C\u00f2n: ' + remaining.toLocaleString("vi-VN") + ' rq</span>';
+        } else {
+          html += '<span class="text-xs text-gray-500">Theo quota token</span>';
         }
         html += '</div>';
+        if (limit > 0) {
+          html += '<div class="flex items-center gap-2">';
+          html += '<div class="flex-1 h-1.5 bg-dark-600 rounded-full overflow-hidden"><div class="h-full ' + barColor + ' rounded-full" style="width:' + Math.min(pct, 100) + '%"></div></div>';
+          html += '<span class="text-xs text-gray-400 w-24 text-right">' + used.toLocaleString("vi-VN") + ' / ' + limit.toLocaleString("vi-VN") + '</span>';
+          html += '</div>';
+        } else {
+          html += '<p class="text-xs text-gray-600">H\u00f4m nay: ' + used + ' requests (d\u00f9ng trong quota token/ng\u00e0y)</p>';
+        }
+        html += '</div>';
+      });
+      html += '</div>';
+    } else {
+      // Kh\u00f4ng t\u00ecm th\u1ea5y - hi\u1ec3n raw results
+      html += '<div class="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">';
+      html += '<p class="text-xs text-yellow-400 mb-2">\u26a0\ufe0f Kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c data model limits t\u1eeb VietAPI</p>';
+      html += '<p class="text-xs text-gray-500">Proxy t\u1ef1 \u0111\u1ebfm request (xem ph\u1ea7n Model Fallback). \u0110\u1eb7t ng\u01b0\u1ee1ng 1800/2000 rq/model/ng\u00e0y.</p>';
+      html += '</div>';
+      if (data.raw && Object.keys(data.raw).length) {
+        html += '<details class="mt-2"><summary class="text-xs text-gray-600 cursor-pointer">Debug: raw responses</summary>';
+        html += '<pre class="text-xs text-gray-500 bg-dark-900 rounded-lg p-2 mt-1 overflow-auto max-h-40 whitespace-pre-wrap">' + JSON.stringify(data.raw, null, 2).slice(0, 1000) + '</pre>';
+        html += '</details>';
       }
-      html += '<p class="text-xs text-gray-500 mt-2">Proxy t\u1ef1 \u0111\u1ebfm request l\u00e0 c\u00e1ch duy nh\u1ea5t hi\u1ec7n t\u1ea1i. Xem ph\u1ea7n "Model Fallback" \u1edf tr\u00ean.</p>';
-      el.innerHTML = html;
     }
+
+    html += '<p class="text-xs text-gray-600 mt-2">Ki\u1ec3m tra l\u00fac: ' + new Date(data.checked_at).toLocaleString("vi-VN", {timeZone:"Asia/Ho_Chi_Minh"}) + '</p>';
+    el.innerHTML = html;
   } catch (err) {
     el.innerHTML = '<p class="text-xs text-red-400">L\u1ed7i: ' + err.message + '</p>';
   }

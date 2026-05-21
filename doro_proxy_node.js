@@ -165,6 +165,26 @@ const _modelBlocked = {}; // { "gpt-5.5": timestamp_khi_bị_block }
 const MODEL_DAILY_LIMIT = Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"); // ngưỡng chuyển model (mặc định 1800/2000)
 const MODEL_BLOCK_DURATION = 60 * 60 * 1000; // block 1 giờ sau khi detect quota error
 
+// Per-model limits (VietAPI có limit khác nhau cho từng model)
+// Format: "model:limit,model:limit" ví dụ: "gpt-5.5:2000,gpt-5.5-high:2000,claude-opus-4.6:200"
+function getPerModelLimits() {
+  const raw = process.env.DORO_MODEL_LIMITS || "";
+  const limits = {};
+  if (raw) {
+    for (const pair of raw.split(",")) {
+      const [model, limitStr] = pair.split(":").map(s => s.trim());
+      if (model && limitStr) limits[model] = Number(limitStr);
+    }
+  }
+  return limits;
+}
+
+function getModelLimit(model) {
+  const perModel = getPerModelLimits();
+  if (perModel[model]) return perModel[model];
+  return MODEL_DAILY_LIMIT;
+}
+
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
 function trackModelRequest(model) {
@@ -214,8 +234,9 @@ function selectBestModel(preferredModel) {
   // Tìm model khả dụng trong chain
   for (const model of chain) {
     if (isModelBlocked(model)) continue;
-    if (getModelUsageToday(model) >= MODEL_DAILY_LIMIT) {
-      blockModel(model, `Dat nguong ${MODEL_DAILY_LIMIT} req/ngay`);
+    const limit = getModelLimit(model);
+    if (limit > 0 && getModelUsageToday(model) >= limit) {
+      blockModel(model, `Dat nguong ${getModelUsageToday(model)}/${limit} req/ngay`);
       continue;
     }
     return model;
@@ -2277,6 +2298,7 @@ app.get("/api/config", (req, res) => {
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
     model_daily_limit: Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"),
+    model_limits: (process.env.DORO_MODEL_LIMITS || "").trim(),
     backend_health: {
       "1": { healthy: isBackendHealthy("1"), errors: _backendHealth["1"].errors, down_count: _backendHealth["1"].downCount, down_since: _backendHealth["1"].downSince },
       "2": { healthy: isBackendHealthy("2"), errors: _backendHealth["2"].errors, down_count: _backendHealth["2"].downCount, down_since: _backendHealth["2"].downSince },
@@ -2334,6 +2356,7 @@ app.put("/api/config", (req, res) => {
     "DORO_AUTO_RECOVERY_MS",
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
+    "DORO_MODEL_LIMITS",
   ]) {
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") value = ["1", "2", "both"].includes(value) ? value : "";
@@ -2586,18 +2609,22 @@ app.get("/api/model-usage", (req, res) => {
   const usage = _modelUsage[day] || {};
   const blocked = Object.keys(_modelBlocked).filter(m => isModelBlocked(m));
   const chain = getModelFallbackChain();
-  const limit = MODEL_DAILY_LIMIT;
-  // Tính remaining cho từng model
+  const perModelLimits = getPerModelLimits();
+  // Tính remaining cho từng model với per-model limit
   const details = {};
   for (const model of chain) {
     const used = usage[model] || 0;
-    details[model] = { used, limit, remaining: Math.max(0, limit - used), blocked: blocked.includes(model) };
+    const modelLimit = perModelLimits[model] || MODEL_DAILY_LIMIT;
+    details[model] = { used, limit: modelLimit, remaining: Math.max(0, modelLimit - used), blocked: blocked.includes(model) };
   }
   // Thêm model ngoài chain nếu có usage
   for (const [model, used] of Object.entries(usage)) {
-    if (!details[model]) details[model] = { used, limit, remaining: Math.max(0, limit - used), blocked: blocked.includes(model) };
+    if (!details[model]) {
+      const modelLimit = perModelLimits[model] || MODEL_DAILY_LIMIT;
+      details[model] = { used, limit: modelLimit, remaining: Math.max(0, modelLimit - used), blocked: blocked.includes(model) };
+    }
   }
-  res.json({ date: day, usage, details, blocked, fallback_chain: chain, daily_limit: limit, checked_at: new Date().toISOString() });
+  res.json({ date: day, usage, details, blocked, fallback_chain: chain, daily_limit: MODEL_DAILY_LIMIT, per_model_limits: perModelLimits, checked_at: new Date().toISOString() });
 });
 
 // ── Check model request limits trực tiếp từ VietAPI ──────────────────────────
@@ -2607,26 +2634,92 @@ app.get("/api/model-limits", async (req, res) => {
   const quotaKey = process.env.DORO_QUOTA_KEY || splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "")[0] || "";
   if (!quotaKey) return res.json({ error: "No quota key configured" });
   const rawBase = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "").replace(/\/v1$/, "");
-  const endpoints = [
-    "/v1/dashboard/billing/models",
-    "/v1/dashboard/models",
-    "/v1/rate_limits",
-    "/v1/models/usage",
-    "/v1/dashboard/billing/rate_limits",
+  const dashboardBase = "https://vietapi.tech";
+
+  // Thử nhiều cách lấy data model limits từ VietAPI
+  const results = { models: [], source: null, raw: {} };
+
+  // Cách 1: Gọi endpoint /v1/models (chuẩn OpenAI)
+  try {
+    const resp = await fetch(`${rawBase}/v1/models`, { headers: { Authorization: `Bearer ${quotaKey}` } });
+    if (resp.ok) {
+      const data = await resp.json();
+      results.raw["/v1/models"] = { status: 200, data };
+    } else {
+      results.raw["/v1/models"] = { status: resp.status };
+    }
+  } catch (err) { results.raw["/v1/models"] = { error: err.message }; }
+
+  // Cách 2: Thử các endpoint dashboard API mà VietAPI có thể dùng
+  const dashEndpoints = [
+    `${rawBase}/v1/dashboard/models`,
+    `${rawBase}/v1/dashboard/billing/models`,
+    `${rawBase}/v1/user/models`,
+    `${rawBase}/v1/account/models`,
+    `${dashboardBase}/api/models`,
+    `${dashboardBase}/api/dashboard/models`,
+    `${dashboardBase}/api/user/models`,
   ];
-  const results = {};
-  for (const ep of endpoints) {
+  for (const url of dashEndpoints) {
     try {
-      const resp = await fetch(`${rawBase}${ep}`, { headers: { Authorization: `Bearer ${quotaKey}` } });
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${quotaKey}`, "X-API-Key": quotaKey }
+      });
       const text = await resp.text();
       let data;
-      try { data = JSON.parse(text); } catch (_) { data = text.slice(0, 500); }
-      results[ep] = { status: resp.status, data };
-    } catch (err) {
-      results[ep] = { status: 0, error: err.message };
-    }
+      try { data = JSON.parse(text); } catch (_) { data = null; }
+      results.raw[url.replace(rawBase, "").replace(dashboardBase, "")] = { status: resp.status, data: data || text.slice(0, 300) };
+      // Nếu tìm được data hợp lệ
+      if (resp.ok && data && typeof data === "object") {
+        const list = Array.isArray(data) ? data : (data.data || data.models || []);
+        if (Array.isArray(list) && list.length > 0 && list[0] && (list[0].id || list[0].model || list[0].name)) {
+          results.models = list;
+          results.source = url.replace(rawBase, "").replace(dashboardBase, "");
+          break;
+        }
+      }
+    } catch (_) {}
   }
-  res.json({ base_url: rawBase, endpoints: results, checked_at: new Date().toISOString() });
+
+  // Cách 3: Scrape dashboard HTML
+  if (!results.models.length) {
+    try {
+      const dashResp = await fetch(`${dashboardBase}/dashboard.html`, {
+        headers: {
+          Authorization: `Bearer ${quotaKey}`,
+          Cookie: `api_key=${quotaKey}`,
+          "User-Agent": "Mozilla/5.0",
+        }
+      });
+      const html = await dashResp.text();
+      results.raw["dashboard.html"] = { status: dashResp.status, size: html.length };
+      // Parse model data từ HTML
+      const modelRegex = /data-model="([^"]+)"/g;
+      const rateRegex = /<b>(\d+)rq\s*\/\s*([\d.]+)rq<\/b>/g;
+      const todayRegex = /Hôm nay:\s*(\d+)\s*requests/g;
+      let match;
+      const modelNames = [];
+      while ((match = modelRegex.exec(html)) !== null) modelNames.push(match[1]);
+      const rates = [];
+      while ((match = rateRegex.exec(html)) !== null) rates.push({ used: Number(match[1]), limit: Number(match[2].replace(".", "")) });
+      const todays = [];
+      while ((match = todayRegex.exec(html)) !== null) todays.push(Number(match[1]));
+
+      if (modelNames.length > 0) {
+        results.source = "dashboard.html (scraped)";
+        results.models = modelNames.map((name, i) => ({
+          id: name,
+          used: rates[i] ? rates[i].used : (todays[i] || 0),
+          limit: rates[i] ? rates[i].limit : 0,
+          remaining: rates[i] ? rates[i].limit - rates[i].used : 0,
+          status: "available",
+          limit_type: rates[i] ? "request" : "quota",
+        }));
+      }
+    } catch (err) { results.raw["dashboard.html"] = { error: err.message }; }
+  }
+
+  res.json({ ...results, checked_at: new Date().toISOString() });
 });
 
 app.get("/api/quota", async (req, res) => {
