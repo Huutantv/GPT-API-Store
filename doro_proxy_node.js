@@ -2600,6 +2600,35 @@ app.get("/api/model-usage", (req, res) => {
   res.json({ date: day, usage, details, blocked, fallback_chain: chain, daily_limit: limit, checked_at: new Date().toISOString() });
 });
 
+// ── Check model request limits trực tiếp từ VietAPI ──────────────────────────
+app.get("/api/model-limits", async (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const quotaKey = process.env.DORO_QUOTA_KEY || splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "")[0] || "";
+  if (!quotaKey) return res.json({ error: "No quota key configured" });
+  const rawBase = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "").replace(/\/v1$/, "");
+  const endpoints = [
+    "/v1/dashboard/billing/models",
+    "/v1/dashboard/models",
+    "/v1/rate_limits",
+    "/v1/models/usage",
+    "/v1/dashboard/billing/rate_limits",
+  ];
+  const results = {};
+  for (const ep of endpoints) {
+    try {
+      const resp = await fetch(`${rawBase}${ep}`, { headers: { Authorization: `Bearer ${quotaKey}` } });
+      const text = await resp.text();
+      let data;
+      try { data = JSON.parse(text); } catch (_) { data = text.slice(0, 500); }
+      results[ep] = { status: resp.status, data };
+    } catch (err) {
+      results[ep] = { status: 0, error: err.message };
+    }
+  }
+  res.json({ base_url: rawBase, endpoints: results, checked_at: new Date().toISOString() });
+});
+
 app.get("/api/quota", async (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
