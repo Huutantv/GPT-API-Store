@@ -148,6 +148,89 @@ function resolveBackendModel(requestedModel, profile = backendProfile()) {
   return requestedModel || backendModel;
 }
 
+// ── Auto Model Fallback ──────────────────────────────────────────────────────
+// Danh sách model fallback theo thứ tự ưu tiên
+// Khi model chính hết quota → chuyển sang model tiếp theo
+const MODEL_FALLBACK_CHAIN = (process.env.DORO_MODEL_FALLBACK || "").split(",").map(s => s.trim()).filter(Boolean);
+// Mặc định nếu không set env
+const DEFAULT_FALLBACK_CHAIN = ["gpt-5.5", "gpt-5.5-high", "gpt-5.4", "gpt-5.3-codex"];
+
+function getModelFallbackChain() {
+  return MODEL_FALLBACK_CHAIN.length ? MODEL_FALLBACK_CHAIN : DEFAULT_FALLBACK_CHAIN;
+}
+
+// Đếm request per model per ngày
+const _modelUsage = {}; // { "2026-05-21": { "gpt-5.5": 150, "gpt-5.4": 30 } }
+const _modelBlocked = {}; // { "gpt-5.5": timestamp_khi_bị_block }
+const MODEL_DAILY_LIMIT = Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"); // ngưỡng chuyển model (mặc định 1800/2000)
+const MODEL_BLOCK_DURATION = 60 * 60 * 1000; // block 1 giờ sau khi detect quota error
+
+function todayKey() { return new Date().toISOString().slice(0, 10); }
+
+function trackModelRequest(model) {
+  const day = todayKey();
+  if (!_modelUsage[day]) _modelUsage[day] = {};
+  _modelUsage[day][model] = (_modelUsage[day][model] || 0) + 1;
+  // Cleanup ngày cũ
+  for (const k of Object.keys(_modelUsage)) { if (k !== day) delete _modelUsage[k]; }
+}
+
+function getModelUsageToday(model) {
+  const day = todayKey();
+  return (_modelUsage[day] && _modelUsage[day][model]) || 0;
+}
+
+function isModelBlocked(model) {
+  const blockedAt = _modelBlocked[model];
+  if (!blockedAt) return false;
+  if (Date.now() - blockedAt > MODEL_BLOCK_DURATION) {
+    delete _modelBlocked[model];
+    addLog(`model-fallback: ${model} unblocked after cooldown`);
+    return false;
+  }
+  return true;
+}
+
+function blockModel(model, reason) {
+  if (!_modelBlocked[model]) {
+    _modelBlocked[model] = Date.now();
+    addLog(`model-fallback: ${model} BLOCKED - ${reason}`);
+    notifyTelegram(
+      `\u26a0\ufe0f <b>Model ${model} t\u1ea1m ng\u1eaft</b>\n` +
+      `\ud83d\udcca L\u00fd do: ${reason}\n` +
+      `\ud83d\udd04 T\u1ef1 \u0111\u1ed9ng chuy\u1ec3n sang model ti\u1ebfp theo\n` +
+      `\u23f0 Th\u1eed l\u1ea1i sau 1 gi\u1edd\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+  }
+}
+
+function selectBestModel(preferredModel) {
+  const chain = getModelFallbackChain();
+  // Nếu preferred model không trong chain, dùng trực tiếp
+  if (!chain.includes(preferredModel) && !isModelBlocked(preferredModel)) {
+    return preferredModel;
+  }
+  // Tìm model khả dụng trong chain
+  for (const model of chain) {
+    if (isModelBlocked(model)) continue;
+    if (getModelUsageToday(model) >= MODEL_DAILY_LIMIT) {
+      blockModel(model, `Dat nguong ${MODEL_DAILY_LIMIT} req/ngay`);
+      continue;
+    }
+    return model;
+  }
+  // Tất cả đều blocked → dùng model cuối cùng trong chain (hy vọng VietAPI cho qua)
+  addLog("model-fallback: all models blocked, using last in chain");
+  return chain[chain.length - 1] || preferredModel;
+}
+
+function isQuotaExceededError(status, text) {
+  if (status === 429) return true;
+  const lower = String(text || "").toLowerCase();
+  return lower.includes("quota") || lower.includes("rate limit") || lower.includes("exceeded") || lower.includes("limit reached");
+}
+
 function getSettings(requestedModel) {
   loadLocalEnv(false);
   const profile = backendProfile();
@@ -830,15 +913,47 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         obs.backend_model = settings.backendModel || "";
       }
       const payload = payloadBuilder(settings);
+      // Auto model fallback: chọn model tốt nhất
+      const originalModel = payload.model;
+      payload.model = selectBestModel(payload.model);
+      if (payload.model !== originalModel) {
+        addLog(`model-fallback: ${originalModel} -> ${payload.model}`);
+      }
       applyBackendPayloadLimits(payload, settings);
       applyBackendMessageCompatibility(payload, settings);
       applyBackendToolCompatibility(payload, settings);
       const url = `${settings.baseUrl}${pathSuffix}`;
       const response = await postWithKeyFailover(url, payload, settings.apiKeys, {}, obs);
+      // Track thành công
+      trackModelRequest(payload.model);
       trackBackendSuccess(settings.profileId);
       return { response, settings, payload };
     } catch (err) {
       lastError = err;
+      // Detect quota exceeded → block model + retry với model khác
+      if (isQuotaExceededError(err.status, err.text)) {
+        const payload = payloadBuilder(settings);
+        blockModel(payload.model || settings.backendModel, `HTTP ${err.status} quota exceeded`);
+        // Retry với model fallback
+        const nextModel = selectBestModel(payload.model || settings.backendModel);
+        if (nextModel !== (payload.model || settings.backendModel)) {
+          addLog(`model-fallback: retrying with ${nextModel} after quota error`);
+          try {
+            const retryPayload = payloadBuilder(settings);
+            retryPayload.model = nextModel;
+            applyBackendPayloadLimits(retryPayload, settings);
+            applyBackendMessageCompatibility(retryPayload, settings);
+            applyBackendToolCompatibility(retryPayload, settings);
+            const url = `${settings.baseUrl}${pathSuffix}`;
+            const response = await postWithKeyFailover(url, retryPayload, settings.apiKeys, {}, obs);
+            trackModelRequest(nextModel);
+            trackBackendSuccess(settings.profileId);
+            return { response, settings, payload: retryPayload };
+          } catch (retryErr) {
+            lastError = retryErr;
+          }
+        }
+      }
       // Auto-mode: track backend lỗi để tự ngắt
       if (err.status) trackBackendError(settings.profileId, err.status);
       const canTryNext = !err.status || (isRetryableStatus(err.status) && i < settingsChain.length - 1);
@@ -2160,6 +2275,8 @@ app.get("/api/config", (req, res) => {
     active_backend_label: activeLabel,
     auto_mode: String(process.env.DORO_AUTO_MODE || "0") === "1",
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
+    model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
+    model_daily_limit: Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"),
     backend_health: {
       "1": { healthy: isBackendHealthy("1"), errors: _backendHealth["1"].errors, down_count: _backendHealth["1"].downCount, down_since: _backendHealth["1"].downSince },
       "2": { healthy: isBackendHealthy("2"), errors: _backendHealth["2"].errors, down_count: _backendHealth["2"].downCount, down_since: _backendHealth["2"].downSince },
@@ -2215,6 +2332,8 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND_TIMEOUT",
     "DORO_AUTO_MODE",
     "DORO_AUTO_RECOVERY_MS",
+    "DORO_MODEL_FALLBACK",
+    "DORO_MODEL_DAILY_LIMIT",
   ]) {
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") value = ["1", "2", "both"].includes(value) ? value : "";
@@ -2458,6 +2577,15 @@ app.get("/api/customers/:email", (req, res) => {
     return { ...keyRow, order_code: o.order_code, package_id: o.package_id, paid_at: o.paid_at };
   }).filter(Boolean);
   res.json({ email, orders: orderList, keys });
+});
+
+app.get("/api/model-usage", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const day = todayKey();
+  const usage = _modelUsage[day] || {};
+  const blocked = Object.keys(_modelBlocked).filter(m => isModelBlocked(m));
+  res.json({ date: day, usage, blocked, fallback_chain: getModelFallbackChain(), daily_limit: MODEL_DAILY_LIMIT });
 });
 
 app.get("/api/quota", async (req, res) => {

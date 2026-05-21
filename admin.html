@@ -403,6 +403,32 @@ body{font-family:'Inter',sans-serif}
   <!-- Quota check -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
     <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2">&#x1F504; Model Fallback</h3>
+      <button onclick="saveModelFallback()" class="px-4 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">L&#432;u</button>
+    </div>
+    <p class="text-xs text-gray-400">Th&#7913; t&#7921; &#432;u ti&#234;n model. Khi model &#273;&#7847;u h&#7871;t quota s&#7869; t&#7921; chuy&#7875;n sang model ti&#7871;p theo.</p>
+    <div class="space-y-2">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Danh s&#225;ch model (th&#7913; t&#7921; &#432;u ti&#234;n, c&#225;ch nhau b&#7903;i d&#7845;u ph&#7849;y)</label>
+        <input id="cfgModelFallback" placeholder="gpt-5.5,gpt-5.5-high,gpt-5.4,gpt-5.3-codex" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Ng&#432;&#7905;ng chuy&#7875;n model (requests/ng&#224;y)</label>
+        <input id="cfgModelLimit" type="number" placeholder="1800" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <p class="text-xs text-gray-500 mt-1">VietAPI limit 2000 rq/ng&#224;y. &#272;&#7863;t 1800 &#273;&#7875; chuy&#7875;n tr&#432;&#7899;c khi h&#7871;t.</p>
+      </div>
+    </div>
+    <!-- Model usage today -->
+    <div id="modelUsageToday" class="space-y-2 pt-3 border-t border-white/5">
+      <p class="text-xs text-gray-500">S&#7917; d&#7909;ng h&#244;m nay:</p>
+      <div id="modelUsageList" class="space-y-1"></div>
+    </div>
+    <p id="modelFallbackMsg" class="text-xs text-gray-400"></p>
+  </div>
+
+  <!-- Quota check -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
       <h3 class="font-bold text-base flex items-center gap-2">&#x1F4CA; Quota Backend</h3>
       <button onclick="loadQuota()" class="text-xs text-gray-500 hover:text-white px-3 py-1.5 bg-dark-600 rounded-lg transition">Check ngay</button>
     </div>
@@ -786,6 +812,7 @@ async function loadBackendConfig() {
   renderKeyList(document.getElementById("backend2KeysList"), b2.backend_api_keys_full || [], "2");
 
   toggleRouterBox();
+  loadModelFallback();
 }
 
 function toggleRouterBox() {
@@ -834,6 +861,54 @@ async function saveBackend1Config() {
   var data = await r.json();
   if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 1. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
+}
+
+async function loadModelFallback() {
+  var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
+  document.getElementById("cfgModelFallback").value = data.model_fallback_chain || "";
+  document.getElementById("cfgModelLimit").value = data.model_daily_limit || "1800";
+  // Load usage
+  try {
+    var usage = await fetch(BASE + "/api/model-usage", { headers: authHeaders() }).then(function(r) { return r.json(); });
+    var list = document.getElementById("modelUsageList");
+    var models = usage.usage || {};
+    var limit = Number(document.getElementById("cfgModelLimit").value || 1800);
+    var entries = Object.entries(models);
+    if (!entries.length) {
+      list.innerHTML = '<p class="text-xs text-gray-600">Chua co request hom nay</p>';
+    } else {
+      list.innerHTML = entries.map(function(e) {
+        var pct = limit > 0 ? Math.round((e[1] / limit) * 100) : 0;
+        var color = pct >= 90 ? "bg-red-500" : pct >= 70 ? "bg-yellow-500" : "bg-green-500";
+        var blocked = (usage.blocked || []).includes(e[0]);
+        return '<div class="flex items-center gap-2">' +
+          '<code class="text-xs text-gray-300 w-32 shrink-0">' + e[0] + '</code>' +
+          '<div class="flex-1 h-2 bg-dark-600 rounded-full overflow-hidden"><div class="h-full ' + color + ' rounded-full" style="width:' + Math.min(pct, 100) + '%"></div></div>' +
+          '<span class="text-xs text-gray-400 w-20 text-right">' + e[1] + '/' + limit + '</span>' +
+          (blocked ? '<span class="text-xs text-red-400">BLOCKED</span>' : '') +
+        '</div>';
+      }).join("");
+    }
+  } catch (_) {}
+}
+
+async function saveModelFallback() {
+  var chain = document.getElementById("cfgModelFallback").value.trim();
+  var limit = document.getElementById("cfgModelLimit").value.trim();
+  var msg = document.getElementById("modelFallbackMsg");
+  var updates = {};
+  if (chain) updates.DORO_MODEL_FALLBACK = chain;
+  if (limit) updates.DORO_MODEL_DAILY_LIMIT = limit;
+  if (!Object.keys(updates).length) { msg.textContent = "Khong co gi thay doi"; return; }
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) {
+    msg.className = "text-xs text-green-400";
+    msg.textContent = "Da luu. Can restart proxy de ap dung.";
+  } else {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = data.detail || "Loi";
+  }
 }
 
 async function loadQuota() {
