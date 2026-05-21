@@ -61,6 +61,7 @@ const stmts = {
   deleteKey:    db.prepare("DELETE FROM api_keys WHERE key = ?"),
   insertTxn:    db.prepare("INSERT INTO credit_txns (key, delta, reason, tokens_in, tokens_out, model, req_id) VALUES (?, ?, ?, ?, ?, ?, ?)"),
   getTxns:      db.prepare("SELECT * FROM credit_txns WHERE key = ? ORDER BY created_at DESC LIMIT ?"),
+  getUsageTotal: db.prepare("SELECT COALESCE(SUM(ABS(delta)), 0) AS total_spent, COUNT(*) AS usage_count FROM credit_txns WHERE key = ? AND delta < 0"),
   getAllTxns:   db.prepare("SELECT * FROM credit_txns ORDER BY created_at DESC LIMIT ?"),
   getRpmCount:  db.prepare("SELECT count FROM rpm_buckets WHERE key = ? AND minute = ?"),
   upsertRpm:    db.prepare("INSERT INTO rpm_buckets (key, minute, count) VALUES (?, ?, 1) ON CONFLICT(key, minute) DO UPDATE SET count = count + 1"),
@@ -198,6 +199,13 @@ function getHistory(apiKey, limit = 50) {
 }
 
 /**
+ * Tổng credit đã sử dụng của key
+ */
+function getUsageTotal(apiKey) {
+  return stmts.getUsageTotal.get(apiKey) || { total_spent: 0, usage_count: 0 };
+}
+
+/**
  * Lịch sử tất cả giao dịch (admin)
  */
 function getAllHistory(limit = 200) {
@@ -226,6 +234,7 @@ module.exports = {
   getKey,
   listKeys,
   getHistory,
+  getUsageTotal,
   getAllHistory,
   getStats,
 };

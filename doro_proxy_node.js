@@ -2553,12 +2553,15 @@ app.get("/api/credit/balance", (req, res) => {
   const token = extractToken(req);
   const row = credit.getKey(token);
   if (!row) return res.status(403).json({ detail: "Invalid API key" });
+  const usage = credit.getUsageTotal(token);
   res.json({
     key_masked: token.slice(0, 8) + "..." + token.slice(-4),
     credit: row.credit,
     rpm_limit: row.rpm_limit,
     active: !!row.active,
     expires_at: row.expires_at || null,
+    total_spent: Number(usage.total_spent || 0),
+    usage_count: Number(usage.usage_count || 0),
   });
 });
 

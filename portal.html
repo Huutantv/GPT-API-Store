@@ -223,6 +223,9 @@ function renderBalance(data) {
   document.getElementById("keyDisplay").textContent = data.key_masked;
   document.getElementById("baseUrlDisplay").textContent = `${BASE}/v1`;
   document.getElementById("clineKey").textContent = data.key_masked;
+  if (data.total_spent !== undefined) {
+    document.getElementById("totalSpent").textContent = Number(data.total_spent || 0).toLocaleString();
+  }
 }
 
 function loadHistory() {
@@ -236,10 +239,8 @@ function loadHistory() {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; l&#7883;ch s&#7917;</td></tr>';
         return;
       }
-      let totalSpent = 0;
       tbody.innerHTML = rows.map(r => {
         const isUsage = r.delta < 0;
-        if (isUsage) totalSpent += Math.abs(r.delta);
         const deltaClass = isUsage ? "text-red-400" : "text-green-400";
         const deltaText = isUsage ? r.delta : `+${r.delta}`;
         const totalTokens = (r.tokens_in || 0) + (r.tokens_out || 0);
@@ -251,7 +252,13 @@ function loadHistory() {
           <td class="py-3 text-right font-mono text-xs ${deltaClass}">${deltaText}</td>
         </tr>`;
       }).join("");
-      document.getElementById("totalSpent").textContent = totalSpent.toLocaleString();
+      return fetch(`${BASE}/api/credit/balance`, { headers: { Authorization: `Bearer ${currentKey}` } });
+    })
+    .then(r => r ? r.json() : null)
+    .then(data => {
+      if (data && data.total_spent !== undefined) {
+        document.getElementById("totalSpent").textContent = Number(data.total_spent || 0).toLocaleString();
+      }
     });
 }
 
