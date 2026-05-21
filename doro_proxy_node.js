@@ -2633,93 +2633,97 @@ app.get("/api/model-limits", async (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const quotaKey = process.env.DORO_QUOTA_KEY || splitEnvList(process.env.ANTHROPIC_AUTH_TOKEN || "")[0] || "";
   if (!quotaKey) return res.json({ error: "No quota key configured" });
-  const rawBase = (process.env.ANTHROPIC_BASE_URL || "https://api.vietapi.tech").replace(/\/+$/, "").replace(/\/v1$/, "");
-  const dashboardBase = "https://vietapi.tech";
 
-  // Thử nhiều cách lấy data model limits từ VietAPI
-  const results = { models: [], source: null, raw: {} };
-
-  // Cách 1: Gọi endpoint /v1/models (chuẩn OpenAI)
+  // Scrape VietAPI dashboard HTML (server-side render khi có cookie apiKey)
   try {
-    const resp = await fetch(`${rawBase}/v1/models`, { headers: { Authorization: `Bearer ${quotaKey}` } });
-    if (resp.ok) {
-      const data = await resp.json();
-      results.raw["/v1/models"] = { status: 200, data };
-    } else {
-      results.raw["/v1/models"] = { status: resp.status };
+    const dashResp = await fetch("https://vietapi.tech/dashboard.html", {
+      headers: {
+        Cookie: `apiKey=${quotaKey}`,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      }
+    });
+    const html = await dashResp.text();
+
+    // Parse model data từ HTML table
+    // Format: <td><b>gpt-5.5</b><br><small>GPT premium</small></td>
+    //         <td><span class="model-rate"><b>581rq / 2.000rq</b><small>Hôm nay: 581 requests</small></span></td>
+    //         <td><b>1.419 rq</b></td>
+    const models = [];
+    const rowRegex = /<tr>\s*<td><b>([^<]+)<\/b>.*?<\/td>\s*<td>.*?<\/td>\s*<td>.*?<b>(.*?)<\/b>.*?<small>.*?(\d+)\s*requests<\/small>.*?<\/td>\s*<td><b>(.*?)<\/b><\/td>/gs;
+    let match;
+    while ((match = rowRegex.exec(html)) !== null) {
+      const modelId = match[1].trim();
+      const rateText = match[2].trim(); // "581rq / 2.000rq" hoặc "Theo quota"
+      const todayRequests = Number(match[3]) || 0;
+      const remainingText = match[4].trim(); // "1.419 rq" hoặc "Dùng trong quota token/ngày"
+
+      let limit = 0;
+      let used = todayRequests;
+      let remaining = 0;
+      let limitType = "quota"; // mặc định theo quota token
+
+      // Parse rate: "581rq / 2.000rq"
+      const rateMatch = rateText.match(/(\d[\d.]*)\s*rq\s*\/\s*([\d.]+)\s*rq/);
+      if (rateMatch) {
+        used = Number(rateMatch[1].replace(/\./g, "")) || 0;
+        limit = Number(rateMatch[2].replace(/\./g, "")) || 0;
+        limitType = "request";
+      }
+
+      // Parse remaining: "1.419 rq"
+      const remainMatch = remainingText.match(/([\d.]+)\s*rq/);
+      if (remainMatch) {
+        remaining = Number(remainMatch[1].replace(/\./g, "")) || 0;
+      } else if (limit > 0) {
+        remaining = Math.max(0, limit - used);
+      }
+
+      models.push({ id: modelId, used, limit, remaining, limit_type: limitType, status: "available" });
     }
-  } catch (err) { results.raw["/v1/models"] = { error: err.message }; }
 
-  // Cách 2: Thử các endpoint dashboard API mà VietAPI có thể dùng
-  const dashEndpoints = [
-    `${rawBase}/v1/dashboard/models`,
-    `${rawBase}/v1/dashboard/billing/models`,
-    `${rawBase}/v1/user/models`,
-    `${rawBase}/v1/account/models`,
-    `${dashboardBase}/api/models`,
-    `${dashboardBase}/api/dashboard/models`,
-    `${dashboardBase}/api/user/models`,
-  ];
-  for (const url of dashEndpoints) {
-    try {
-      const resp = await fetch(url, {
-        headers: { Authorization: `Bearer ${quotaKey}`, "X-API-Key": quotaKey }
-      });
-      const text = await resp.text();
-      let data;
-      try { data = JSON.parse(text); } catch (_) { data = null; }
-      results.raw[url.replace(rawBase, "").replace(dashboardBase, "")] = { status: resp.status, data: data || text.slice(0, 300) };
-      // Nếu tìm được data hợp lệ
-      if (resp.ok && data && typeof data === "object") {
-        const list = Array.isArray(data) ? data : (data.data || data.models || []);
-        if (Array.isArray(list) && list.length > 0 && list[0] && (list[0].id || list[0].model || list[0].name)) {
-          results.models = list;
-          results.source = url.replace(rawBase, "").replace(dashboardBase, "");
-          break;
-        }
-      }
-    } catch (_) {}
-  }
+    // Fallback: parse đơn giản hơn nếu regex phức tạp không match
+    if (!models.length) {
+      // Thử parse từng dòng data-model
+      const modelIds = [];
+      const dataModelRegex = /data-model="([^"]+)"/g;
+      let dm;
+      while ((dm = dataModelRegex.exec(html)) !== null) modelIds.push(dm[1]);
 
-  // Cách 3: Scrape dashboard HTML
-  if (!results.models.length) {
-    try {
-      const dashResp = await fetch(`${dashboardBase}/dashboard.html`, {
-        headers: {
-          Authorization: `Bearer ${quotaKey}`,
-          Cookie: `api_key=${quotaKey}`,
-          "User-Agent": "Mozilla/5.0",
-        }
-      });
-      const html = await dashResp.text();
-      results.raw["dashboard.html"] = { status: dashResp.status, size: html.length };
-      // Parse model data từ HTML
-      const modelRegex = /data-model="([^"]+)"/g;
-      const rateRegex = /<b>(\d+)rq\s*\/\s*([\d.]+)rq<\/b>/g;
-      const todayRegex = /Hôm nay:\s*(\d+)\s*requests/g;
-      let match;
-      const modelNames = [];
-      while ((match = modelRegex.exec(html)) !== null) modelNames.push(match[1]);
+      // Parse rates
       const rates = [];
-      while ((match = rateRegex.exec(html)) !== null) rates.push({ used: Number(match[1]), limit: Number(match[2].replace(".", "")) });
+      const rateBlockRegex = /<b>(\d[\d.]*rq\s*\/\s*[\d.]+rq|Theo quota)<\/b>/g;
+      let rb;
+      while ((rb = rateBlockRegex.exec(html)) !== null) rates.push(rb[1]);
+
+      // Parse today requests
       const todays = [];
-      while ((match = todayRegex.exec(html)) !== null) todays.push(Number(match[1]));
+      const todayRegex = /H(?:ô|&ocirc;)m nay:\s*(\d+)\s*requests/g;
+      let td;
+      while ((td = todayRegex.exec(html)) !== null) todays.push(Number(td[1]));
 
-      if (modelNames.length > 0) {
-        results.source = "dashboard.html (scraped)";
-        results.models = modelNames.map((name, i) => ({
-          id: name,
-          used: rates[i] ? rates[i].used : (todays[i] || 0),
-          limit: rates[i] ? rates[i].limit : 0,
-          remaining: rates[i] ? rates[i].limit - rates[i].used : 0,
-          status: "available",
-          limit_type: rates[i] ? "request" : "quota",
-        }));
+      for (let i = 0; i < modelIds.length; i++) {
+        const rateStr = rates[i] || "";
+        const today = todays[i] || 0;
+        let limit = 0, used = today, remaining = 0, limitType = "quota";
+        const rm = rateStr.match(/(\d[\d.]*)\s*rq\s*\/\s*([\d.]+)\s*rq/);
+        if (rm) {
+          used = Number(rm[1].replace(/\./g, "")) || 0;
+          limit = Number(rm[2].replace(/\./g, "")) || 0;
+          remaining = Math.max(0, limit - used);
+          limitType = "request";
+        }
+        models.push({ id: modelIds[i], used, limit, remaining, limit_type: limitType, status: "available" });
       }
-    } catch (err) { results.raw["dashboard.html"] = { error: err.message }; }
-  }
+    }
 
-  res.json({ ...results, checked_at: new Date().toISOString() });
+    if (models.length > 0) {
+      res.json({ models, source: "vietapi.tech/dashboard.html (scraped)", checked_at: new Date().toISOString() });
+    } else {
+      res.json({ models: [], source: null, error: "Could not parse dashboard HTML", html_size: html.length, checked_at: new Date().toISOString() });
+    }
+  } catch (err) {
+    res.json({ models: [], source: null, error: err.message, checked_at: new Date().toISOString() });
+  }
 });
 
 app.get("/api/quota", async (req, res) => {
