@@ -2465,7 +2465,12 @@ app.get("/api/requests/recent", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const limit = Math.min(1000, Math.max(1, Number(req.query.limit || "200")));
-  res.json({ count: Math.min(limit, recentRequests.length), requests: recentRequests.slice(-limit).reverse() });
+  const keyMap = new Map((credit.listKeys() || []).map((k) => [k.key, k.label || ""]));
+  const requests = recentRequests.slice(-limit).reverse().map((item) => ({
+    ...item,
+    key_label: keyMap.get(item.api_key_masked) || keyMap.get(item.api_key) || "",
+  }));
+  res.json({ count: Math.min(limit, recentRequests.length), requests });
 });
 
 app.get("/api/requests/export", (req, res) => {

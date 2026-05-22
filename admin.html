@@ -263,6 +263,7 @@ body{font-family:'Inter',sans-serif}
         <th class="text-left px-4 py-3">Th&#7901;i gian</th>
         <th class="text-left px-4 py-3">IP</th>
         <th class="text-left px-4 py-3">Key</th>
+        <th class="text-left px-4 py-3">Người dùng</th>
         <th class="text-left px-4 py-3">Path</th>
         <th class="text-left px-4 py-3">Model</th>
         <th class="text-left px-4 py-3">Backend</th>
@@ -751,7 +752,7 @@ async function loadMonitor() {
   document.getElementById("mon502").textContent = (summary.count_502_1m || 0) + " / " + (summary.count_502_5m || 0);
   var tbody = document.getElementById("monitorTable");
   var rows = (recent.requests || []).slice(0, 50);
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="12" class="text-center text-gray-500 py-6">Ch\u01b0a c\u00f3 request</td></tr>'; return; }
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="13" class="text-center text-gray-500 py-6">Ch\u01b0a c\u00f3 request</td></tr>'; return; }
   tbody.innerHTML = rows.map(function(r) {
     var sCls = r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400";
     var copyBtn = r.api_key_masked ? ' <button onclick="copyText(\'' + r.api_key_masked + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>' : "";
@@ -766,6 +767,7 @@ async function loadMonitor() {
       '<td class="px-4 py-2 whitespace-nowrap">' + fmtTimeVN(r.ts) + '</td>' +
       '<td class="px-4 py-2 text-gray-400 whitespace-nowrap">' + (r.client_ip || "\u2014") + '</td>' +
       '<td class="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">' + (r.api_key_masked || "\u2014") + copyBtn + '</td>' +
+      '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + ((r.key_label || r.customer_name || r.owner || "\u2014")) + '</td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.path || "\u2014") + '</td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.model_requested || "\u2014") + '</td>' +
       '<td class="px-4 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded font-semibold ' + backendCls + '">' + backend + '</span></td>' +
