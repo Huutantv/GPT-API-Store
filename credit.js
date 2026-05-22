@@ -18,13 +18,14 @@ db.exec(`
   PRAGMA foreign_keys = ON;
 
   CREATE TABLE IF NOT EXISTS api_keys (
-    key         TEXT PRIMARY KEY,
-    label       TEXT NOT NULL DEFAULT '',
-    credit      INTEGER NOT NULL DEFAULT 0,
-    rpm_limit   INTEGER NOT NULL DEFAULT 10,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-    expires_at  TEXT,
-    active      INTEGER NOT NULL DEFAULT 1
+    key            TEXT PRIMARY KEY,
+    label          TEXT NOT NULL DEFAULT '',
+    credit         INTEGER NOT NULL DEFAULT 0,
+    rpm_limit      INTEGER NOT NULL DEFAULT 10,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at     TEXT,
+    active         INTEGER NOT NULL DEFAULT 1,
+    token_remaining INTEGER NOT NULL DEFAULT 0
   );
 
   CREATE TABLE IF NOT EXISTS credit_txns (
@@ -50,11 +51,14 @@ db.exec(`
   );
 `);
 
+// Migration: thêm cột token_remaining nếu chưa có
+try { db.exec("ALTER TABLE api_keys ADD COLUMN token_remaining INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
   getKey:       db.prepare("SELECT * FROM api_keys WHERE key = ?"),
-  listKeys:     db.prepare("SELECT key, label, credit, rpm_limit, created_at, expires_at, active FROM api_keys ORDER BY created_at DESC"),
-  insertKey:    db.prepare("INSERT INTO api_keys (key, label, credit, rpm_limit, expires_at) VALUES (?, ?, ?, ?, ?)"),
+  listKeys:     db.prepare("SELECT key, label, credit, rpm_limit, created_at, expires_at, active, token_remaining FROM api_keys ORDER BY created_at DESC"),
+  insertKey:    db.prepare("INSERT INTO api_keys (key, label, credit, rpm_limit, expires_at, token_remaining) VALUES (?, ?, ?, ?, ?, ?)"),
   updateCredit: db.prepare("UPDATE api_keys SET credit = credit + ? WHERE key = ?"),
   setCredit:    db.prepare("UPDATE api_keys SET credit = ? WHERE key = ?"),
   setActive:    db.prepare("UPDATE api_keys SET active = ? WHERE key = ?"),
@@ -135,10 +139,49 @@ function checkRpm(apiKey, rpmLimit) {
  * @returns {{ credited: number, remaining: number }}
  */
 function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
-  const cost = tokensToCredit(tokensIn, tokensOut);
+  // Default: token-based (real usage)
+  let cost = tokensToCredit(tokensIn, tokensOut);
+  let tIn = Number(tokensIn || 0);
+  let tOut = Number(tokensOut || 0);
+
+  const rowBefore = stmts.getKey.get(apiKey);
+
+  // Starter mode: credit = request quota, token_remaining = synthetic token quota
+  if (rowBefore && rowBefore.token_remaining > 0) {
+    cost = 1; // 1 request
+
+    const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
+    const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
+
+    // Nếu còn đúng 1 request: dồn hết token_remaining
+    let alloc = tokenRemaining;
+    if (reqRemaining > 1) {
+      const minPerReq = 1000;
+      const maxPerReq = 200000;
+      const minLeftForOthers = minPerReq * (reqRemaining - 1);
+      const maxThis = Math.max(minPerReq, Math.min(maxPerReq, tokenRemaining - minLeftForOthers));
+      const minThis = Math.min(minPerReq, maxThis);
+      alloc = crypto.randomInt(minThis, maxThis + 1);
+    }
+
+    // Split in/out synthetic (random ratio 30–70%)
+    const inRatio = crypto.randomInt(30, 71) / 100;
+    tIn = Math.floor(alloc * inRatio);
+    tOut = alloc - tIn;
+
+    // Update token_remaining
+    db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(alloc, apiKey);
+  }
+
   stmts.updateCredit.run(-cost, apiKey);
-  stmts.insertTxn.run(apiKey, -cost, "usage", tokensIn || 0, tokensOut || 0, model || "", reqId || "");
+  stmts.insertTxn.run(apiKey, -cost, "usage", tIn || 0, tOut || 0, model || "", reqId || "");
   const row = stmts.getKey.get(apiKey);
+
+  // Khi hết request quota: ép token_remaining về 0 (không để dư)
+  if (row && row.credit <= 0 && row.token_remaining > 0) {
+    db.prepare("UPDATE api_keys SET token_remaining = 0 WHERE key = ?").run(apiKey);
+  }
+
   return { credited: cost, remaining: row ? row.credit : 0 };
 }
 
@@ -157,9 +200,9 @@ function topupCredit(apiKey, amount, reason = "topup") {
 /**
  * Tạo key mới
  */
-function createKey({ label = "", credit = 0, rpmLimit = 10, expiresAt = null } = {}) {
+function createKey({ label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0 } = {}) {
   const key = generateKey();
-  stmts.insertKey.run(key, label, credit, rpmLimit, expiresAt);
+  stmts.insertKey.run(key, label, credit, rpmLimit, expiresAt, Number(tokenRemaining || 0));
   if (credit > 0) {
     stmts.insertTxn.run(key, credit, "initial", 0, 0, "", "");
   }

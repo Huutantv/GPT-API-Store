@@ -2118,7 +2118,8 @@ async function processPayment(orderCode, amount, note) {
 
   // Tạo API key và nạp credit — đọc expires_at từ cột riêng
   const expiresAt = order.expires_at || null;
-  const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt });
+  const tokenRemaining = order.package_id === "starter" ? 30000000 : 0;
+  const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt, tokenRemaining });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
   const baseUrl = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
