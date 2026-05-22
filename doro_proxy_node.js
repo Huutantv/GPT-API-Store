@@ -2558,6 +2558,7 @@ app.get("/api/credit/balance", (req, res) => {
   res.json({
     key_masked: token.slice(0, 8) + "..." + token.slice(-4),
     credit: row.credit,
+    token_remaining: row.token_remaining,
     rpm_limit: row.rpm_limit,
     active: !!row.active,
     expires_at: row.expires_at || null,

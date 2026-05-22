@@ -227,7 +227,12 @@ function renderBalance(data) {
   document.getElementById("baseUrlDisplay").textContent = `${BASE}/v1`;
   document.getElementById("clineKey").textContent = data.key_masked;
   if (data.total_spent !== undefined) {
-    document.getElementById("totalSpent").textContent = Number(data.total_spent || 0).toLocaleString();
+    // Ẩn request/quota thật với Starter (token_remaining > 0)
+    if (data.token_remaining && Number(data.token_remaining) > 0) {
+      document.getElementById("totalSpent").textContent = "—";
+    } else {
+      document.getElementById("totalSpent").textContent = Number(data.total_spent || 0).toLocaleString();
+    }
   }
 }
 
