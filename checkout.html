@@ -186,6 +186,7 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
       </div>
       <div class="flex gap-2 flex-wrap">
         <span class="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full">${Number(p.credit).toLocaleString()} credit</span>
+        <span class="px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full">~${Number(p.credit).toLocaleString()}K token</span>
         <span class="px-2 py-0.5 bg-dark-600 text-gray-400 text-xs rounded-full">${p.rpm_limit} RPM</span>
       </div>
     </div>`).join("");
