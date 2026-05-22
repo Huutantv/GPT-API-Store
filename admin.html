@@ -131,9 +131,10 @@ body{font-family:'Inter',sans-serif}
   </div>
   <div id="createKeyForm" class="hidden bg-dark-700 border border-white/10 rounded-xl p-6 space-y-4">
     <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
-    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
       <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguyen Van A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
-      <div><label class="text-xs text-gray-400 block mb-1">Credit ban &#273;&#7847;u</label><input id="newCredit" type="number" placeholder="500" value="500" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">T&#7893;ng token</label><input id="newTokenQuota" type="number" placeholder="30000000" value="30000000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" oninput="updateCreateKeyTokenPreview()"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">S&#7889; request quy &#273;&#7893;i</label><input id="newCredit" type="number" placeholder="350" value="350" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary bg-dark-800 text-gray-400" readonly></div>
       <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="10" value="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">Th&#7901;i h&#7841;n</label>
         <select id="newExpires" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" onchange="updateExpiryPreview()">
@@ -148,6 +149,7 @@ body{font-family:'Inter',sans-serif}
         <p class="text-xs text-primary mt-1" id="expiryPreview"></p>
       </div>
     </div>
+    <p class="text-xs text-gray-500">Request quota sẽ tự tính theo setting <code>1 request = N token</code> ở tab <code>N&#7841;p Credit</code>.</p>
     <div class="flex gap-3">
       <button onclick="createKey()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">T&#7841;o key</button>
       <div id="createMsg" class="text-sm py-2 text-gray-400"></div>
@@ -593,7 +595,7 @@ function showTab(name) {
     btn.classList.toggle("tab-active", btn.dataset.tab === name);
   });
   if (name === "overview") loadOverview();
-  if (name === "keys") loadKeys();
+  if (name === "keys") { loadKeys(); loadRequestTokenSettings().then(updateCreateKeyTokenPreview); }
   if (name === "topup") loadRequestTokenSettings();
   if (name === "history") loadHistory();
   if (name === "monitor") loadMonitor();
@@ -651,20 +653,30 @@ async function loadKeys() {
   }).join("");
 }
 
+function updateCreateKeyTokenPreview() {
+  var tokenQuota = Math.max(0, Math.floor(Number(document.getElementById("newTokenQuota").value || 0)));
+  var cfgEl = document.getElementById("cfgTokenPerRequest");
+  var tokenPerRequest = Math.max(1, Math.floor(Number((cfgEl && cfgEl.value) || window.CURRENT_TOKEN_PER_REQUEST || 85714)));
+  document.getElementById("newCredit").value = tokenQuota > 0 ? Math.floor(tokenQuota / tokenPerRequest) : 0;
+}
+
 async function createKey() {
   var days = Number(document.getElementById("newExpires").value || 0);
   var expiresAt = null;
   if (days > 0) { var d = new Date(); d.setDate(d.getDate() + days); expiresAt = d.toISOString().slice(0, 10); }
+  var tokenQuota = Number(document.getElementById("newTokenQuota").value || 0);
+  var requestQuota = Number(document.getElementById("newCredit").value || 0);
   var body = {
     label: document.getElementById("newLabel").value.trim(),
-    credit: Number(document.getElementById("newCredit").value || 0),
+    credit: requestQuota,
+    token_quota: tokenQuota,
     rpm_limit: Number(document.getElementById("newRpm").value || 10),
     expires_at: expiresAt
   };
   var r = await fetch(BASE + "/api/credit/keys", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
   var data = await r.json();
   var msg = document.getElementById("createMsg");
-  if (data.ok) { msg.className = "text-sm py-2 text-green-400"; msg.textContent = "\u0110\u00e3 t\u1ea1o: " + data.key.key; loadKeys(); }
+  if (data.ok) { msg.className = "text-sm py-2 text-green-400"; msg.textContent = "\u0110\u00e3 t\u1ea1o: " + data.key.key + " (" + Number(tokenQuota).toLocaleString("vi-VN") + " token / " + Number(requestQuota).toLocaleString("vi-VN") + " request)"; loadKeys(); }
   else { msg.className = "text-sm py-2 text-red-400"; msg.textContent = data.detail || "L\u1ed7i"; }
 }
 
@@ -1119,15 +1131,17 @@ async function syncVietAPIUsage() {
 async function loadRequestTokenSettings() {
   try {
     var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
-    document.getElementById("cfgTokenPerRequest").value = data.token_per_request || 85714;
+    var tokenPerRequest = data.token_per_request || 85714;
+    var cfgEl = document.getElementById("cfgTokenPerRequest");
+    if (cfgEl) cfgEl.value = tokenPerRequest;
+    window.CURRENT_TOKEN_PER_REQUEST = tokenPerRequest;
     updateTokenPerRequestPreview();
   } catch (_) {}
 }
 
 function updateTokenPerRequestPreview() {
   var input = document.getElementById("cfgTokenPerRequest");
-  if (!input) return;
-  var tokenPerRequest = Math.max(1, Math.floor(Number(input.value || 85714)));
+  var tokenPerRequest = Math.max(1, Math.floor(Number((input && input.value) || window.CURRENT_TOKEN_PER_REQUEST || 85714)));
   document.getElementById("tokenPerRequestPreview").textContent = tokenPerRequest.toLocaleString("vi-VN");
   document.getElementById("starterRequestPreview").textContent = Math.floor(30000000 / tokenPerRequest).toLocaleString("vi-VN");
   document.getElementById("proRequestPreview").textContent = Math.floor(900000000 / tokenPerRequest).toLocaleString("vi-VN");

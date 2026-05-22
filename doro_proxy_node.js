@@ -2505,9 +2505,10 @@ app.post("/api/credit/keys", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
   try {
-    const creditAmount = Number(body.credit || 0);
-    const manualTokenQuota = { 350: 30000000, 10500: 900000000 };
-    const tokenRemaining = manualTokenQuota[creditAmount] || 0;
+    const tokenPerRequest = optionalPositiveInt(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || "85000") || 85000;
+    const tokenQuota = optionalPositiveInt(body.token_quota);
+    const creditAmount = tokenQuota ? Math.floor(tokenQuota / tokenPerRequest) : Number(body.credit || 0);
+    const tokenRemaining = tokenQuota || 0;
     const row = credit.createKey({
       label: String(body.label || ""),
       credit: creditAmount,
