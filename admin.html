@@ -130,10 +130,10 @@ body{font-family:'Inter',sans-serif}
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5 flex items-center justify-between"><div><p class="text-xs text-gray-500 mb-1">Proxy status</p><div class="text-sm font-semibold text-green-400" id="statProxy">&#272;ang ki&#7875;m tra...</div></div><button onclick="loadOverview()" class="text-xs text-gray-500 hover:text-white px-3 py-1.5 bg-dark-600 rounded-lg transition">L&#224;m m&#7899;i</button></div>
   </div>
   <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">Doanh thu 14 ng&#224;y g&#7847;n nh&#7845;t</h3><span class="text-xs text-gray-500">VNĐ</span></div><canvas id="revenueDailyChart" height="120"></canvas></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">Key b&#225;n theo ng&#224;y</h3><span class="text-xs text-gray-500">paid orders</span></div><canvas id="keysDailyChart" height="120"></canvas></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">Doanh thu theo th&#225;ng</h3><span class="text-xs text-gray-500">12 th&#225;ng</span></div><canvas id="revenueMonthlyChart" height="120"></canvas></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">C&#417; c&#7845;u g&#243;i &#273;&#227; b&#225;n</h3><span class="text-xs text-gray-500">theo package</span></div><canvas id="packageChart" height="120"></canvas></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">Doanh thu 14 ng&#224;y g&#7847;n nh&#7845;t</h3><span class="text-xs text-gray-500">VNĐ</span></div><div class="relative h-[320px]"><canvas id="revenueDailyChart"></canvas></div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">Key b&#225;n theo ng&#224;y</h3><span class="text-xs text-gray-500">paid orders</span></div><div class="relative h-[320px]"><canvas id="keysDailyChart"></canvas></div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">Doanh thu theo th&#225;ng</h3><span class="text-xs text-gray-500">12 th&#225;ng</span></div><div class="relative h-[320px]"><canvas id="revenueMonthlyChart"></canvas></div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><div class="flex items-center justify-between mb-4"><h3 class="font-bold">C&#417; c&#7845;u g&#243;i &#273;&#227; b&#225;n</h3><span class="text-xs text-gray-500">theo package</span></div><div class="relative h-[320px]"><canvas id="packageChart"></canvas></div></div>
   </div>
   <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><h3 class="font-bold mb-4">Top g&#243;i b&#225;n ch&#7841;y</h3><div id="topPackagesList" class="space-y-2"></div></div>
@@ -707,9 +707,11 @@ function renderOverviewBarChart(canvasId, chartKey, labels, values, color, label
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: false,
+      resizeDelay: 150,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.04)" } },
+        x: { ticks: { color: "#94a3b8", maxRotation: 0, minRotation: 0 }, grid: { color: "rgba(255,255,255,0.04)" } },
         y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.04)" } }
       }
     }
@@ -723,7 +725,7 @@ function renderOverviewDoughnutChart(canvasId, chartKey, labels, values) {
   overviewCharts[chartKey] = new Chart(canvas, {
     type: "doughnut",
     data: { labels: labels, datasets: [{ data: values, backgroundColor: ["#6366f1", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4", "#a855f7"], borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: "#cbd5e1" } } } }
+    options: { responsive: true, maintainAspectRatio: false, animation: false, resizeDelay: 150, plugins: { legend: { labels: { color: "#cbd5e1" } } } }
   });
 }
 
