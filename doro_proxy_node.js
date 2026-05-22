@@ -2235,6 +2235,63 @@ app.get("/api/orders/stats", (req, res) => {
   res.json(orders.getStats());
 });
 
+app.get("/api/dashboard/analytics", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const paidWhere = "status='paid' AND api_key IS NOT NULL AND api_key <> ''";
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const month = today.slice(0, 7);
+
+  const totals = db.prepare(`SELECT
+    COUNT(*) AS total_orders,
+    SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) AS pending_orders,
+    SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) AS paid_orders,
+    SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS cancelled_orders,
+    SUM(CASE WHEN ${paidWhere} THEN amount ELSE 0 END) AS revenue_total,
+    SUM(CASE WHEN ${paidWhere} AND substr(COALESCE(paid_at, created_at), 1, 10)=? THEN amount ELSE 0 END) AS revenue_today,
+    SUM(CASE WHEN ${paidWhere} AND substr(COALESCE(paid_at, created_at), 1, 7)=? THEN amount ELSE 0 END) AS revenue_month,
+    SUM(CASE WHEN ${paidWhere} AND substr(COALESCE(paid_at, created_at), 1, 10)=? THEN 1 ELSE 0 END) AS keys_sold_today,
+    SUM(CASE WHEN ${paidWhere} AND substr(COALESCE(paid_at, created_at), 1, 7)=? THEN 1 ELSE 0 END) AS keys_sold_month
+    FROM orders`).get(today, month, today, month);
+
+  const dailyRows = db.prepare(`SELECT substr(COALESCE(paid_at, created_at), 1, 10) AS day,
+    SUM(amount) AS revenue, COUNT(*) AS keys_sold
+    FROM orders WHERE ${paidWhere} AND date(COALESCE(paid_at, created_at)) >= date('now', '-13 day')
+    GROUP BY day ORDER BY day ASC`).all();
+
+  const monthlyRows = db.prepare(`SELECT substr(COALESCE(paid_at, created_at), 1, 7) AS month,
+    SUM(amount) AS revenue, COUNT(*) AS keys_sold
+    FROM orders WHERE ${paidWhere} AND date(COALESCE(paid_at, created_at)) >= date('now', '-11 month')
+    GROUP BY month ORDER BY month ASC`).all();
+
+  const byPackage = db.prepare(`SELECT package_id, COUNT(*) AS keys_sold, SUM(amount) AS revenue
+    FROM orders WHERE ${paidWhere} GROUP BY package_id ORDER BY revenue DESC`).all();
+
+  const recentPaid = db.prepare(`SELECT order_code, package_id, amount, customer_name, customer_email, api_key, paid_at
+    FROM orders WHERE ${paidWhere} ORDER BY paid_at DESC, created_at DESC LIMIT 8`).all();
+
+  res.json({
+    today,
+    month,
+    totals: {
+      total_orders: Number(totals.total_orders || 0),
+      pending_orders: Number(totals.pending_orders || 0),
+      paid_orders: Number(totals.paid_orders || 0),
+      cancelled_orders: Number(totals.cancelled_orders || 0),
+      revenue_total: Number(totals.revenue_total || 0),
+      revenue_today: Number(totals.revenue_today || 0),
+      revenue_month: Number(totals.revenue_month || 0),
+      keys_sold_today: Number(totals.keys_sold_today || 0),
+      keys_sold_month: Number(totals.keys_sold_month || 0),
+    },
+    daily: dailyRows.map((r) => ({ day: r.day, revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
+    monthly: monthlyRows.map((r) => ({ month: r.month, revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
+    by_package: byPackage.map((r) => ({ package_id: r.package_id || "unknown", revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
+    recent_paid: recentPaid.map((r) => ({ ...r, key_masked: r.api_key ? r.api_key.slice(0, 10) + "..." + r.api_key.slice(-4) : "" })),
+  });
+});
+
 app.post("/api/orders/manual-confirm", async (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
