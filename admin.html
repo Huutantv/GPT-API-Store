@@ -127,10 +127,15 @@ body{font-family:'Inter',sans-serif}
 
 <!-- Tab: Keys -->
 <div id="tab-keys" class="tab-content hidden space-y-6">
-  <div class="flex items-center justify-between">
+  <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
     <h2 class="text-xl font-bold">Qu&#7843;n l&#253; API Keys</h2>
-    <button onclick="document.getElementById('createKeyForm').classList.toggle('hidden')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">+ T&#7841;o key m&#7899;i</button>
+    <div class="flex flex-wrap items-center gap-2">
+      <input id="keyLookupInput" placeholder="Nhập full API key để tìm chủ sở hữu..." class="w-full md:w-80 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px" onkeydown="if(event.key==='Enter')lookupKeyOwner()">
+      <button onclick="lookupKeyOwner()" class="px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-white/10 rounded-lg text-sm font-semibold transition">Tìm key</button>
+      <button onclick="document.getElementById('createKeyForm').classList.toggle('hidden')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">+ T&#7841;o key m&#7899;i</button>
+    </div>
   </div>
+  <div id="keyLookupResult" class="hidden bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4"></div>
   <div id="createKeyForm" class="hidden bg-dark-700 border border-white/10 rounded-xl p-6 space-y-4">
     <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
@@ -755,6 +760,77 @@ async function doTopup() {
 async function toggleKey(key, active) {
   await fetch(BASE + "/api/credit/set-active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ key: key, active: !active }) });
   loadKeys();
+}
+
+async function lookupKeyOwner() {
+  var input = document.getElementById("keyLookupInput");
+  var box = document.getElementById("keyLookupResult");
+  var key = input.value.trim();
+  if (!key) {
+    box.classList.remove("hidden");
+    box.innerHTML = '<p class="text-sm text-red-400">Vui lòng nhập full API key cần tra cứu</p>';
+    return;
+  }
+
+  box.classList.remove("hidden");
+  box.innerHTML = '<p class="text-sm text-gray-400">Đang tìm thông tin key...</p>';
+
+  try {
+    var r = await fetch(BASE + "/api/credit/key-lookup?key=" + encodeURIComponent(key), { headers: authHeaders() });
+    var data = await r.json();
+    if (!r.ok) {
+      box.innerHTML = '<p class="text-sm text-red-400">' + (data.detail || 'Không tìm thấy key') + '</p>';
+      return;
+    }
+
+    var owner = data.owner;
+    var info = data.key || {};
+    var usage = data.usage || {};
+    var quota = usage.daily_quota;
+    var statusCls = info.active ? 'text-green-400' : 'text-red-400';
+    var statusText = info.active ? 'Đang hoạt động' : 'Đã khóa';
+    var ownerHtml = owner
+      ? '<div class="grid grid-cols-1 md:grid-cols-2 gap-4">' +
+          '<div class="bg-dark-900 rounded-lg p-4 space-y-2">' +
+            '<p class="text-xs text-gray-500">Chủ sở hữu</p>' +
+            '<p><span class="text-gray-400">Tên:</span> <b>' + (owner.customer_name || '—') + '</b></p>' +
+            '<p><span class="text-gray-400">Email:</span> ' + (owner.customer_email || '—') + '</p>' +
+            '<p><span class="text-gray-400">SĐT:</span> ' + (owner.customer_phone || '—') + '</p>' +
+          '</div>' +
+          '<div class="bg-dark-900 rounded-lg p-4 space-y-2">' +
+            '<p class="text-xs text-gray-500">Đơn hàng liên kết</p>' +
+            '<p><span class="text-gray-400">Mã đơn:</span> <b>' + (owner.order_code || '—') + '</b></p>' +
+            '<p><span class="text-gray-400">Gói:</span> ' + (owner.package_id || '—') + '</p>' +
+            '<p><span class="text-gray-400">Trạng thái:</span> ' + (owner.status || '—') + '</p>' +
+            '<p><span class="text-gray-400">Paid at:</span> ' + (owner.paid_at ? fmtVN(owner.paid_at) : '—') + '</p>' +
+          '</div>' +
+        '</div>'
+      : '<div class="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 text-sm text-yellow-300">Key này chưa thấy liên kết với đơn hàng nào. Có thể là key tạo tay trong admin.</div>';
+
+    box.innerHTML =
+      '<div class="flex items-center justify-between gap-3">' +
+        '<div>' +
+          '<h3 class="text-lg font-bold">Kết quả tra cứu key</h3>' +
+          '<p class="text-xs text-gray-500 font-mono mt-1">' + (info.key_masked || key) + '</p>' +
+        '</div>' +
+        '<button onclick="copyText(\'' + key.replace(/'/g, "\\'") + '\',this)" class="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 rounded-lg text-xs transition">copy</button>' +
+      '</div>' +
+      '<div class="grid grid-cols-2 md:grid-cols-4 gap-4">' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Label</p><p class="text-sm text-white">' + (info.label || '—') + '</p></div>' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Credit</p><p class="text-sm font-bold">' + Number(info.credit || 0).toLocaleString('vi-VN') + '</p></div>' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">RPM</p><p class="text-sm font-bold">' + Number(info.rpm_limit || 0).toLocaleString('vi-VN') + '</p></div>' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Trạng thái</p><p class="text-sm font-bold ' + statusCls + '">' + statusText + '</p></div>' +
+      '</div>' +
+      '<div class="grid grid-cols-1 md:grid-cols-3 gap-4">' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Ngày tạo</p><p class="text-sm">' + (info.created_at ? fmtVN(info.created_at) : '—') + '</p></div>' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Hết hạn</p><p class="text-sm">' + (info.expires_at ? fmtVN(info.expires_at) : 'Không giới hạn') + '</p></div>' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Đã dùng</p><p class="text-sm">' + Number(usage.usage_count || 0).toLocaleString('vi-VN') + ' request / ' + Number(usage.total_spent || 0).toLocaleString('vi-VN') + ' credit</p></div>' +
+      '</div>' +
+      (quota ? '<div class="bg-dark-900 rounded-lg p-4 text-sm"><p class="text-xs text-gray-500 mb-1">Daily quota</p><p>Dùng ' + Number(quota.used || 0).toLocaleString('vi-VN') + ' / ' + Number(quota.limit || 0).toLocaleString('vi-VN') + ' token, còn ' + Number(quota.remaining || 0).toLocaleString('vi-VN') + '</p></div>' : '') +
+      ownerHtml;
+  } catch (err) {
+    box.innerHTML = '<p class="text-sm text-red-400">Lỗi tra cứu: ' + err.message + '</p>';
+  }
 }
 
 async function deleteKey(key) {

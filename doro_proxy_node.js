@@ -2517,6 +2517,47 @@ app.get("/api/credit/keys", (req, res) => {
   res.json({ keys: credit.listKeys() });
 });
 
+app.get("/api/credit/key-lookup", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const key = String(req.query.key || "").trim();
+  if (!key) return res.status(400).json({ detail: "Missing key" });
+
+  const row = credit.getKey(key);
+  if (!row) return res.status(404).json({ detail: "Key not found" });
+
+  const usage = credit.getUsageTotal(key);
+  const history = credit.getHistory(key, 10);
+  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const order = db.prepare("SELECT * FROM orders WHERE api_key = ? ORDER BY paid_at DESC, created_at DESC LIMIT 1").get(key) || null;
+
+  res.json({
+    ok: true,
+    key: {
+      ...row,
+      key_masked: key.slice(0, 12) + "..." + key.slice(-4),
+      active: !!row.active,
+    },
+    owner: order ? {
+      customer_name: order.customer_name || "",
+      customer_email: order.customer_email || "",
+      customer_phone: order.customer_phone || "",
+      order_code: order.order_code || "",
+      package_id: order.package_id || "",
+      amount: order.amount || 0,
+      status: order.status || "",
+      paid_at: order.paid_at || null,
+      created_at: order.created_at || null,
+    } : null,
+    usage: {
+      total_spent: Number(usage.total_spent || 0),
+      usage_count: Number(usage.usage_count || 0),
+      daily_quota: credit.getDailyQuota(key),
+    },
+    history,
+  });
+});
+
 app.post("/api/credit/keys", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
