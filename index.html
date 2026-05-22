@@ -208,7 +208,7 @@ API key truy c&#7853;p GPT-5.5, GPT-5.4, GPT-4o v&#7899;i gi&#225; t&#7889;t nh&
 
 client = OpenAI(
     api_key="sk-your-api-key",
-    base_url="https://your-domain.com/v1"
+    base_url="https://zplay.io.vn/v1"
 )
 
 response = client.chat.completions.create(
@@ -222,7 +222,7 @@ for chunk in response:
 </div>
 <div>
 <p class="text-sm text-gray-400 mb-3 font-semibold uppercase tracking-wider">3. Test b&#7857;ng cURL</p>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto"><code>curl https://your-domain.com/v1/chat/completions \
+<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto"><code>curl https://zplay.io.vn/v1/chat/completions \
   -H "Authorization: Bearer sk-your-api-key" \
   -H "Content-Type: application/json" \
   -d '{"model":"gpt-5.5","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
@@ -320,7 +320,7 @@ for chunk in response:
     providers: {
       gptapi: {
         api: "openai-completions",
-        baseUrl: "https://your-domain.com/v1",
+        baseUrl: "https://zplay.io.vn/v1",
         apiKey: "sk-your-api-key",
         models: [
           { id: "gpt-5.5" },
@@ -345,7 +345,7 @@ for chunk in response:
 <div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span><p>Export bi&#7871;n m&#244;i tr&#432;&#7901;ng trong terminal:</p></div>
 </div>
 <pre class="bg-dark-900 rounded-xl p-4 text-sm text-green-400 overflow-x-auto mb-6"><code>export OPENAI_API_KEY="sk-your-api-key"
-export OPENAI_BASE_URL="https://your-domain.com/v1"</code></pre>
+export OPENAI_BASE_URL="https://zplay.io.vn/v1"</code></pre>
 <div class="space-y-4 text-sm text-gray-300 mb-6">
 <div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span><p>Ch&#7841;y Codex v&#7899;i --model:</p></div>
 </div>
