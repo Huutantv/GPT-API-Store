@@ -54,6 +54,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('monitor');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
       <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
+      <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -95,6 +96,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('monitor')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
       <button onclick="showTab('orders')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
+      <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -493,6 +495,57 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+<!-- Tab: Settings -->
+<div id="tab-settings" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-bold">&#x1F514; C&#224;i &#273;&#7863;t th&#244;ng b&#225;o</h2>
+      <p class="text-sm text-gray-400 mt-1">Qu&#7843;n l&#253; Telegram alerts cho l&#7895;i backend, quota, model fallback v&#224; thanh to&#225;n.</p>
+    </div>
+    <button onclick="loadTelegramSettings()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Bot Token</p><div class="text-sm font-mono text-gray-200" id="telegramTokenStatus">&mdash;</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Chat ID</p><div class="text-sm font-mono text-gray-200" id="telegramChatStatus">&mdash;</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Tr&#7841;ng th&#225;i</p><div class="text-sm font-semibold text-green-400" id="telegramEnabledStatus">&mdash;</div></div>
+  </div>
+
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4 max-w-3xl">
+    <h3 class="font-bold text-base">Telegram Alerts</h3>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">B&#7853;t/T&#7855;t th&#244;ng b&#225;o</label>
+      <select id="cfgTelegramEnabled" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+        <option value="1">B&#7853;t th&#244;ng b&#225;o Telegram</option>
+        <option value="0">T&#7855;t th&#244;ng b&#225;o Telegram</option>
+      </select>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Telegram Bot Token</label>
+      <input id="cfgTelegramToken" type="password" placeholder="123456789:AA..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      <p class="text-xs text-gray-500 mt-1">&#272;&#7875; tr&#7889;ng n&#7871;u kh&#244;ng mu&#7889;n &#273;&#7893;i token hi&#7879;n t&#7841;i. Env: <code>TELEGRAM_BOT_TOKEN</code>.</p>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Telegram Chat ID</label>
+      <input id="cfgTelegramChatId" placeholder="-1001234567890" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      <p class="text-xs text-gray-500 mt-1">Env: <code>TELEGRAM_CHAT_ID</code>. C&#243; th&#7875; l&#224; user chat ho&#7863;c group/channel chat.</p>
+    </div>
+    <div class="bg-dark-900 rounded-lg p-4 text-sm text-gray-300 space-y-2">
+      <p class="font-semibold text-white">C&#225;c l&#7895;i s&#7869; g&#7917;i Telegram:</p>
+      <p>&bull; Backend l&#7895;i/li&#234;n ti&#7871;p, backend t&#7841;m ng&#7855;t v&#224; ph&#7909;c h&#7891;i.</p>
+      <p>&bull; Model b&#7883; block do quota/rate limit v&#224; auto fallback.</p>
+      <p>&bull; C&#7843;nh b&#225;o quota backend &#273;&#7841;t ng&#432;&#7905;ng cao.</p>
+      <p>&bull; &#272;&#417;n h&#224;ng thanh to&#225;n th&#224;nh c&#244;ng.</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="saveTelegramSettings()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u c&#224;i &#273;&#7863;t</button>
+      <button onclick="testTelegramSettings()" class="px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">G&#7917;i tin test</button>
+      <span id="telegramSettingsMsg" class="text-sm text-gray-400"></span>
+    </div>
+    <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u v&#224;o .env, h&#227;y restart proxy &#273;&#7875; c&#225;c worker/process m&#7899;i &#273;&#7891;ng b&#7897; ho&#224;n to&#224;n.</p>
+  </div>
+</div>
+
     </div><!-- end content inner -->
   </div><!-- end content -->
 </div><!-- end main layout -->
@@ -602,6 +655,7 @@ function showTab(name) {
   if (name === "monitor") loadMonitor();
   if (name === "orders") loadOrders();
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
+  if (name === "settings") loadTelegramSettings();
   if (name !== "backend") stopModelUsageRefresh();
 }
 </script>
@@ -1172,6 +1226,54 @@ async function saveModelFallback() {
   }
 }
 
+async function loadTelegramSettings() {
+  try {
+    var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
+    document.getElementById("cfgTelegramToken").value = "";
+    document.getElementById("cfgTelegramChatId").value = data.telegram_chat_id || "";
+    document.getElementById("cfgTelegramEnabled").value = data.telegram_alerts_enabled ? "1" : "0";
+    document.getElementById("telegramTokenStatus").textContent = data.telegram_bot_token_set ? data.telegram_bot_token_masked : "Chưa cấu hình";
+    document.getElementById("telegramChatStatus").textContent = data.telegram_chat_id || "Chưa cấu hình";
+    document.getElementById("telegramEnabledStatus").textContent = data.telegram_alerts_enabled ? "Bật" : "Tắt";
+  } catch (err) {}
+}
+
+async function saveTelegramSettings() {
+  var msg = document.getElementById("telegramSettingsMsg");
+  var token = document.getElementById("cfgTelegramToken").value.trim();
+  var chatId = document.getElementById("cfgTelegramChatId").value.trim();
+  var enabled = document.getElementById("cfgTelegramEnabled").value;
+  var updates = { TELEGRAM_ALERTS_ENABLED: enabled };
+  if (token) updates.TELEGRAM_BOT_TOKEN = token;
+  if (chatId) updates.TELEGRAM_CHAT_ID = chatId;
+  if (!Object.keys(updates).length) { msg.textContent = "Không có gì thay đổi"; return; }
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) {
+    msg.className = "text-sm text-green-400";
+    msg.textContent = "Đã lưu Telegram settings";
+    loadTelegramSettings();
+  } else {
+    msg.className = "text-sm text-red-400";
+    msg.textContent = data.detail || "Lỗi";
+  }
+}
+
+async function testTelegramSettings() {
+  var msg = document.getElementById("telegramSettingsMsg");
+  msg.className = "text-sm text-gray-400";
+  msg.textContent = "Đang gửi tin test...";
+  var r = await fetch(BASE + "/api/test-telegram", { headers: authHeaders() });
+  var data = await r.json();
+  if (data.ok) {
+    msg.className = "text-sm text-green-400";
+    msg.textContent = "Đã gửi tin test thành công";
+  } else {
+    msg.className = "text-sm text-red-400";
+    msg.textContent = data.detail || data.error || "Lỗi";
+  }
+}
+
 async function saveRequestTokenSettings() {
   var inputEl = document.getElementById("cfgTokenPerRequest");
   var msg = document.getElementById("requestTokenSettingsMsg");
@@ -1353,6 +1455,7 @@ window.addEventListener("DOMContentLoaded", function() {
     document.getElementById("loginOverlay").classList.add("hidden");
     document.getElementById("mainContent").classList.remove("hidden");
     showTab("overview");
+    loadTelegramSettings();
   }
 });
 
