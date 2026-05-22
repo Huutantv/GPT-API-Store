@@ -2118,7 +2118,8 @@ async function processPayment(orderCode, amount, note) {
 
   // Tạo API key và nạp credit — đọc expires_at từ cột riêng
   const expiresAt = order.expires_at || null;
-  const tokenRemaining = order.package_id === "starter" ? 30000000 : 0;
+  const packageTokenQuota = { starter: 30000000, pro: 900000000 };
+  const tokenRemaining = packageTokenQuota[order.package_id] || 0;
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt, tokenRemaining });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
@@ -2488,7 +2489,8 @@ app.post("/api/credit/keys", (req, res) => {
   const body = req.body || {};
   try {
     const creditAmount = Number(body.credit || 0);
-    const tokenRemaining = creditAmount === 350 ? 30000000 : 0;
+    const manualTokenQuota = { 350: 30000000, 10500: 900000000 };
+    const tokenRemaining = manualTokenQuota[creditAmount] || 0;
     const row = credit.createKey({
       label: String(body.label || ""),
       credit: creditAmount,

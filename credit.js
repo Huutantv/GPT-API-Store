@@ -153,9 +153,8 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
     const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
 
-    // Starter: 350 requests = 30M token hiển thị.
-    // Mỗi request random khoảng 86K–120K token, nhưng luôn chừa đủ token cho request còn lại
-    // và request cuối cùng sẽ trừ hết phần còn lại để tổng dùng vừa đủ 30M token.
+    // Gói token quota: trừ 1 credit/request, token hiển thị random khoảng 86K–120K/request.
+    // Luôn chừa đủ token cho request còn lại; request cuối trừ hết phần còn lại.
     let alloc = tokenRemaining;
     if (reqRemaining > 1) {
       const minPerReq = 86000;

@@ -51,8 +51,8 @@ try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAUL
 // Seed default packages
 const seedPkgs = [
   // credit ở đây dùng làm "request quota" cho Starter
-  { id: "starter", name: "Starter", price: 20000,  credit: 350,   rpm_limit: 10, description: "30,000,000 token, 10 RPM", active: 1 },
-  { id: "pro",     name: "Pro",     price: 199000, credit: 10000, rpm_limit: 30, description: "10.000 credit (~10M token), 3 API key, 30 RPM", active: 0 },
+  { id: "starter", name: "Starter", price: 20000,  credit: 350,   rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
+  { id: "pro",     name: "Pro",     price: 250000, credit: 10500, rpm_limit: 30, description: "900,000,000 token / 30 ngày, 30 RPM", active: 1 },
   { id: "ultra",   name: "Ultra",   price: 299000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
@@ -63,9 +63,9 @@ for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_l
 
 // Cập nhật packages đã tồn tại
 const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description=?, active=? WHERE id=?");
-updatePkg.run(20000,  350,   "30,000,000 token, 10 RPM",                         1, "starter");
-updatePkg.run(199000, 10000, "10.000 credit (~10M token), 3 API key, 30 RPM",    0, "pro");
-updatePkg.run(299000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",    0, "ultra");
+updatePkg.run(20000,  350,   "30,000,000 token, 10 RPM, 1 ngày",                1, "starter");
+updatePkg.run(250000, 10500, "900,000,000 token / 30 ngày, 30 RPM",             1, "pro");
+updatePkg.run(299000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
