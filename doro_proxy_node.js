@@ -930,8 +930,10 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
     const settings = settingsChain[i];
     try {
       if (obs) {
+        obs.backend_id = settings.profileId || "";
         obs.backend_profile = settings.profileLabel || settings.profileId || "";
         obs.backend_model = settings.backendModel || "";
+        obs.backend_base_url = settings.baseUrl || "";
       }
       const payload = payloadBuilder(settings);
       // Auto model fallback: chọn model tốt nhất
@@ -1693,8 +1695,10 @@ app.use((req, res, next) => {
     forwarded_for: forwardedFor,
     api_key_masked: maskSecret(extractToken(req)),
     model_requested: "",
+    backend_id: "",
     backend_profile: "",
     backend_model: "",
+    backend_base_url: "",
     stream: false,
     error_type: "",
     error_message: "",
@@ -1732,8 +1736,10 @@ app.use((req, res, next) => {
       forwarded_for: forwardedFor,
       api_key_masked: req.obs.api_key_masked || "none",
       model_requested: req.obs.model_requested || "",
+      backend_id: req.obs.backend_id || "",
       backend_profile: req.obs.backend_profile || "",
       backend_model: req.obs.backend_model || "",
+      backend_base_url: req.obs.backend_base_url || "",
       stream: !!req.obs.stream,
       bytes_in: Number(req.get("content-length") || 0) || (req.rawBody ? req.rawBody.length : 0),
       bytes_out: bytesOut,
@@ -1796,8 +1802,10 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     req.obs.error_message = "Missing backend API key";
     return res.status(503).json(anthropicErrorPayload(503, "Missing backend API key"));
   }
+  req.obs.backend_id = settings.profileId || "";
   req.obs.backend_profile = settings.profileLabel || settings.profileId || "";
   req.obs.backend_model = settings.backendModel || "";
+  req.obs.backend_base_url = settings.baseUrl || "";
   addLog(`proxy anthropic->openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
   printLog(`[proxy] anthropic->openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
   if (useStream) {
@@ -1826,8 +1834,10 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       return payload;
     }, "/chat/completions", req.obs);
     const data = JSON.parse(response.text);
+    req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
+    req.obs.backend_base_url = finalSettings.baseUrl || req.obs.backend_base_url;
     req.obs.final_backend_status = response.status;
     const out = openaiToAnthropic(data, publicModel, finalSettings.backendModel);
     const tokens = Number((data.usage || {}).total_tokens || 0);
@@ -1890,8 +1900,10 @@ app.post(["/v1/chat/completions", "/chat/completions"], async (req, res) => {
     req.obs.error_message = "Missing backend API key";
     return res.status(503).json(openaiErrorPayload(503, "Missing backend API key"));
   }
+  req.obs.backend_id = settings.profileId || "";
   req.obs.backend_profile = settings.profileLabel || settings.profileId || "";
   req.obs.backend_model = settings.backendModel || "";
+  req.obs.backend_base_url = settings.baseUrl || "";
   addLog(`proxy openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
   if (body.stream) {
     const payload = { ...body, model: settings.backendModel };
@@ -1917,8 +1929,10 @@ app.post(["/v1/chat/completions", "/chat/completions"], async (req, res) => {
     }, "/chat/completions", req.obs);
     const data = JSON.parse(response.text);
     data.model = publicModel;
+    req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
+    req.obs.backend_base_url = finalSettings.baseUrl || req.obs.backend_base_url;
     req.obs.final_backend_status = response.status;
     const choice = (data.choices || [])[0] || {};
     if (choice.message && choice.message.content) {

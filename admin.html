@@ -235,17 +235,22 @@ body{font-family:'Inter',sans-serif}
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
-    <table class="w-full text-xs min-w-[600px]">
+    <table class="w-full text-xs min-w-[980px]">
       <thead><tr class="text-gray-500 border-b border-white/5 bg-dark-800">
         <th class="text-left px-4 py-3">Th&#7901;i gian</th>
         <th class="text-left px-4 py-3">IP</th>
         <th class="text-left px-4 py-3">Key</th>
         <th class="text-left px-4 py-3">Path</th>
         <th class="text-left px-4 py-3">Model</th>
+        <th class="text-left px-4 py-3">Backend</th>
+        <th class="text-left px-4 py-3">Backend model</th>
+        <th class="text-left px-4 py-3">Error</th>
+        <th class="text-right px-4 py-3">Retry</th>
+        <th class="text-right px-4 py-3">Upstream</th>
         <th class="text-right px-4 py-3">Status</th>
         <th class="text-right px-4 py-3">Latency</th>
       </tr></thead>
-      <tbody id="monitorTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
+      <tbody id="monitorTable"><tr><td colspan="12" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -712,18 +717,30 @@ async function loadMonitor() {
   document.getElementById("mon502").textContent = (summary.count_502_1m || 0) + " / " + (summary.count_502_5m || 0);
   var tbody = document.getElementById("monitorTable");
   var rows = (recent.requests || []).slice(0, 50);
-  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="7" class="text-center text-gray-500 py-6">Ch\u01b0a c\u00f3 request</td></tr>'; return; }
+  if (!rows.length) { tbody.innerHTML = '<tr><td colspan="12" class="text-center text-gray-500 py-6">Ch\u01b0a c\u00f3 request</td></tr>'; return; }
   tbody.innerHTML = rows.map(function(r) {
     var sCls = r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400";
     var copyBtn = r.api_key_masked ? ' <button onclick="copyText(\'' + r.api_key_masked + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>' : "";
-    return '<tr class="border-b border-white/5 hover:bg-white/2">' +
-      '<td class="px-4 py-2">' + fmtTimeVN(r.ts) + '</td>' +
-      '<td class="px-4 py-2 text-gray-400">' + (r.client_ip || "\u2014") + '</td>' +
-      '<td class="px-4 py-2 font-mono text-gray-400">' + (r.api_key_masked || "\u2014") + copyBtn + '</td>' +
-      '<td class="px-4 py-2 text-gray-300">' + (r.path || "\u2014") + '</td>' +
-      '<td class="px-4 py-2 text-gray-300">' + (r.model_requested || "\u2014") + '</td>' +
+    var backend = r.backend_profile || r.backend || r.backend_id || "\u2014";
+    var backendCls = backend === "direct" ? "bg-primary/15 text-primary" : backend !== "\u2014" ? "bg-blue-500/15 text-blue-300" : "bg-gray-500/10 text-gray-500";
+    var backendModel = r.backend_model || "\u2014";
+    var err = r.error_message || r.error_type || "";
+    var errShort = err ? String(err).slice(0, 56) : "\u2014";
+    var retryText = r.is_retry || r.retry_count ? (r.retry_count || 1) : "\u2014";
+    var upstream = r.final_backend_status || "\u2014";
+    return '<tr class="border-b border-white/5 hover:bg-white/2 align-top">' +
+      '<td class="px-4 py-2 whitespace-nowrap">' + fmtTimeVN(r.ts) + '</td>' +
+      '<td class="px-4 py-2 text-gray-400 whitespace-nowrap">' + (r.client_ip || "\u2014") + '</td>' +
+      '<td class="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">' + (r.api_key_masked || "\u2014") + copyBtn + '</td>' +
+      '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.path || "\u2014") + '</td>' +
+      '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.model_requested || "\u2014") + '</td>' +
+      '<td class="px-4 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded font-semibold ' + backendCls + '">' + backend + '</span></td>' +
+      '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + backendModel + '</td>' +
+      '<td class="px-4 py-2 text-gray-400 max-w-[260px] truncate" title="' + err.replace(/"/g, '"') + '">' + errShort + '</td>' +
+      '<td class="px-4 py-2 text-right text-gray-400">' + retryText + '</td>' +
+      '<td class="px-4 py-2 text-right text-gray-400">' + upstream + '</td>' +
       '<td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ' + sCls + '">' + r.status + '</span></td>' +
-      '<td class="px-4 py-2 text-right text-gray-400">' + (r.latency_ms || 0) + 'ms</td></tr>';
+      '<td class="px-4 py-2 text-right text-gray-400 whitespace-nowrap">' + (r.latency_ms || 0) + 'ms</td></tr>';
   }).join("");
 }
 
