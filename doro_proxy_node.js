@@ -2487,11 +2487,14 @@ app.post("/api/credit/keys", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
   try {
+    const creditAmount = Number(body.credit || 0);
+    const tokenRemaining = creditAmount === 350 ? 30000000 : 0;
     const row = credit.createKey({
       label: String(body.label || ""),
-      credit: Number(body.credit || 0),
+      credit: creditAmount,
       rpmLimit: Number(body.rpm_limit || 10),
       expiresAt: body.expires_at || null,
+      tokenRemaining,
     });
     addLog(`CREDIT KEY + ${row.key.slice(0, 20)} credit=${row.credit}`);
     res.json({ ok: true, key: row });
