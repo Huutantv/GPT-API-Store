@@ -184,11 +184,14 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     const totalTokens = tokenRemaining;
 
+    const configuredMin = Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST_MIN || 65000));
+    const configuredMax = Math.max(configuredMin, Number(process.env.DORO_TOKEN_PER_REQUEST_MAX || 120000));
+
     // Giữ quota thật: 30M token / 350 request.
     // Nhưng lịch sử sẽ hiển thị biến động giả lập bằng cách tách tokenIn/tokenOut ngẫu nhiên,
     // trong khi tổng token trừ vẫn khớp đúng quota thật.
-    const minShown = reqRemaining > 1 ? 65000 : totalTokens;
-    const maxShown = reqRemaining > 1 ? Math.min(120000, totalTokens, dailyRemaining || totalTokens) : totalTokens;
+    const minShown = reqRemaining > 1 ? configuredMin : totalTokens;
+    const maxShown = reqRemaining > 1 ? Math.min(configuredMax, totalTokens, dailyRemaining || totalTokens) : totalTokens;
     const minBound = Math.max(1, Math.min(minShown, maxShown));
     const maxBound = Math.max(minBound, maxShown);
     const shownTotal = crypto.randomInt(minBound, maxBound + 1);

@@ -2315,6 +2315,8 @@ app.get("/api/config", (req, res) => {
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
     model_daily_limit: Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"),
     model_limits: (process.env.DORO_MODEL_LIMITS || "").trim(),
+    token_per_request_min: Number(process.env.DORO_TOKEN_PER_REQUEST_MIN || "65000"),
+    token_per_request_max: Number(process.env.DORO_TOKEN_PER_REQUEST_MAX || "120000"),
     backend_health: {
       "1": { healthy: isBackendHealthy("1"), errors: _backendHealth["1"].errors, down_count: _backendHealth["1"].downCount, down_since: _backendHealth["1"].downSince },
       "2": { healthy: isBackendHealthy("2"), errors: _backendHealth["2"].errors, down_count: _backendHealth["2"].downCount, down_since: _backendHealth["2"].downSince },
@@ -2373,6 +2375,8 @@ app.put("/api/config", (req, res) => {
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
     "DORO_MODEL_LIMITS",
+    "DORO_TOKEN_PER_REQUEST_MIN",
+    "DORO_TOKEN_PER_REQUEST_MAX",
   ]) {
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") value = ["1", "2", "both"].includes(value) ? value : "";
@@ -2381,6 +2385,7 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_BACKEND1_WEIGHT" || field === "DORO_BACKEND2_WEIGHT") value = String(clampPercent(value, 50));
     if (field === "DORO_BACKEND1_MAX_TOKENS" || field === "DORO_BACKEND2_MAX_TOKENS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (field === "DORO_TOKEN_PER_REQUEST_MIN" || field === "DORO_TOKEN_PER_REQUEST_MAX") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_BACKEND1_USER_ASSISTANT_ONLY" || field === "DORO_BACKEND2_USER_ASSISTANT_ONLY") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_BACKEND1_DISABLE_TOOLS" || field === "DORO_BACKEND2_DISABLE_TOOLS") value = envFlag(value) ? "1" : "0";
     if (field === "ANTHROPIC_AUTH_TOKEN" || field === "DORO_BACKEND2_AUTH_TOKEN") {

@@ -453,6 +453,29 @@ body{font-family:'Inter',sans-serif}
     <p id="modelFallbackMsg" class="text-xs text-gray-400"></p>
   </div>
 
+  <!-- Request Token Settings -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h3 class="font-bold text-base flex items-center gap-2">⚙️ Request Token Settings</h3>
+        <p class="text-xs text-gray-400 mt-1">Chỉnh min/max token giả lập cho mỗi request ở credit mode starter/pro quota.</p>
+      </div>
+      <button onclick="saveRequestTokenSettings()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">Lưu</button>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Min token / request</label>
+        <input id="cfgTokenPerRequestMin" type="number" min="1" placeholder="65000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Max token / request</label>
+        <input id="cfgTokenPerRequestMax" type="number" min="1" placeholder="120000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+    </div>
+    <p class="text-xs text-gray-500">Env tương ứng: <code>DORO_TOKEN_PER_REQUEST_MIN</code> và <code>DORO_TOKEN_PER_REQUEST_MAX</code>. Nếu max nhỏ hơn min thì hệ thống runtime sẽ tự nâng max lên bằng min.</p>
+    <p id="requestTokenSettingsMsg" class="text-xs text-gray-400"></p>
+  </div>
+
   <!-- Quota check -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
     <div class="flex items-center justify-between">
@@ -855,6 +878,9 @@ async function loadBackendConfig() {
   document.getElementById("backend2Status").textContent = (b2.backend_api_keys || 0) + " keys";
   renderKeyList(document.getElementById("backend2KeysList"), b2.backend_api_keys_full || [], "2");
 
+  document.getElementById("cfgTokenPerRequestMin").value = data.token_per_request_min || 65000;
+  document.getElementById("cfgTokenPerRequestMax").value = data.token_per_request_max || 120000;
+
   toggleRouterBox();
   if (!_vietapiSynced) loadModelFallback();
 }
@@ -1111,6 +1137,42 @@ async function saveModelFallback() {
   } else {
     msg.className = "text-xs text-red-400";
     msg.textContent = data.detail || "Loi";
+  }
+}
+
+async function saveRequestTokenSettings() {
+  var minEl = document.getElementById("cfgTokenPerRequestMin");
+  var maxEl = document.getElementById("cfgTokenPerRequestMax");
+  var msg = document.getElementById("requestTokenSettingsMsg");
+  var minVal = minEl.value.trim();
+  var maxVal = maxEl.value.trim();
+  var minNum = Number(minVal || 0);
+  var maxNum = Number(maxVal || 0);
+
+  if (!minVal || !maxVal || !Number.isFinite(minNum) || !Number.isFinite(maxNum) || minNum <= 0 || maxNum <= 0) {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = "Vui lòng nhập min/max token hợp lệ lớn hơn 0";
+    return;
+  }
+  if (maxNum < minNum) {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = "Max token phải lớn hơn hoặc bằng min token";
+    return;
+  }
+
+  var updates = {
+    DORO_TOKEN_PER_REQUEST_MIN: String(Math.floor(minNum)),
+    DORO_TOKEN_PER_REQUEST_MAX: String(Math.floor(maxNum))
+  };
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) {
+    msg.className = "text-xs text-green-400";
+    msg.textContent = "Đã lưu cấu hình token/request. Request mới sẽ dùng mức mới sau khi proxy reload env.";
+    loadBackendConfig();
+  } else {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = data.detail || "Lỗi";
   }
 }
 
