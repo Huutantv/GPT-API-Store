@@ -153,18 +153,17 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
     const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
 
-    // Starter: 350 requests ~= 30M token => trung bình ~85.714 token/request
-    // Mỗi request trừ 1 quota, token hiển thị dao động nhẹ quanh 86K.
+    // Starter: 350 requests = 30M token hiển thị.
+    // Mỗi request random khoảng 86K–120K token, nhưng luôn chừa đủ token cho request còn lại
+    // và request cuối cùng sẽ trừ hết phần còn lại để tổng dùng vừa đủ 30M token.
     let alloc = tokenRemaining;
     if (reqRemaining > 1) {
-      const minPerReq = 82000;
-      const maxPerReq = 90000;
-      const minLeftForOthers = minPerReq * (reqRemaining - 1);
-      const avgRemaining = Math.max(minPerReq, Math.round(tokenRemaining / reqRemaining));
-      const dynamicMin = Math.max(minPerReq, avgRemaining - 4000);
-      const dynamicMax = Math.min(maxPerReq, avgRemaining + 4000, tokenRemaining - minLeftForOthers);
-      const minThis = Math.min(dynamicMin, dynamicMax);
-      alloc = crypto.randomInt(minThis, dynamicMax + 1);
+      const minPerReq = 86000;
+      const maxPerReq = 120000;
+      const minLeftForOthers = Math.max(0, Math.min(minPerReq * (reqRemaining - 1), tokenRemaining));
+      const maxThis = Math.max(1, Math.min(maxPerReq, tokenRemaining - minLeftForOthers));
+      const minThis = Math.max(1, Math.min(minPerReq, maxThis));
+      alloc = crypto.randomInt(minThis, maxThis + 1);
     }
 
     // Split in/out synthetic (random ratio 30–70%)

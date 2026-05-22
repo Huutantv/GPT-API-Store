@@ -194,7 +194,17 @@ function logout() {
 }
 
 function renderBalance(data) {
-  const tokenRemaining = Number(data.token_remaining || 0);
+  const rawTokenRemaining = Number(data.token_remaining || 0);
+  const creditRemaining = Number(data.credit || 0);
+  const starterMaxRequests = 350;
+  const starterMaxTokens = 30000000;
+
+  // Hiển thị token theo quota Starter: 350 request = 30M token.
+  // Key mới dùng token_remaining thật; key cũ chưa có token_remaining sẽ ước tính theo credit còn lại.
+  const estimatedStarterTokens = creditRemaining > 0
+    ? Math.round((Math.min(creditRemaining, starterMaxRequests) / starterMaxRequests) * starterMaxTokens)
+    : 0;
+  const tokenRemaining = rawTokenRemaining > 0 ? rawTokenRemaining : estimatedStarterTokens;
   const isStarter = tokenRemaining > 0;
 
   const tokenEl = document.getElementById("tokenBalance");
@@ -232,11 +242,11 @@ function renderBalance(data) {
   document.getElementById("baseUrlDisplay").textContent = `${BASE}/v1`;
   document.getElementById("clineKey").textContent = data.key_masked;
 
-  // Tổng token đã dùng = 30M - token_remaining (Starter), còn gói khác để "—"
+  // Tổng token đã dùng = 30M - token còn lại
   const usedEl = document.getElementById("totalTokensUsed");
   if (usedEl) {
     if (isStarter) {
-      const used = Math.max(0, 30000000 - tokenRemaining);
+      const used = Math.max(0, starterMaxTokens - tokenRemaining);
       usedEl.textContent = used.toLocaleString();
     } else {
       usedEl.textContent = "—";
