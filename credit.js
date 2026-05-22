@@ -49,6 +49,13 @@ db.exec(`
     count       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (key, minute)
   );
+
+  CREATE TABLE IF NOT EXISTS token_daily_usage (
+    key         TEXT NOT NULL,
+    day         TEXT NOT NULL,
+    tokens      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (key, day)
+  );
 `);
 
 // Migration: thêm cột token_remaining nếu chưa có
@@ -70,6 +77,8 @@ const stmts = {
   getRpmCount:  db.prepare("SELECT count FROM rpm_buckets WHERE key = ? AND minute = ?"),
   upsertRpm:    db.prepare("INSERT INTO rpm_buckets (key, minute, count) VALUES (?, ?, 1) ON CONFLICT(key, minute) DO UPDATE SET count = count + 1"),
   cleanRpm:     db.prepare("DELETE FROM rpm_buckets WHERE minute < ?"),
+  getDailyUsage: db.prepare("SELECT tokens FROM token_daily_usage WHERE key = ? AND day = ?"),
+  upsertDailyUsage: db.prepare("INSERT INTO token_daily_usage (key, day, tokens) VALUES (?, ?, ?) ON CONFLICT(key, day) DO UPDATE SET tokens = tokens + excluded.tokens"),
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -95,6 +104,20 @@ function currentMinute() {
   return new Date().toISOString().slice(0, 16).replace("T", " ");
 }
 
+/** Lấy ngày hiện tại theo giờ Việt Nam dạng YYYY-MM-DD */
+function currentVNDay() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+function getDailyTokenUsed(apiKey) {
+  const row = stmts.getDailyUsage.get(apiKey, currentVNDay());
+  return Number(row ? row.tokens : 0);
+}
+
+function isProQuotaKey(row) {
+  return !!row && (Number(row.token_remaining || 0) > 30000000 || Number(row.credit || 0) > 350);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -112,6 +135,9 @@ function checkCreditAuth(apiKey) {
   }
   if (row.credit <= 0) {
     return { ok: false, status: 429, message: `Insufficient credit. Please top up at ${process.env.DORO_PUBLIC_URL || "https://zplay.io.vn"}` };
+  }
+  if (isProQuotaKey(row) && getDailyTokenUsed(apiKey) >= 30000000) {
+    return { ok: false, status: 429, message: "Daily token limit reached: 30M tokens. Please try again tomorrow." };
   }
   return { ok: true, keyRow: row };
 }
@@ -152,6 +178,7 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
     const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
+    const dailyRemaining = isProQuotaKey(rowBefore) ? Math.max(0, 30000000 - getDailyTokenUsed(apiKey)) : tokenRemaining;
 
     // Gói token quota: trừ 1 credit/request, token hiển thị random khoảng 86K–120K/request.
     // Luôn chừa đủ token cho request còn lại; request cuối trừ hết phần còn lại.
@@ -160,10 +187,11 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
       const minPerReq = 86000;
       const maxPerReq = 120000;
       const minLeftForOthers = Math.max(0, Math.min(minPerReq * (reqRemaining - 1), tokenRemaining));
-      const maxThis = Math.max(1, Math.min(maxPerReq, tokenRemaining - minLeftForOthers));
+      const maxThis = Math.max(1, Math.min(maxPerReq, tokenRemaining - minLeftForOthers, dailyRemaining || 1));
       const minThis = Math.max(1, Math.min(minPerReq, maxThis));
       alloc = crypto.randomInt(minThis, maxThis + 1);
     }
+    alloc = Math.min(alloc, tokenRemaining, dailyRemaining || alloc);
 
     // Split in/out synthetic (random ratio 30–70%)
     const inRatio = crypto.randomInt(30, 71) / 100;
@@ -172,6 +200,7 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     // Update token_remaining
     db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(alloc, apiKey);
+    if (isProQuotaKey(rowBefore)) stmts.upsertDailyUsage.run(apiKey, currentVNDay(), alloc);
   }
 
   stmts.updateCredit.run(-cost, apiKey);
@@ -255,6 +284,14 @@ function getUsageTotal(apiKey) {
   return stmts.getUsageTotal.get(apiKey) || { total_spent: 0, usage_count: 0 };
 }
 
+function getDailyQuota(apiKey) {
+  const row = stmts.getKey.get(apiKey);
+  if (!isProQuotaKey(row)) return null;
+  const used = getDailyTokenUsed(apiKey);
+  const limit = 30000000;
+  return { day: currentVNDay(), used, limit, remaining: Math.max(0, limit - used) };
+}
+
 /**
  * Lịch sử tất cả giao dịch (admin)
  */
@@ -286,5 +323,6 @@ module.exports = {
   getHistory,
   getUsageTotal,
   getAllHistory,
+  getDailyQuota,
   getStats,
 };

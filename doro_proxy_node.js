@@ -2560,6 +2560,7 @@ app.get("/api/credit/balance", (req, res) => {
   const row = credit.getKey(token);
   if (!row) return res.status(403).json({ detail: "Invalid API key" });
   const usage = credit.getUsageTotal(token);
+  const daily_quota = credit.getDailyQuota(token);
   res.json({
     key_masked: token.slice(0, 8) + "..." + token.slice(-4),
     credit: row.credit,
@@ -2569,6 +2570,7 @@ app.get("/api/credit/balance", (req, res) => {
     expires_at: row.expires_at || null,
     total_spent: Number(usage.total_spent || 0),
     usage_count: Number(usage.usage_count || 0),
+    daily_quota,
   });
 });
 
