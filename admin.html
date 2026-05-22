@@ -1224,7 +1224,7 @@ async function saveBackend2Config() {
   if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
-  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 2. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 2. C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
 }
 
@@ -1241,7 +1241,7 @@ async function saveActiveBackend() {
   };
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
-  if (data.ok) { alert("\u0110\u00e3 l\u01b0u. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u. C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
 }
 
