@@ -184,6 +184,27 @@ body{font-family:'Inter',sans-serif}
       <span id="topupMsg" class="text-sm text-gray-400"></span>
     </div>
   </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4 w-full md:max-w-2xl">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h3 class="font-bold text-base flex items-center gap-2">⚙️ Request Token Settings</h3>
+        <p class="text-xs text-gray-400 mt-1">Chỉnh cố định 1 request sẽ tiêu hao bao nhiêu token trong credit mode starter/pro quota.</p>
+      </div>
+      <button onclick="saveRequestTokenSettings()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">Lưu</button>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">1 request = bao nhiêu token</label>
+      <input id="cfgTokenPerRequest" type="number" min="1" placeholder="85714" oninput="updateTokenPerRequestPreview()" class="w-full md:max-w-sm px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+    </div>
+    <div class="bg-dark-900 rounded-lg p-4 text-sm space-y-2">
+      <p class="text-xs text-gray-400">📊 Quy đổi hiện tại:</p>
+      <p>• <b id="tokenPerRequestPreview">85.714</b> token = <b>1 request</b></p>
+      <p>• Gói Starter <b>30.000.000 token</b> = <b id="starterRequestPreview">350</b> requests</p>
+      <p>• Gói Pro <b>900.000.000 token</b> = <b id="proRequestPreview">10.500</b> requests</p>
+    </div>
+    <p class="text-xs text-gray-500">Env tương ứng: <code>DORO_TOKEN_PER_REQUEST</code>. Ví dụ đặt <code>85714</code> thì quota <code>30,000,000</code> token sẽ xấp xỉ <code>350</code> request.</p>
+    <p id="requestTokenSettingsMsg" class="text-xs text-gray-400"></p>
+  </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 w-full md:max-w-lg">
     <h3 class="font-semibold text-sm mb-4">Quy &#273;&#7893;i nhanh</h3>
     <div class="space-y-2 text-sm text-gray-300">
@@ -453,29 +474,6 @@ body{font-family:'Inter',sans-serif}
     <p id="modelFallbackMsg" class="text-xs text-gray-400"></p>
   </div>
 
-  <!-- Request Token Settings -->
-  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h3 class="font-bold text-base flex items-center gap-2">⚙️ Request Token Settings</h3>
-        <p class="text-xs text-gray-400 mt-1">Chỉnh min/max token giả lập cho mỗi request ở credit mode starter/pro quota.</p>
-      </div>
-      <button onclick="saveRequestTokenSettings()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">Lưu</button>
-    </div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Min token / request</label>
-        <input id="cfgTokenPerRequestMin" type="number" min="1" placeholder="65000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
-      </div>
-      <div>
-        <label class="text-xs text-gray-400 block mb-1">Max token / request</label>
-        <input id="cfgTokenPerRequestMax" type="number" min="1" placeholder="120000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
-      </div>
-    </div>
-    <p class="text-xs text-gray-500">Env tương ứng: <code>DORO_TOKEN_PER_REQUEST_MIN</code> và <code>DORO_TOKEN_PER_REQUEST_MAX</code>. Nếu max nhỏ hơn min thì hệ thống runtime sẽ tự nâng max lên bằng min.</p>
-    <p id="requestTokenSettingsMsg" class="text-xs text-gray-400"></p>
-  </div>
-
   <!-- Quota check -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
     <div class="flex items-center justify-between">
@@ -596,6 +594,7 @@ function showTab(name) {
   });
   if (name === "overview") loadOverview();
   if (name === "keys") loadKeys();
+  if (name === "topup") loadRequestTokenSettings();
   if (name === "history") loadHistory();
   if (name === "monitor") loadMonitor();
   if (name === "orders") loadOrders();
@@ -1117,6 +1116,23 @@ async function syncVietAPIUsage() {
   }
 }
 
+async function loadRequestTokenSettings() {
+  try {
+    var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
+    document.getElementById("cfgTokenPerRequest").value = data.token_per_request || 85714;
+    updateTokenPerRequestPreview();
+  } catch (_) {}
+}
+
+function updateTokenPerRequestPreview() {
+  var input = document.getElementById("cfgTokenPerRequest");
+  if (!input) return;
+  var tokenPerRequest = Math.max(1, Math.floor(Number(input.value || 85714)));
+  document.getElementById("tokenPerRequestPreview").textContent = tokenPerRequest.toLocaleString("vi-VN");
+  document.getElementById("starterRequestPreview").textContent = Math.floor(30000000 / tokenPerRequest).toLocaleString("vi-VN");
+  document.getElementById("proRequestPreview").textContent = Math.floor(900000000 / tokenPerRequest).toLocaleString("vi-VN");
+}
+
 async function saveModelFallback() {
   var chain = document.getElementById("cfgModelFallback").value.trim();
   var limit = document.getElementById("cfgModelLimit").value.trim();
@@ -1141,35 +1157,26 @@ async function saveModelFallback() {
 }
 
 async function saveRequestTokenSettings() {
-  var minEl = document.getElementById("cfgTokenPerRequestMin");
-  var maxEl = document.getElementById("cfgTokenPerRequestMax");
+  var inputEl = document.getElementById("cfgTokenPerRequest");
   var msg = document.getElementById("requestTokenSettingsMsg");
-  var minVal = minEl.value.trim();
-  var maxVal = maxEl.value.trim();
-  var minNum = Number(minVal || 0);
-  var maxNum = Number(maxVal || 0);
+  var rawVal = inputEl.value.trim();
+  var tokenNum = Number(rawVal || 0);
 
-  if (!minVal || !maxVal || !Number.isFinite(minNum) || !Number.isFinite(maxNum) || minNum <= 0 || maxNum <= 0) {
+  if (!rawVal || !Number.isFinite(tokenNum) || tokenNum <= 0) {
     msg.className = "text-xs text-red-400";
-    msg.textContent = "Vui lòng nhập min/max token hợp lệ lớn hơn 0";
-    return;
-  }
-  if (maxNum < minNum) {
-    msg.className = "text-xs text-red-400";
-    msg.textContent = "Max token phải lớn hơn hoặc bằng min token";
+    msg.textContent = "Vui lòng nhập số token hợp lệ lớn hơn 0 cho mỗi request";
     return;
   }
 
   var updates = {
-    DORO_TOKEN_PER_REQUEST_MIN: String(Math.floor(minNum)),
-    DORO_TOKEN_PER_REQUEST_MAX: String(Math.floor(maxNum))
+    DORO_TOKEN_PER_REQUEST: String(Math.floor(tokenNum))
   };
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
   if (data.ok) {
     msg.className = "text-xs text-green-400";
-    msg.textContent = "Đã lưu cấu hình token/request. Request mới sẽ dùng mức mới sau khi proxy reload env.";
-    loadBackendConfig();
+    msg.textContent = "Đã lưu cấu hình 1 request = N token. Request mới sẽ dùng mức mới sau khi proxy reload env.";
+    loadRequestTokenSettings();
   } else {
     msg.className = "text-xs text-red-400";
     msg.textContent = data.detail || "Lỗi";

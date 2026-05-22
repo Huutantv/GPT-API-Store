@@ -184,23 +184,19 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     const totalTokens = tokenRemaining;
 
-    const configuredMin = Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST_MIN || 65000));
-    const configuredMax = Math.max(configuredMin, Number(process.env.DORO_TOKEN_PER_REQUEST_MAX || 120000));
+    const configuredPerRequest = Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || 85000));
 
-    // Giữ quota thật: 30M token / 350 request.
-    // Nhưng lịch sử sẽ hiển thị biến động giả lập bằng cách tách tokenIn/tokenOut ngẫu nhiên,
-    // trong khi tổng token trừ vẫn khớp đúng quota thật.
-    const minShown = reqRemaining > 1 ? configuredMin : totalTokens;
-    const maxShown = reqRemaining > 1 ? Math.min(configuredMax, totalTokens, dailyRemaining || totalTokens) : totalTokens;
-    const minBound = Math.max(1, Math.min(minShown, maxShown));
-    const maxBound = Math.max(minBound, maxShown);
-    const shownTotal = crypto.randomInt(minBound, maxBound + 1);
+    // 1 request = N token theo cấu hình admin.
+    // Request cuối sẽ trừ phần token còn lại để không âm quota.
+    const shownTotal = reqRemaining > 1
+      ? Math.min(configuredPerRequest, totalTokens, dailyRemaining || totalTokens)
+      : Math.min(totalTokens, dailyRemaining || totalTokens);
 
-    // Phân tách in/out giả lập để lịch sử không còn cố định một con số.
+    // Phân tách token in/out để lịch sử vẫn dễ đọc nhưng tổng luôn cố định theo setting.
     const minIn = Math.max(1, Math.floor(shownTotal * 0.25));
     const maxIn = Math.max(minIn, shownTotal - 1);
-    tIn = crypto.randomInt(minIn, maxIn + 1);
-    tOut = shownTotal - tIn;
+    tIn = shownTotal <= 1 ? shownTotal : crypto.randomInt(minIn, maxIn + 1);
+    tOut = Math.max(0, shownTotal - tIn);
 
     // Update token_remaining theo quota thật.
     db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(shownTotal, apiKey);
