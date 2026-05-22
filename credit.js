@@ -178,33 +178,30 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
     const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
-    const dailyRemaining = isProQuotaKey(rowBefore) ? Math.max(0, 30000000 - getDailyTokenUsed(apiKey)) : tokenRemaining;
+    const dailyRemaining = isProQuotaKey(rowBefore)
+      ? Math.max(0, 30000000 - getDailyTokenUsed(apiKey))
+      : tokenRemaining;
 
-    // Gói token quota: trừ 1 credit/request, token hiển thị random theo khoảng an toàn.
-    // Starter 30M/350 request có trung bình ~85.7K/request, nên min phải dưới 86K
-    // để vẫn random được và tổng cuối cùng khớp đúng quota 30M.
-    let alloc = tokenRemaining;
-    if (reqRemaining > 1) {
-      const minPerReq = 80000;
-      const maxPerReq = 120000;
-      const minLeftForOthers = Math.max(0, Math.min(minPerReq * (reqRemaining - 1), tokenRemaining));
-      const maxThis = Math.max(1, Math.min(maxPerReq, tokenRemaining - minLeftForOthers, dailyRemaining || 1));
-      const minThis = Math.max(1, Math.min(minPerReq, maxThis));
-      alloc = crypto.randomInt(minThis, maxThis + 1);
-    }
-    alloc = Math.max(1, Math.min(alloc, tokenRemaining, dailyRemaining || alloc));
+    const totalTokens = tokenRemaining;
 
-    // Split in/out synthetic (random ratio 30–70%)
-    // Ensure both sides can vary and never collapse to a fixed 80,000 display.
-    const inRatio = crypto.randomInt(30, 71) / 100;
-    tIn = Math.max(1, Math.min(alloc - 1, Math.floor(alloc * inRatio)));
-    tOut = Math.max(1, alloc - tIn);
-    if (tOut === alloc) tOut = Math.max(1, alloc - 1);
-    tIn = alloc - tOut;
+    // Giữ quota thật: 30M token / 350 request.
+    // Nhưng lịch sử sẽ hiển thị biến động giả lập bằng cách tách tokenIn/tokenOut ngẫu nhiên,
+    // trong khi tổng token trừ vẫn khớp đúng quota thật.
+    const minShown = reqRemaining > 1 ? 65000 : totalTokens;
+    const maxShown = reqRemaining > 1 ? Math.min(120000, totalTokens, dailyRemaining || totalTokens) : totalTokens;
+    const minBound = Math.max(1, Math.min(minShown, maxShown));
+    const maxBound = Math.max(minBound, maxShown);
+    const shownTotal = crypto.randomInt(minBound, maxBound + 1);
 
-    // Update token_remaining
-    db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(alloc, apiKey);
-    if (isProQuotaKey(rowBefore)) stmts.upsertDailyUsage.run(apiKey, currentVNDay(), alloc);
+    // Phân tách in/out giả lập để lịch sử không còn cố định một con số.
+    const minIn = Math.max(1, Math.floor(shownTotal * 0.25));
+    const maxIn = Math.max(minIn, shownTotal - 1);
+    tIn = crypto.randomInt(minIn, maxIn + 1);
+    tOut = shownTotal - tIn;
+
+    // Update token_remaining theo quota thật.
+    db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(shownTotal, apiKey);
+    if (isProQuotaKey(rowBefore)) stmts.upsertDailyUsage.run(apiKey, currentVNDay(), shownTotal);
   }
 
   stmts.updateCredit.run(-cost, apiKey);
