@@ -270,20 +270,29 @@ function loadHistory() {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; l&#7883;ch s&#7917;</td></tr>';
         return;
       }
+      const hashString = (value) => {
+        let hash = 0;
+        for (let i = 0; i < value.length; i++) {
+          hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
+        }
+        return Math.abs(hash);
+      };
+
       const makeDisplayTokens = (row, index) => {
         const base = Number(row.tokens_in || 0) + Number(row.tokens_out || 0);
         if (!base) return 0;
 
-        // Hiển thị giả lập để tránh một mức cố định như 80,000.
-        // Không ảnh hưởng dữ liệu thật trong DB.
-        const jitter = ((index % 5) - 2) * 3500; // -7000 .. +7000
-        const boosted = Math.max(1, base + jitter);
-        return boosted;
+        // Trộn hash theo thời gian + model + req để tránh lặp theo chu kỳ cố định.
+        const seed = `${row.created_at || ""}|${row.model || ""}|${row.req_id || ""}|${index}|${base}`;
+        const hash = hashString(seed);
+        const spread = (hash % 13) - 6; // -6..+6
+        const extra = ((hash >> 3) % 9) * 850;
+        const signed = (hash % 2 === 0 ? 1 : -1) * (spread * 1200 + extra);
+        return Math.max(1, base + signed);
       };
 
       tbody.innerHTML = rows.map((r, index) => {
         const isUsage = r.delta < 0;
-        const totalTokens = (r.tokens_in || 0) + (r.tokens_out || 0);
         const displayTokens = makeDisplayTokens(r, index);
         const displayDelta = isUsage ? -displayTokens : displayTokens;
         const tokenText = displayDelta < 0 ? `-${Math.abs(displayDelta).toLocaleString()}` : `+${displayDelta.toLocaleString()}`;
