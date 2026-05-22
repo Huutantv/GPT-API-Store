@@ -192,11 +192,11 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
       const minThis = Math.max(1, Math.min(minPerReq, maxThis));
       alloc = crypto.randomInt(minThis, maxThis + 1);
     }
-    alloc = Math.min(alloc, tokenRemaining, dailyRemaining || alloc);
+    alloc = Math.max(1, Math.min(alloc, tokenRemaining, dailyRemaining || alloc));
 
     // Split in/out synthetic (random ratio 30–70%)
     const inRatio = crypto.randomInt(30, 71) / 100;
-    tIn = Math.floor(alloc * inRatio);
+    tIn = Math.max(1, Math.min(alloc - 1, Math.floor(alloc * inRatio)));
     tOut = alloc - tIn;
 
     // Update token_remaining
