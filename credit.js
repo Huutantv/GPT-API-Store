@@ -180,11 +180,12 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
     const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
     const dailyRemaining = isProQuotaKey(rowBefore) ? Math.max(0, 30000000 - getDailyTokenUsed(apiKey)) : tokenRemaining;
 
-    // Gói token quota: trừ 1 credit/request, token hiển thị random khoảng 86K–120K/request.
-    // Luôn chừa đủ token cho request còn lại; request cuối trừ hết phần còn lại.
+    // Gói token quota: trừ 1 credit/request, token hiển thị random theo khoảng an toàn.
+    // Starter 30M/350 request có trung bình ~85.7K/request, nên min phải dưới 86K
+    // để vẫn random được và tổng cuối cùng khớp đúng quota 30M.
     let alloc = tokenRemaining;
     if (reqRemaining > 1) {
-      const minPerReq = 86000;
+      const minPerReq = 80000;
       const maxPerReq = 120000;
       const minLeftForOthers = Math.max(0, Math.min(minPerReq * (reqRemaining - 1), tokenRemaining));
       const maxThis = Math.max(1, Math.min(maxPerReq, tokenRemaining - minLeftForOthers, dailyRemaining || 1));

@@ -32,7 +32,7 @@ body{font-family:'Inter',sans-serif}
       <svg class="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
     </div>
     <h1 class="text-3xl md:text-4xl font-bold mb-2">Kiểm tra API Key</h1>
-    <p class="text-gray-400 max-w-xl mx-auto">Nhập API key để xem nhanh số dư credit, trạng thái hoạt động, thời hạn sử dụng và chuyển tiếp sang portal nếu cần.</p>
+    <p class="text-gray-400 max-w-xl mx-auto">Nhập API key để xem nhanh số token còn lại, trạng thái hoạt động, thời hạn sử dụng và chuyển tiếp sang portal nếu cần.</p>
   </div>
 
   <div class="bg-dark-700 border border-white/10 rounded-2xl p-6 md:p-8 space-y-5">
@@ -51,8 +51,8 @@ body{font-family:'Inter',sans-serif}
 
     <div id="resultBox" class="hidden grid grid-cols-1 md:grid-cols-3 gap-4">
       <div class="bg-dark-900 border border-white/5 rounded-2xl p-4">
-        <p class="text-xs text-gray-500 mb-1">Số dư credit</p>
-        <div id="creditBalance" class="text-2xl font-bold">—</div>
+        <p class="text-xs text-gray-500 mb-1">Số token còn lại</p>
+        <div id="tokenBalance" class="text-2xl font-bold">—</div>
       </div>
       <div class="bg-dark-900 border border-white/5 rounded-2xl p-4">
         <p class="text-xs text-gray-500 mb-1">Trạng thái</p>
@@ -99,7 +99,16 @@ function formatExpiry(value) {
 }
 
 function renderResult(data) {
-  document.getElementById('creditBalance').textContent = Number(data.credit || 0).toLocaleString('vi-VN');
+  const rawTokenRemaining = Number(data.token_remaining || 0);
+  const creditRemaining = Number(data.credit || 0);
+  const quotaPlans = [
+    { credit: 10500, tokens: 900000000 },
+    { credit: 350, tokens: 30000000 },
+  ];
+  const plan = quotaPlans.find(p => creditRemaining <= p.credit && creditRemaining > 0) || null;
+  const estimatedTokens = plan ? Math.round((creditRemaining / plan.credit) * plan.tokens) : 0;
+  const tokenRemaining = rawTokenRemaining > 0 ? rawTokenRemaining : estimatedTokens;
+  document.getElementById('tokenBalance').textContent = Number(tokenRemaining || 0).toLocaleString('vi-VN');
   document.getElementById('keyStatus').innerHTML = data.active
     ? '<span class="text-green-400">Hoạt động</span>'
     : '<span class="text-red-400">Bị khóa</span>';
