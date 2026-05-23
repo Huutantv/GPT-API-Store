@@ -2133,7 +2133,7 @@ async function processPayment(orderCode, amount, note) {
 
   // Tạo API key và nạp credit — đọc expires_at từ cột riêng
   const expiresAt = order.expires_at || null;
-  const packageTokenQuota = { starter: 30000000, pro: 900000000 };
+  const packageTokenQuota = { starter: 30000000, pro: 900000000, pro_v2: 900000000 };
   const tokenRemaining = packageTokenQuota[order.package_id] || 0;
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt, tokenRemaining });
   orders.markPaid(order.id, keyRow.key, note || "");

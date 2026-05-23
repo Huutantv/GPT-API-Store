@@ -53,6 +53,7 @@ const seedPkgs = [
   // credit ở đây dùng làm "request quota" cho Starter
   { id: "starter", name: "Starter", price: 20000,  credit: 350,   rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
   { id: "pro",     name: "Pro",     price: 250000, credit: 10500, rpm_limit: 10, description: "900,000,000 token / 30 ngày, 10 RPM", active: 1 },
+  { id: "pro_v2",  name: "Pro v2",  price: 270000, credit: 10500, rpm_limit: 10, description: "900,000,000 token / 30 ngày, 10 RPM", active: 1 },
   { id: "ultra",   name: "Ultra",   price: 299000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
@@ -65,6 +66,7 @@ for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_l
 const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description=?, active=? WHERE id=?");
 updatePkg.run(20000,  350,   "30,000,000 token, 10 RPM, 1 ngày",                1, "starter");
 updatePkg.run(250000, 10500, "900,000,000 token / 30 ngày, 10 RPM",             1, "pro");
+updatePkg.run(270000, 10500, "900,000,000 token / 30 ngày, 10 RPM",             1, "pro_v2");
 updatePkg.run(299000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
@@ -106,7 +108,7 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
 
   // Tính ngày hết hạn theo giờ Việt Nam để tránh lệch timezone
   let expiresAt = null;
-  const expiryDays = { starter: 1, pro: 30, ultra: 30 };
+  const expiryDays = { starter: 1, pro: 30, pro_v2: 30, ultra: 30 };
   const days = expiryDays[packageId];
   if (days) {
     const now = new Date();
