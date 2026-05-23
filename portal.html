@@ -196,21 +196,17 @@ function logout() {
 function renderBalance(data) {
   const rawTokenRemaining = Number(data.token_remaining || 0);
   const creditRemaining = Number(data.credit || 0);
-  const quotaPlans = [
-    { credit: 10500, tokens: 900000000 },
-    { credit: 350, tokens: 30000000 },
-  ];
-  const plan = quotaPlans.find(p => creditRemaining <= p.credit && creditRemaining > 0) || null;
-
-  // Key mới dùng token_remaining thật; key cũ chưa có token_remaining sẽ ước tính theo credit còn lại.
-  const estimatedTokens = plan
-    ? Math.round((creditRemaining / plan.credit) * plan.tokens)
-    : 0;
-  const tokenRemaining = rawTokenRemaining > 0 ? rawTokenRemaining : estimatedTokens;
-  const isStarter = tokenRemaining > 0;
+  const tokenQuotaFromCredit = {
+    350: 30000000,
+    10500: 900000000,
+  };
+  const tokenRemaining = rawTokenRemaining > 0
+    ? rawTokenRemaining
+    : (tokenQuotaFromCredit[creditRemaining] || 0);
+  const quotaLabel = tokenRemaining >= 900000000 ? "900,000,000" : tokenRemaining >= 30000000 ? "30,000,000" : "—";
 
   const tokenEl = document.getElementById("tokenBalance");
-  if (tokenEl) tokenEl.textContent = (isStarter ? tokenRemaining : 0).toLocaleString();
+  if (tokenEl) tokenEl.textContent = tokenRemaining.toLocaleString();
 
   document.getElementById("rpmLimit").textContent = data.rpm_limit;
   document.getElementById("keyStatus").innerHTML = data.active
@@ -253,16 +249,13 @@ function renderBalance(data) {
   // Tổng token đã dùng = tổng token gói - token còn lại
   const usedEl = document.getElementById("totalTokensUsed");
   if (usedEl) {
-    if (isStarter) {
-      const totalPlanTokens = rawTokenRemaining > 0
-        ? (rawTokenRemaining > 30000000 ? 900000000 : 30000000)
-        : (plan ? plan.tokens : tokenRemaining);
-      const used = Math.max(0, totalPlanTokens - tokenRemaining);
-      usedEl.textContent = used.toLocaleString();
-    } else {
-      usedEl.textContent = "—";
-    }
+    const totalPlanTokens = rawTokenRemaining > 0 ? rawTokenRemaining : tokenRemaining;
+    const used = Math.max(0, totalPlanTokens - tokenRemaining);
+    usedEl.textContent = used.toLocaleString();
   }
+
+  const tokenLabelEl = document.querySelector('#mainContent .grid.grid-cols-1.md\\:grid-cols-3 .bg-dark-700 .text-sm.text-gray-400') || null;
+  if (tokenLabelEl) tokenLabelEl.textContent = quotaLabel + " token";
 }
 
 function loadHistory() {
@@ -326,8 +319,17 @@ function copyKey() {
   });
 }
 
-// Auto login nếu có key trong session
+// Auto login theo key trên URL, nếu không có thì dùng key trong session
 window.addEventListener("DOMContentLoaded", () => {
+  const params = new URLSearchParams(window.location.search);
+  const keyFromUrl = params.get("key") || "";
+  if (keyFromUrl) {
+    sessionStorage.setItem("gpt_api_key", keyFromUrl);
+    document.getElementById("apiKeyInput").value = keyFromUrl;
+    login();
+    return;
+  }
+
   const saved = sessionStorage.getItem("gpt_api_key");
   if (saved) {
     document.getElementById("apiKeyInput").value = saved;

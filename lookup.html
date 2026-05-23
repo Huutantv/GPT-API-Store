@@ -280,7 +280,7 @@ function renderOrder(o) {
           <div class="flex items-center gap-2 flex-wrap justify-end">
             <code class="text-xs font-mono text-primary bg-dark-900 px-2 py-1 rounded break-all">${maskKey(o.api_key)}</code>
             <button onclick='copyText(${JSON.stringify(o.api_key || '')}, this)' class="text-xs text-gray-400 hover:text-white px-2 py-1 bg-dark-700 rounded transition">Copy</button>
-            <a href="/portal" class="text-xs text-gray-400 hover:text-white px-2 py-1 bg-dark-700 rounded transition">Xem Portal</a>
+            <a href="/portal?key=${encodeURIComponent(o.api_key || '')}" class="text-xs text-gray-400 hover:text-white px-2 py-1 bg-dark-700 rounded transition">Xem Portal</a>
           </div>
         </div>
       </div>
