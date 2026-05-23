@@ -2028,8 +2028,16 @@ app.get("/api/orders/status/:id", (req, res) => {
 app.get("/api/orders/lookup", (req, res) => {
   const email = String(req.query.email || "").trim();
   const code  = String(req.query.code  || "").trim();
-  if (code)  return res.json({ orders: [orders.getOrderByCode(code)].filter(Boolean) });
-  if (email) return res.json({ orders: orders.listByEmail(email) });
+  const enrichOrders = (list) => (list || []).filter(Boolean).map((order) => {
+    if (!order.api_key) return order;
+    const keyRow = credit.getKey(order.api_key);
+    return {
+      ...order,
+      token_remaining: keyRow ? Number(keyRow.token_remaining || 0) : 0,
+    };
+  });
+  if (code)  return res.json({ orders: enrichOrders([orders.getOrderByCode(code)]) });
+  if (email) return res.json({ orders: enrichOrders(orders.listByEmail(email)) });
   res.status(400).json({ detail: "Cần email hoặc mã đơn hàng" });
 });
 

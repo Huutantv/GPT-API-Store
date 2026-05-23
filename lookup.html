@@ -262,8 +262,8 @@ function renderOrder(o) {
           <p class="font-medium truncate">${o.customer_name || '\u2014'}</p>
         </div>
         <div class="bg-dark-900 rounded-xl px-3 py-2.5">
-          <p class="text-xs text-gray-500 mb-0.5">Credit</p>
-          <p class="font-medium">${Number(o.credit || 0).toLocaleString()}</p>
+          <p class="text-xs text-gray-500 mb-0.5">${Number(o.token_remaining || 0) > 0 ? 'Token' : 'Credit'}</p>
+          <p class="font-medium">${Number(Number(o.token_remaining || 0) > 0 ? o.token_remaining : o.credit || 0).toLocaleString()}</p>
         </div>
       </div>
 
