@@ -2146,7 +2146,7 @@ async function processPayment(orderCode, amount, note) {
     `\ud83d\udcb0 <b>S\u1ed1 ti\u1ec1n:</b> ${Number(order.amount).toLocaleString("vi-VN")}\u0111\n` +
     `\ud83d\udcca <b>Credit:</b> ${Number(order.credit).toLocaleString()} credit\n` +
     `\u23f1 <b>RPM:</b> ${order.rpm_limit} req/ph\u00fat\n` +
-    `\u23f0 <b>H\u1ebft h\u1ea1n:</b> ${order.expires_at ? new Date(order.expires_at.replace(" ","T")+"Z").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "Kh\u00f4ng gi\u1edbi h\u1ea1n"}\n` +
+    `\u23f0 <b>H\u1ebft h\u1ea1n:</b> ${order.expires_at ? new Date(order.expires_at.replace(" ","T")+"+07:00").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "Kh\u00f4ng gi\u1edbi h\u1ea1n"}\n` +
     `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
     `\ud83d\udc64 <b>Kh\u00e1ch h\u00e0ng:</b> ${order.customer_name || "N/A"}\n` +
     `\ud83d\udce7 <b>Email:</b> <code>${order.customer_email}</code>\n` +

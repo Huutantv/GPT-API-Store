@@ -120,6 +120,20 @@ function isProQuotaKey(row) {
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
+function parseExpiryTime(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  // DB lưu expires_at dạng giờ Việt Nam: YYYY-MM-DD HH:mm:ss.
+  // Convert rõ ràng sang ISO +07:00 để không bị Node/VPS hiểu nhầm là UTC/local timezone khác.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(raw + "T23:59:59+07:00");
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+    const normalized = raw.replace(" ", "T");
+    return new Date((normalized.length === 16 ? normalized + ":00" : normalized) + "+07:00");
+  }
+  return new Date(raw);
+}
+
 /**
  * Kiểm tra key hợp lệ, còn credit, chưa hết hạn, chưa bị khoá
  * @returns {{ ok: boolean, status?: number, message?: string, keyRow?: object }}
@@ -130,7 +144,8 @@ function checkCreditAuth(apiKey) {
   const row = stmts.getKey.get(apiKey);
   if (!row) return { ok: false, status: 403, message: "Invalid API key" };
   if (!row.active) return { ok: false, status: 403, message: "API key is disabled" };
-  if (row.expires_at && new Date(row.expires_at) < new Date()) {
+  const expiresAt = parseExpiryTime(row.expires_at);
+  if (expiresAt && expiresAt < new Date()) {
     return { ok: false, status: 403, message: "API key has expired" };
   }
   if (row.credit <= 0) {
@@ -325,4 +340,5 @@ module.exports = {
   getAllHistory,
   getDailyQuota,
   getStats,
+  parseExpiryTime,
 };

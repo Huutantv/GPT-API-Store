@@ -84,9 +84,20 @@ function setError(message) {
   box.classList.remove('hidden');
 }
 
+function parseVNExpiry(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(raw + 'T23:59:59+07:00');
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+    const normalized = raw.replace(' ', 'T');
+    return new Date((normalized.length === 16 ? normalized + ':00' : normalized) + '+07:00');
+  }
+  return new Date(raw);
+}
+
 function formatExpiry(value) {
   if (!value) return 'Không giới hạn';
-  const date = new Date(value.includes('T') || value.includes('Z') ? value : value.replace(' ', 'T') + 'Z');
+  const date = parseVNExpiry(value);
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString('vi-VN', {
     timeZone: 'Asia/Ho_Chi_Minh',

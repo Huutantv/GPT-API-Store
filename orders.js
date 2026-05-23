@@ -104,19 +104,25 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
   const id = genOrderId();
   const code = genOrderCode();
 
-  // Tính ngày hết hạn theo gói
+  // Tính ngày hết hạn theo giờ Việt Nam để tránh lệch timezone
   let expiresAt = null;
   const expiryDays = { starter: 1, pro: 30, ultra: 30 };
   const days = expiryDays[packageId];
   if (days) {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    expiresAt = d.toISOString().slice(0, 19).replace("T", " ");
+    const now = new Date();
+    const vnNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
+    vnNow.setDate(vnNow.getDate() + days);
+    const yyyy = vnNow.getFullYear();
+    const mm = String(vnNow.getMonth() + 1).padStart(2, "0");
+    const dd = String(vnNow.getDate()).padStart(2, "0");
+    const hh = String(vnNow.getHours()).padStart(2, "0");
+    const mi = String(vnNow.getMinutes()).padStart(2, "0");
+    const ss = String(vnNow.getSeconds()).padStart(2, "0");
+    expiresAt = `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
   }
 
   stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.rpm_limit, customerName || "", customerEmail || "", customerPhone || "");
 
-  // Lưu expires_at vào cột riêng
   if (expiresAt) {
     stmts.setOrderExpiry.run(expiresAt, id);
   }
