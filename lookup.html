@@ -235,9 +235,18 @@ async function copyText(text, btn) {
   }
 }
 
+function isKeyExpired(o) {
+  if (!o || !o.expires_at) return false;
+  const raw = String(o.expires_at).trim();
+  const normalized = raw.includes('T') ? raw : raw.replace(' ', 'T');
+  const exp = new Date(normalized + (/[zZ]|[+-]\d{2}:\d{2}$/.test(normalized) ? '' : '+07:00'));
+  return !Number.isNaN(exp.getTime()) && exp.getTime() < Date.now();
+}
+
 function renderOrder(o) {
   const isPaid = o.status === 'paid';
   const isCancelled = o.status === 'cancelled';
+  const expired = isKeyExpired(o);
   return `
     <div class="bg-dark-700 border ${isPaid ? 'border-green-500/20' : isCancelled ? 'border-red-500/10' : 'border-white/10'} rounded-2xl p-4 md:p-5 space-y-4">
       <!-- Header -->
@@ -245,7 +254,7 @@ function renderOrder(o) {
         <div>
           <div class="flex items-center gap-2 flex-wrap">
             <span class="font-mono font-bold text-sm text-primary">${o.order_code || '\u2014'}</span>
-            ${statusLabel(o.status)}
+            ${expired ? '<span class="px-2.5 py-1 rounded-full text-xs font-semibold border status-cancelled">&#9888; Key hết hạn</span>' : statusLabel(o.status)}
           </div>
           <p class="text-xs text-gray-500 mt-1">T\u1ea1o l\u00fac: ${fmtDate(o.created_at)}</p>
         </div>
@@ -275,6 +284,7 @@ function renderOrder(o) {
           <span class="text-xs text-gray-400">Ng\u00e0y thanh to\u00e1n</span>
           <span class="text-xs font-medium">${fmtDate(o.paid_at)}</span>
         </div>
+        ${o.expires_at ? `<div class="flex items-center justify-between"><span class="text-xs text-gray-400">Hết hạn</span><span class="text-xs font-medium ${expired ? 'text-red-300' : ''}">${fmtDate(o.expires_at)}</span></div>` : ''}
         <div class="flex items-center justify-between gap-3">
           <span class="text-xs text-gray-400 shrink-0">API Key</span>
           <div class="flex items-center gap-2 flex-wrap justify-end">

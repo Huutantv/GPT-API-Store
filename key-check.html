@@ -120,9 +120,13 @@ function renderResult(data) {
   const estimatedTokens = plan ? Math.round((creditRemaining / plan.credit) * plan.tokens) : 0;
   const tokenRemaining = rawTokenRemaining > 0 ? rawTokenRemaining : estimatedTokens;
   document.getElementById('tokenBalance').textContent = Number(tokenRemaining || 0).toLocaleString('vi-VN');
-  document.getElementById('keyStatus').innerHTML = data.active
-    ? '<span class="text-green-400">Hoạt động</span>'
-    : '<span class="text-red-400">Bị khóa</span>';
+  const expiryDate = parseVNExpiry(data.expires_at);
+  const isExpired = expiryDate && !Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() < Date.now();
+  document.getElementById('keyStatus').innerHTML = isExpired
+    ? '<span class="text-red-400">Key hết hạn</span>'
+    : data.active
+      ? '<span class="text-green-400">Hoạt động</span>'
+      : '<span class="text-red-400">Bị khóa</span>';
   document.getElementById('expiresAt').textContent = formatExpiry(data.expires_at);
   document.getElementById('resultBox').classList.remove('hidden');
 }
