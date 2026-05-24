@@ -1989,6 +1989,9 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: original.max_output_tokens || original.max_tokens,
+    tools: original.tools,
+    tool_choice: original.tool_choice,
+    parallel_tool_calls: original.parallel_tool_calls,
     stream: false,
   };
   if (wantsStream) {
