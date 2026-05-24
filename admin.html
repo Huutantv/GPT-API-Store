@@ -368,7 +368,7 @@ body{font-family:'Inter',sans-serif}
         </div>
       </label>
     </div>
-    <div id="routerModeBox" class="hidden">
+    <div id="routerModeBox" class="hidden space-y-3">
       <label class="text-xs text-gray-400 block mb-1">Khi ch&#7841;y c&#7843; 2 backend</label>
       <select id="cfgRouter" onchange="toggleRouterBox()" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
         <option value="failover">Failover (Backend 1 tr&#432;&#7899;c, Backend 2 d&#7921; ph&#242;ng khi l&#7895;i)</option>
@@ -1176,30 +1176,11 @@ function updateBackendRouterStatus(data) {
 
   var c1El = document.getElementById("chkBackend1");
   var c2El = document.getElementById("chkBackend2");
-  var routerEl = document.getElementById("cfgRouter");
-  var b1ModelEl = document.getElementById("cfg1Model");
-  var b2ModelEl = document.getElementById("cfg2Model");
-  var b1WeightEl = document.getElementById("cfgBackend1WeightInput");
 
   var c1 = c1El && c1El.checked;
   var c2 = c2El && c2El.checked;
   var activeLabel = data && data.active_backend_label ? data.active_backend_label : (c1 && c2 ? "Backend 1 + Backend 2" : (c1 ? "Backend 1" : (c2 ? "Backend 2" : "—")));
-  var parts = ["Hiện tại: " + activeLabel];
-
-  if (c1 && c2) {
-    var mode = routerEl ? routerEl.value : ((data && data.backend_router_mode) || "failover");
-    parts.push("Mode: " + backendRouterLabel(mode));
-    if (mode === "weighted") {
-      var b1 = normalizeWeight(b1WeightEl ? b1WeightEl.value : (data && data.backend_weights ? data.backend_weights.backend1 : 50));
-      parts.push("B1 " + b1 + "% / B2 " + (100 - b1) + "%");
-    }
-  }
-
-  var models = [];
-  if (c1 && b1ModelEl && b1ModelEl.value) models.push("B1: " + b1ModelEl.value);
-  if (c2 && b2ModelEl && b2ModelEl.value) models.push("B2: " + b2ModelEl.value);
-  if (models.length) parts.push(models.join(" · "));
-  el.textContent = parts.join(" | ");
+  el.textContent = "Hiện tại: " + activeLabel;
 }
 
 async function loadBackendConfig() {
