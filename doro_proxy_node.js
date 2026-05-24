@@ -101,6 +101,37 @@ function backendWeights() {
   };
 }
 
+function normalizeBackendWeightsPair(backend1Value, backend2Value, fallback = backendWeights()) {
+  const hasW1 = backend1Value != null && String(backend1Value).trim() !== "";
+  const hasW2 = backend2Value != null && String(backend2Value).trim() !== "";
+
+  if (!hasW1 && !hasW2) {
+    return {
+      backend1: clampPercent(fallback.backend1, 50),
+      backend2: clampPercent(fallback.backend2, 50),
+    };
+  }
+
+  if (hasW1 && !hasW2) {
+    const backend1 = clampPercent(backend1Value, fallback.backend1);
+    return { backend1, backend2: 100 - backend1 };
+  }
+
+  if (!hasW1 && hasW2) {
+    const backend2 = clampPercent(backend2Value, fallback.backend2);
+    return { backend1: 100 - backend2, backend2 };
+  }
+
+  const backend1 = clampPercent(backend1Value, fallback.backend1);
+  const backend2 = clampPercent(backend2Value, fallback.backend2);
+  const total = backend1 + backend2;
+  if (total <= 0) return { backend1: 50, backend2: 50 };
+  return {
+    backend1: Math.round((backend1 / total) * 100),
+    backend2: 100 - Math.round((backend1 / total) * 100),
+  };
+}
+
 function backendProfile(id = activeBackendId()) {
   if (String(id) === "2") {
     const apiKeyRaw = process.env.DORO_BACKEND2_AUTH_TOKEN || "";
@@ -2420,6 +2451,7 @@ app.put("/api/config", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
   const updates = {};
+  const pendingWeights = {};
   for (const field of [
     "DORO_ACTIVE_BACKEND",
     "DORO_BACKEND_ROUTER_MODE",
@@ -2454,7 +2486,10 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
-    if (field === "DORO_BACKEND1_WEIGHT" || field === "DORO_BACKEND2_WEIGHT") value = String(clampPercent(value, 50));
+    if (field === "DORO_BACKEND1_WEIGHT" || field === "DORO_BACKEND2_WEIGHT") {
+      pendingWeights[field] = value;
+      continue;
+    }
     if (field === "DORO_BACKEND1_MAX_TOKENS" || field === "DORO_BACKEND2_MAX_TOKENS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_TOKEN_PER_REQUEST") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "TELEGRAM_ALERTS_ENABLED") value = envFlag(value) ? "1" : "0";
@@ -2464,6 +2499,14 @@ app.put("/api/config", (req, res) => {
       value = value.replace(/\n/g, ",").split(",").map((k) => k.trim()).filter(Boolean).join(",");
     }
     if (value) updates[field] = value;
+  }
+  if (Object.keys(pendingWeights).length) {
+    const normalizedWeights = normalizeBackendWeightsPair(
+      pendingWeights.DORO_BACKEND1_WEIGHT,
+      pendingWeights.DORO_BACKEND2_WEIGHT,
+    );
+    updates.DORO_BACKEND1_WEIGHT = String(normalizedWeights.backend1);
+    updates.DORO_BACKEND2_WEIGHT = String(normalizedWeights.backend2);
   }
   if (!Object.keys(updates).length) return res.status(400).json({ detail: "No valid fields to update" });
   saveEnvUpdates(updates);
