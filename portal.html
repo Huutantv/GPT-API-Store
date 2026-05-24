@@ -256,7 +256,7 @@ function renderBalance(data) {
 
 function loadHistory() {
   if (!currentKey) return;
-  fetch(`${BASE}/api/credit/my-history?limit=100`, { headers: { Authorization: `Bearer ${currentKey}` } })
+  fetch(`${BASE}/api/credit/my-history?limit=30`, { headers: { Authorization: `Bearer ${currentKey}` } })
     .then(r => r.json())
     .then(data => {
       const tbody = document.getElementById("historyTable");
