@@ -1957,8 +1957,8 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   const output = response.output[0];
   const content = output.content[0];
   const inProgressResponse = { ...response, status: "in_progress", output: [] };
-  responseSseWrite(res, "response.created", { ...inProgressResponse, type: "response.created" });
-  responseSseWrite(res, "response.in_progress", { ...inProgressResponse, type: "response.in_progress" });
+  responseSseWrite(res, "response.created", { type: "response.created", response: inProgressResponse });
+  responseSseWrite(res, "response.in_progress", { type: "response.in_progress", response: inProgressResponse });
   responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: 0, item: { ...output, content: [] } }));
   responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
   if (content.text) {
@@ -1967,7 +1967,7 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   responseSseWrite(res, "response.output_text.done", responseStreamEvent(response, "response.output_text.done", { item_id: output.id, output_index: 0, content_index: 0, text: content.text }));
   responseSseWrite(res, "response.content_part.done", responseStreamEvent(response, "response.content_part.done", { item_id: output.id, output_index: 0, content_index: 0, part: content }));
   responseSseWrite(res, "response.output_item.done", responseStreamEvent(response, "response.output_item.done", { output_index: 0, item: output }));
-  responseSseWrite(res, "response.completed", { ...response, type: "response.completed" });
+  responseSseWrite(res, "response.completed", { type: "response.completed", response });
   res.write("event: done\ndata: [DONE]\n\n");
   setImmediate(() => res.end());
 }
