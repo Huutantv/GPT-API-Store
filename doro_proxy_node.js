@@ -354,6 +354,8 @@ const _backendHealth = {
 const AUTO_ERROR_THRESHOLD = Number(process.env.DORO_AUTO_ERROR_THRESHOLD || "3");  // 3 lỗi/phút → mark down
 const AUTO_ERROR_WINDOW_MS = 60 * 1000;
 const AUTO_RECOVERY_MS = Number(process.env.DORO_AUTO_RECOVERY_MS || "120000");    // 2 phút mới thử lại
+const AUTO_SOFT_RECOVERY_SUCCESS = Number(process.env.DORO_AUTO_SOFT_RECOVERY_SUCCESS || "2");
+const AUTO_SOFT_RECOVERY_WINDOW_MS = Number(process.env.DORO_AUTO_SOFT_RECOVERY_WINDOW_MS || "30000");
 
 function isBackendHealthy(id) {
   const state = _backendHealth[id];
@@ -406,8 +408,18 @@ function trackBackendSuccess(id) {
   if (!_backendHealth[id]) return;
   const state = _backendHealth[id];
   if (state.downSince) {
+    backendWarmupPass(id);
+    const now = Date.now();
+    const warmupSuccess = state.warmupSuccess || 0;
+    const warmupStart = state.warmupStart || now;
+    if (now - warmupStart <= AUTO_SOFT_RECOVERY_WINDOW_MS && warmupSuccess < AUTO_SOFT_RECOVERY_SUCCESS) {
+      addLog(`auto-mode: backend ${id} warmup ${warmupSuccess}/${AUTO_SOFT_RECOVERY_SUCCESS}`);
+      return;
+    }
     state.downSince = null;
     state.errors = 0;
+    state.warmupSuccess = 0;
+    state.warmupStart = null;
     addLog(`auto-mode: backend ${id} recovered`);
     notifyTelegram(
       `\u2705 <b>Auto mode: Backend ${id} \u0111\u00e3 ph\u1ee5c h\u1ed3i</b>\n` +
@@ -423,6 +435,10 @@ const app = express();
 const port = Number(firstEnv("DORO_PROXY_PORT", { default: "4000" }));
 const maxConcurrent = Number(process.env.DORO_MAX_CONCURRENT || "50");
 const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "120") * 1000;
+const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT || process.env.DORO_BACKEND_TIMEOUT || "300") * 1000;
+const retryBaseDelayMs = Number(process.env.DORO_RETRY_BASE_DELAY_MS || "500");
+const retryMaxDelayMs = Number(process.env.DORO_RETRY_MAX_DELAY_MS || "5000");
+const retryJitterMs = Number(process.env.DORO_RETRY_JITTER_MS || "300");
 let activeBackend = 0;
 const backendQueue = [];
 let backendKeyCounter = 0;
@@ -447,6 +463,24 @@ function logTs() {
   const mm = String(abs % 60).padStart(2, "0");
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().replace("T", " ").slice(0, 19);
   return `${local} ${sign}${hh}${mm}`;
+}
+
+function retryDelayMs(attempt) {
+  const exp = Math.min(retryMaxDelayMs, retryBaseDelayMs * (2 ** Math.max(0, attempt - 1)));
+  const jitter = Math.floor(Math.random() * Math.max(0, retryJitterMs));
+  return exp + jitter;
+}
+
+function backendWarmupPass(id) {
+  const state = _backendHealth[id];
+  if (!state) return;
+  const now = Date.now();
+  state.warmupSuccess = (state.warmupSuccess || 0) + 1;
+  if (!state.warmupStart) state.warmupStart = now;
+  if (now - state.warmupStart > AUTO_SOFT_RECOVERY_WINDOW_MS) {
+    state.warmupStart = now;
+    state.warmupSuccess = 1;
+  }
 }
 
 function printLog(message) {
@@ -903,9 +937,12 @@ async function withBackendKeySlot(apiKey, fn) {
 
 async function fetchWithTimeout(url, options = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new Error(`Backend timeout after ${backendTimeoutMs}ms`)), backendTimeoutMs);
+  const timeoutMs = Number(options.timeoutMs || backendTimeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`Backend timeout after ${timeoutMs}ms`)), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    const requestOptions = { ...options, signal: controller.signal };
+    delete requestOptions.timeoutMs;
+    return await fetch(url, requestOptions);
   } finally {
     clearTimeout(timer);
   }
@@ -929,9 +966,9 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       if (obs) obs.final_backend_status = resp.status;
       if (isRetryableStatus(resp.status) && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
-        addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
+      addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
         uptimeTrackError(resp.status);
-        await new Promise(r => setTimeout(r, 500 * (i + 1))); // delay tăng dần
+      await new Promise(r => setTimeout(r, retryDelayMs(i + 1))); // exponential backoff + jitter
         continue;
       }
       if (!resp.ok) {
@@ -948,7 +985,7 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       if (!err.status && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         addLog(`backend retry network key=${i + 1}/${ordered.length} error=${err.name || "Error"}: ${err.message}`);
-        await new Promise(r => setTimeout(r, 500 * (i + 1)));
+        await new Promise(r => setTimeout(r, retryDelayMs(i + 1)));
         continue;
       }
       throw err;
@@ -1512,6 +1549,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           method: "POST",
           headers: backendHeaders(ordered[i]),
           body: JSON.stringify(payload),
+          timeoutMs: backendStreamTimeoutMs,
         });
         if (obs) obs.final_backend_status = resp.status;
         if (!resp.ok) {
@@ -1590,6 +1628,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           method: "POST",
           headers: backendHeaders(ordered[i]),
           body: JSON.stringify(payload),
+          timeoutMs: backendStreamTimeoutMs,
         });
         if (obs) obs.final_backend_status = resp.status;
         if (!resp.ok) {
