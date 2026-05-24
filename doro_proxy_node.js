@@ -1952,6 +1952,15 @@ function responseStreamEvent(response, event, data = {}) {
   };
 }
 
+function endResponsesStream(res, delayMs = 75) {
+  try {
+    res.write("event: done\ndata: [DONE]\n\n");
+  } catch (_) {}
+  setTimeout(() => {
+    try { res.end(); } catch (_) {}
+  }, delayMs);
+}
+
 function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   const response = chatCompletionToResponses(data, publicModel);
   const output = response.output[0];
@@ -1962,14 +1971,13 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: 0, item: { ...output, content: [] } }));
   responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
   if (content.text) {
-    responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: 0, content_index: 0, delta: content.text }));
+    responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: 0, content_index: 0, delta: { type: "output_text_delta", text: content.text } }));
   }
   responseSseWrite(res, "response.output_text.done", responseStreamEvent(response, "response.output_text.done", { item_id: output.id, output_index: 0, content_index: 0, text: content.text }));
   responseSseWrite(res, "response.content_part.done", responseStreamEvent(response, "response.content_part.done", { item_id: output.id, output_index: 0, content_index: 0, part: content }));
   responseSseWrite(res, "response.output_item.done", responseStreamEvent(response, "response.output_item.done", { output_index: 0, item: output }));
   responseSseWrite(res, "response.completed", { type: "response.completed", response });
-  res.write("event: done\ndata: [DONE]\n\n");
-  setImmediate(() => res.end());
+  endResponsesStream(res);
 }
 
 app.post(["/v1/responses", "/responses"], async (req, res) => {
