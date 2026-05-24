@@ -515,6 +515,8 @@ function isObservableClientRequest(req) {
   return [
     "/v1/messages",
     "/messages",
+    "/v1/responses",
+    "/responses",
     "/v1/chat/completions",
     "/chat/completions",
     "/v1/models",
@@ -607,7 +609,7 @@ function metricsSummary() {
     count_503_5m: countStatus(fiveMin, 503),
     status_1m: statusHistogram(oneMin),
     status_5m: statusHistogram(fiveMin),
-    latency_by_endpoint_1m: latencyByEndpoint(oneMin.filter((item) => ["/v1/messages", "/messages", "/v1/chat/completions", "/chat/completions"].includes(item.path))),
+    latency_by_endpoint_1m: latencyByEndpoint(oneMin.filter((item) => ["/v1/messages", "/messages", "/v1/responses", "/responses", "/v1/chat/completions", "/chat/completions"].includes(item.path))),
   };
 }
 
@@ -1896,7 +1898,66 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   }
 });
 
-app.post(["/v1/chat/completions", "/chat/completions"], async (req, res) => {
+function responsesInputToMessages(input) {
+  if (Array.isArray(input)) {
+    const messages = [];
+    for (const item of input) {
+      if (typeof item === "string") {
+        messages.push({ role: "user", content: item });
+      } else if (item && typeof item === "object") {
+        const role = item.role || (item.type === "message" ? item.role : "user") || "user";
+        const content = Array.isArray(item.content)
+          ? item.content.map((part) => typeof part === "string" ? part : (part.text || part.input_text || part.output_text || "")).filter(Boolean).join("\n")
+          : (item.content || item.text || item.input_text || "");
+        if (content) messages.push({ role, content });
+      }
+    }
+    return messages.length ? messages : [{ role: "user", content: "" }];
+  }
+  return [{ role: "user", content: String(input || "") }];
+}
+
+function chatCompletionToResponses(data, publicModel) {
+  const choice = (data.choices || [])[0] || {};
+  const message = choice.message || {};
+  const text = typeof message.content === "string" ? message.content : "";
+  return {
+    id: data.id || `resp_${Date.now()}`,
+    object: "response",
+    created_at: data.created || Math.floor(Date.now() / 1000),
+    status: "completed",
+    model: publicModel || data.model,
+    output: [{
+      id: `msg_${Date.now()}`,
+      type: "message",
+      status: "completed",
+      role: "assistant",
+      content: [{ type: "output_text", text, annotations: [] }],
+    }],
+    output_text: text,
+    usage: data.usage || null,
+  };
+}
+
+app.post(["/v1/responses", "/responses"], async (req, res) => {
+  const original = req.body || {};
+  req.body = {
+    model: original.model || "opus",
+    messages: original.messages || responsesInputToMessages(original.input),
+    temperature: original.temperature,
+    top_p: original.top_p,
+    max_tokens: original.max_output_tokens || original.max_tokens,
+    stream: false,
+  };
+  const oldJson = res.json.bind(res);
+  res.json = (data) => {
+    if (data && data.choices) return oldJson(chatCompletionToResponses(data, publicModelName(original.model || "opus")));
+    return oldJson(data);
+  };
+  return openAIChatCompletionsHandler(req, res);
+});
+
+async function openAIChatCompletionsHandler(req, res) {
   const auth = checkAuth(req);
   req.obs.api_key_masked = maskSecret(auth.token || extractToken(req));
   if (!auth.ok) {
@@ -1993,7 +2054,9 @@ app.post(["/v1/chat/completions", "/chat/completions"], async (req, res) => {
     addLog(`backend network error=${detail}`);
     return res.status(502).json(openaiErrorPayload(502, `Backend unreachable: ${detail}`));
   }
-});
+}
+
+app.post(["/v1/chat/completions", "/chat/completions"], openAIChatCompletionsHandler);
 
 const DASHBOARD_PATH = (() => {
   const raw = String(process.env.DORO_DASHBOARD_PATH || "/dashboard_@@admin").trim();
