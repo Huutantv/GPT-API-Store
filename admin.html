@@ -370,11 +370,40 @@ body{font-family:'Inter',sans-serif}
     </div>
     <div id="routerModeBox" class="hidden">
       <label class="text-xs text-gray-400 block mb-1">Khi ch&#7841;y c&#7843; 2 backend</label>
-      <select id="cfgRouter" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      <select id="cfgRouter" onchange="toggleRouterBox()" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
         <option value="failover">Failover (Backend 1 tr&#432;&#7899;c, Backend 2 d&#7921; ph&#242;ng khi l&#7895;i)</option>
         <option value="round_robin">Round-robin (lu&#226;n phi&#234;n 50/50)</option>
         <option value="weighted">Weighted (chia theo tr&#7885;ng s&#7889;)</option>
       </select>
+      <div id="weightedConfigBox" class="hidden mt-4 bg-dark-900 border border-white/10 rounded-xl p-4 space-y-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-white">Chia t&#7843;i theo %</p>
+            <p class="text-xs text-gray-500 mt-1">T&#7893;ng 2 backend lu&#244;n b&#7857;ng 100%. Backend 2 t&#7921; &#273;&#7897;ng l&#224; ph&#7847;n c&#242;n l&#7841;i.</p>
+          </div>
+          <span class="text-xs text-gray-500 font-mono shrink-0"><span id="weightB1Label">50</span>% / <span id="weightB2Label">50</span>%</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-[1fr_110px] gap-3 items-end">
+          <div>
+            <label class="text-xs text-gray-400 block mb-2">Backend 1 (%)</label>
+            <input id="cfgBackend1WeightSlider" type="range" min="0" max="100" step="1" value="50" oninput="syncBackendWeights('slider')" class="w-full accent-blue-500">
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 block mb-1">Backend 1</label>
+            <input id="cfgBackend1WeightInput" type="number" min="0" max="100" step="1" value="50" oninput="syncBackendWeights('input')" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          </div>
+        </div>
+        <div class="space-y-2">
+          <div class="h-3 bg-dark-600 rounded-full overflow-hidden flex">
+            <div id="weightB1Bar" class="h-full bg-blue-500 transition-all" style="width:50%"></div>
+            <div id="weightB2Bar" class="h-full bg-purple-500 transition-all" style="width:50%"></div>
+          </div>
+          <div class="flex justify-between text-xs text-gray-400">
+            <span><span class="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>Backend 1: <b id="weightB1Text" class="text-blue-300">50%</b></span>
+            <span><span class="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1"></span>Backend 2: <b id="weightB2Text" class="text-purple-300">50%</b></span>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="flex items-center justify-between gap-3 pt-2">
       <div class="flex items-center gap-3">
@@ -1103,6 +1132,37 @@ function renderKeyList(listEl, keys, backendId) {
   }).join("");
 }
 
+function normalizeWeight(value) {
+  var n = Number(value);
+  if (!Number.isFinite(n)) n = 50;
+  n = Math.round(n);
+  return Math.max(0, Math.min(100, n));
+}
+
+function syncBackendWeights(source) {
+  var slider = document.getElementById("cfgBackend1WeightSlider");
+  var input = document.getElementById("cfgBackend1WeightInput");
+  if (!slider || !input) return;
+
+  var b1 = normalizeWeight(source === "input" ? input.value : slider.value);
+  var b2 = 100 - b1;
+  slider.value = b1;
+  input.value = b1;
+
+  ["weightB1Label", "weightB1Text"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = b1 + (id === "weightB1Text" ? "%" : "");
+  });
+  ["weightB2Label", "weightB2Text"].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = b2 + (id === "weightB2Text" ? "%" : "");
+  });
+  var b1Bar = document.getElementById("weightB1Bar");
+  var b2Bar = document.getElementById("weightB2Bar");
+  if (b1Bar) b1Bar.style.width = b1 + "%";
+  if (b2Bar) b2Bar.style.width = b2 + "%";
+}
+
 async function loadBackendConfig() {
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
 
@@ -1111,6 +1171,7 @@ async function loadBackendConfig() {
   document.getElementById("chkBackend1").checked = (active === "1" || active === "both");
   document.getElementById("chkBackend2").checked = (active === "2" || active === "both");
   document.getElementById("cfgRouter").value = data.backend_router_mode || "failover";
+  syncBackendWeightsFromConfig(data.backend_weights);
 
   // Auto mode
   var autoMode = !!data.auto_mode;
@@ -1157,7 +1218,22 @@ async function loadBackendConfig() {
 function toggleRouterBox() {
   var c1 = document.getElementById("chkBackend1").checked;
   var c2 = document.getElementById("chkBackend2").checked;
-  document.getElementById("routerModeBox").classList.toggle("hidden", !(c1 && c2));
+  var both = c1 && c2;
+  document.getElementById("routerModeBox").classList.toggle("hidden", !both);
+  var router = document.getElementById("cfgRouter");
+  var weightedBox = document.getElementById("weightedConfigBox");
+  if (weightedBox) weightedBox.classList.toggle("hidden", !(both && router && router.value === "weighted"));
+  syncBackendWeights();
+}
+
+function syncBackendWeightsFromConfig(weights) {
+  var b1 = 50;
+  if (weights && weights.backend1 != null) b1 = normalizeWeight(weights.backend1);
+  var slider = document.getElementById("cfgBackend1WeightSlider");
+  var input = document.getElementById("cfgBackend1WeightInput");
+  if (slider) slider.value = b1;
+  if (input) input.value = b1;
+  syncBackendWeights();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
@@ -1645,6 +1721,11 @@ async function saveActiveBackend() {
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
     DORO_AUTO_MODE: autoMode ? "1" : "0",
   };
+  if (active === "both" && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
+    var b1Weight = normalizeWeight(document.getElementById("cfgBackend1WeightInput").value);
+    updates.DORO_BACKEND1_WEIGHT = String(b1Weight);
+    updates.DORO_BACKEND2_WEIGHT = String(100 - b1Weight);
+  }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
   if (data.ok) { alert("\u0110\u00e3 l\u01b0u. C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
