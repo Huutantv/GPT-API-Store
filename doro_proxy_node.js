@@ -2234,7 +2234,6 @@ app.get("/api/orders/lookup", (req, res) => {
 
 // ── Webhook Sepay / Casso ─────────────────────────────────────────────────────
 async function notifyTelegram(message) {
-  if (!envFlag(process.env.TELEGRAM_ALERTS_ENABLED, true)) return false;
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) {
@@ -2576,7 +2575,7 @@ app.get("/api/config", (req, res) => {
     telegram_bot_token_set: !!String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
     telegram_bot_token_masked: maskSecret(process.env.TELEGRAM_BOT_TOKEN || ""),
     telegram_chat_id: String(process.env.TELEGRAM_CHAT_ID || "").trim(),
-    telegram_alerts_enabled: envFlag(process.env.TELEGRAM_ALERTS_ENABLED, true),
+    telegram_alerts_enabled: true,
     backend_health: {
       "1": { healthy: isBackendHealthy("1"), errors: _backendHealth["1"].errors, down_count: _backendHealth["1"].downCount, down_since: _backendHealth["1"].downSince },
       "2": { healthy: isBackendHealthy("2"), errors: _backendHealth["2"].errors, down_count: _backendHealth["2"].downCount, down_since: _backendHealth["2"].downSince },
@@ -2652,7 +2651,7 @@ app.put("/api/config", (req, res) => {
     }
     if (field === "DORO_BACKEND1_MAX_TOKENS" || field === "DORO_BACKEND2_MAX_TOKENS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_TOKEN_PER_REQUEST") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
-    if (field === "TELEGRAM_ALERTS_ENABLED") value = envFlag(value) ? "1" : "0";
+    if (field === "TELEGRAM_ALERTS_ENABLED") continue;
     if (field === "DORO_BACKEND1_USER_ASSISTANT_ONLY" || field === "DORO_BACKEND2_USER_ASSISTANT_ONLY") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_BACKEND1_DISABLE_TOOLS" || field === "DORO_BACKEND2_DISABLE_TOOLS") value = envFlag(value) ? "1" : "0";
     if (field === "ANTHROPIC_AUTH_TOKEN" || field === "DORO_BACKEND2_AUTH_TOKEN") {
