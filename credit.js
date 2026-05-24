@@ -200,12 +200,24 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
     const totalTokens = tokenRemaining;
 
     const configuredPerRequest = Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || 85000));
+    const minPerRequest = Math.max(1, Math.floor(configuredPerRequest * 0.8));
+    const maxPerRequest = Math.max(minPerRequest, Math.ceil(configuredPerRequest * 1.2));
+    const remainingRequestsAfterThis = Math.max(0, reqRemaining - 1);
 
-    // 1 request = N token theo cấu hình admin.
-    // Request cuối sẽ trừ phần token còn lại để không âm quota.
-    const shownTotal = reqRemaining > 1
-      ? Math.min(configuredPerRequest, totalTokens, dailyRemaining || totalTokens)
-      : Math.min(totalTokens, dailyRemaining || totalTokens);
+    // Mỗi request hiển thị ngẫu nhiên trong khoảng setup ±20%.
+    // Đồng thời vẫn giữ invariant: dùng đủ số request đã setup thì token_remaining về đúng 0.
+    let low = Math.max(1, minPerRequest, totalTokens - (remainingRequestsAfterThis * maxPerRequest));
+    let high = Math.min(maxPerRequest, totalTokens - (remainingRequestsAfterThis * minPerRequest));
+    if (dailyRemaining > 0) high = Math.min(high, dailyRemaining);
+
+    let shownTotal;
+    if (reqRemaining <= 1) {
+      shownTotal = Math.min(totalTokens, dailyRemaining || totalTokens);
+    } else if (low <= high) {
+      shownTotal = crypto.randomInt(low, high + 1);
+    } else {
+      shownTotal = Math.min(configuredPerRequest, totalTokens, dailyRemaining || totalTokens);
+    }
 
     // Phân tách token in/out để lịch sử vẫn dễ đọc nhưng tổng luôn cố định theo setting.
     const minIn = Math.max(1, Math.floor(shownTotal * 0.25));
