@@ -49,96 +49,105 @@ body{font-family:'Inter',sans-serif}
 </div>
 
 <!-- Main content -->
-<div id="mainContent" class="hidden max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
+<div id="mainContent" class="hidden max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-5">
 
-  <!-- Balance card (token-first) -->
-  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-    <div class="md:col-span-1 bg-gradient-to-br from-primary/20 to-purple-900/20 border border-primary/30 rounded-2xl p-5 md:p-6">
-      <p class="text-sm text-gray-400 mb-1">S&#7889; d&#432; token</p>
-      <div class="text-4xl font-black text-white" id="tokenBalance">—</div>
-      <p class="text-xs text-gray-500 mt-2">Token hi&#7875;n th&#7883; theo quota</p>
-      <div class="mt-4 pt-4 border-t border-white/10">
-        <a href="/#pricing" class="block text-center py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">N&#7841;p th&#234;m</a>
-        <a href="/lookup" class="block text-center py-2 mt-2 bg-dark-600 hover:bg-dark-900 border border-white/10 rounded-lg text-sm transition">Tra c&#7913;u &#273;&#417;n h&#224;ng</a>
+  <!-- Account overview -->
+  <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <div class="lg:col-span-5 bg-gradient-to-br from-primary/25 via-dark-700 to-purple-900/20 border border-primary/30 rounded-3xl p-5 md:p-6 shadow-2xl shadow-primary/5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <p class="text-sm text-gray-400 mb-2">S&#7889; d&#432; token</p>
+          <div class="text-4xl md:text-5xl font-black tracking-tight text-white break-words" id="tokenBalance">—</div>
+          <p class="text-xs text-gray-500 mt-2">Token hi&#7875;n th&#7883; theo quota</p>
+        </div>
+        <span class="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs text-gray-300">API</span>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mt-6 pt-5 border-t border-white/10">
+        <a href="/#pricing" class="text-center py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">N&#7841;p th&#234;m</a>
+        <a href="/lookup" class="text-center py-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm transition">Tra c&#7913;u &#273;&#417;n h&#224;ng</a>
       </div>
     </div>
-    <div class="md:col-span-2 grid grid-cols-2 gap-3 md:gap-4">
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
-        <p class="text-xs text-gray-500 mb-1">RPM Limit</p>
-        <div class="text-2xl font-bold" id="rpmLimit">—</div>
-        <p class="text-xs text-gray-500 mt-1">requests/ph&#250;t</p>
+
+    <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
+        <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">RPM Limit</p>
+        <div class="text-3xl font-bold" id="rpmLimit">—</div>
+        <p class="text-xs text-gray-500 mt-2">requests/ph&#250;t</p>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
-        <p class="text-xs text-gray-500 mb-1">Tr&#7841;ng th&#225;i</p>
-        <div class="text-2xl font-bold" id="keyStatus">—</div>
+      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
+        <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">Tr&#7841;ng th&#225;i</p>
+        <div class="text-2xl md:text-3xl font-bold" id="keyStatus">—</div>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
-        <p class="text-xs text-gray-500 mb-1">H&#7871;t h&#7841;n</p>
-        <div class="text-sm font-semibold" id="expiresAt">—</div>
+      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
+        <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">H&#7871;t h&#7841;n</p>
+        <div class="text-sm font-semibold leading-relaxed" id="expiresAt">—</div>
       </div>
     </div>
-  </div>
+  </section>
 
-  <!-- API Key info -->
-  <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-6">
-    <h2 class="font-semibold mb-4">Th&#244;ng tin API Key</h2>
-    <div class="space-y-3">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <span class="text-sm text-gray-400 shrink-0">API Key</span>
-        <div class="flex items-center gap-2 min-w-0">
-          <code class="text-xs sm:text-sm font-mono bg-dark-900 px-3 py-1 rounded-lg truncate max-w-[200px] sm:max-w-none" id="keyDisplay">—</code>
-          <button onclick="copyKey()" class="text-xs text-gray-500 hover:text-white transition px-2 py-1 bg-dark-600 rounded shrink-0">Copy</button>
+  <section class="grid grid-cols-1 xl:grid-cols-12 gap-5">
+    <div class="xl:col-span-5 space-y-5">
+      <!-- API Key info -->
+      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6">
+        <h2 class="font-semibold mb-5">Th&#244;ng tin API Key</h2>
+        <div class="space-y-4">
+          <div class="rounded-2xl bg-dark-900/60 border border-white/5 p-4">
+            <span class="block text-xs text-gray-500 mb-2 uppercase tracking-wider">API Key</span>
+            <div class="flex items-center gap-2 min-w-0">
+              <code class="flex-1 text-xs sm:text-sm font-mono bg-black/40 px-3 py-2 rounded-xl truncate" id="keyDisplay">—</code>
+              <button onclick="copyKey()" class="text-xs text-gray-400 hover:text-white transition px-3 py-2 bg-white/5 border border-white/10 rounded-xl shrink-0">Copy</button>
+            </div>
+          </div>
+          <div class="rounded-2xl bg-dark-900/60 border border-white/5 p-4">
+            <span class="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Base URL</span>
+            <code class="block text-xs sm:text-sm font-mono bg-black/40 px-3 py-2 rounded-xl text-green-400 break-all" id="baseUrlDisplay">—</code>
+          </div>
+          <div class="rounded-2xl bg-dark-900/60 border border-white/5 p-4">
+            <span class="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Models</span>
+            <span class="text-sm text-gray-300 leading-relaxed">gpt-5.5, gpt-5.5-turbo, gpt-5.4, gpt-4o</span>
+          </div>
         </div>
       </div>
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <span class="text-sm text-gray-400">Base URL</span>
-        <code class="text-xs sm:text-sm font-mono bg-dark-900 px-3 py-1 rounded-lg text-green-400 break-all" id="baseUrlDisplay">—</code>
-      </div>
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <span class="text-sm text-gray-400">Models</span>
-        <span class="text-sm text-gray-300">gpt-5.5, gpt-5.5-turbo, gpt-5.4, gpt-4o</span>
-      </div>
     </div>
-  </div>
 
-  <!-- Quick setup -->
-  <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-6">
-    <h2 class="font-semibold mb-4">C&#224;i &#273;&#7863;t nhanh</h2>
-    <div class="space-y-3">
-      <div>
-        <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Python</p>
-        <pre class="bg-dark-900 rounded-xl p-3 md:p-4 text-xs text-gray-300 overflow-x-auto"><code id="pythonCode">from openai import OpenAI
+    <div class="xl:col-span-7 bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6">
+      <h2 class="font-semibold mb-5">C&#224;i &#273;&#7863;t nhanh</h2>
+      <div class="space-y-4">
+        <div>
+          <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Python</p>
+          <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="pythonCode">from openai import OpenAI
 client = OpenAI(api_key="sk-...", base_url="https://zplay.io.vn/v1")
 response = client.chat.completions.create(model="gpt-5.5", messages=[{"role":"user","content":"Hello"}])</code></pre>
-      </div>
-      <div>
-        <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Cline / Roo Code</p>
-        <pre class="bg-dark-900 rounded-xl p-3 md:p-4 text-xs text-gray-300 overflow-x-auto"><code>Provider : OpenAI Compatible
+        </div>
+        <div>
+          <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Cline / Roo Code</p>
+          <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code>Provider : OpenAI Compatible
 Base URL : https://zplay.io.vn/v1
 API Key  : <span id="clineKey">sk-...</span>
 Model    : gpt-5.5</code></pre>
-        <a href="https://docs.google.com/document/d/1nMuEJFCw5VVIsREM8xMMUCy2pec54057g_SFN0BT6-E/edit?ouid=114248237795900119340&usp=docs_home&ths=true" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 mt-3 px-3 py-2 bg-primary/10 border border-primary/20 rounded-lg text-xs text-primary font-semibold hover:bg-primary/20 transition">
-          &#128214; Xem h&#432;&#7899;ng d&#7851;n c&#7845;u h&#236;nh Roo Code chi ti&#7871;t
-        </a>
+          <a href="https://docs.google.com/document/d/1nMuEJFCw5VVIsREM8xMMUCy2pec54057g_SFN0BT6-E/edit?ouid=114248237795900119340&usp=docs_home&ths=true" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 mt-4 px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-xs text-primary font-semibold hover:bg-primary/20 transition">
+            &#128214; Xem h&#432;&#7899;ng d&#7851;n c&#7845;u h&#236;nh Roo Code chi ti&#7871;t
+          </a>
+        </div>
       </div>
     </div>
-  </div>
+  </section>
 
   <!-- History -->
-  <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-6">
+  <section class="bg-dark-700 border border-white/10 rounded-3xl p-4 md:p-6">
     <div class="flex items-center justify-between mb-4">
       <h2 class="font-semibold">L&#7883;ch s&#7917; s&#7917; d&#7909;ng</h2>
-      <button onclick="loadHistory()" class="text-xs text-gray-400 hover:text-white transition">L&#224;m m&#7899;i</button>
+      <button onclick="loadHistory()" class="text-xs text-gray-400 hover:text-white transition px-3 py-1.5 rounded-lg hover:bg-white/5">L&#224;m m&#7899;i</button>
     </div>
-    <div class="overflow-x-auto -mx-4 md:mx-0">
-      <table class="w-full text-xs md:text-sm min-w-[480px]">
-        <thead>
+    <div class="overflow-x-auto -mx-4 md:mx-0 md:rounded-2xl md:border md:border-white/5">
+      <table class="w-full text-xs md:text-sm min-w-[560px]">
+        <thead class="bg-dark-900/50">
           <tr class="text-xs text-gray-500 border-b border-white/5">
-            <th class="text-left pb-3">Th&#7901;i gian</th>
-            <th class="text-left pb-3">Lo&#7841;i</th>
-            <th class="text-left pb-3">Model</th>
-            <th class="text-right pb-3">Token</th>
-            <th class="text-right pb-3">Credit</th>
+            <th class="text-left p-3">Th&#7901;i gian</th>
+            <th class="text-left p-3">Lo&#7841;i</th>
+            <th class="text-left p-3">Model</th>
+            <th class="text-right p-3">Token</th>
+            <th class="text-right p-3">Credit</th>
           </tr>
         </thead>
         <tbody id="historyTable">
@@ -146,7 +155,7 @@ Model    : gpt-5.5</code></pre>
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 
 </div>
 
@@ -242,8 +251,8 @@ function renderBalance(data) {
   document.getElementById("clineKey").textContent = data.key_masked;
 
 
-  const tokenLabelEl = document.querySelector('#mainContent .grid.grid-cols-1.md\\:grid-cols-3 .bg-dark-700 .text-sm.text-gray-400') || null;
-  if (tokenLabelEl) tokenLabelEl.textContent = quotaLabel + " token";
+  const quotaLabelEl = document.getElementById("tokenQuotaLabel");
+  if (quotaLabelEl) quotaLabelEl.textContent = quotaLabel + " token";
 }
 
 function loadHistory() {
