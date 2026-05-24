@@ -76,11 +76,6 @@ body{font-family:'Inter',sans-serif}
         <p class="text-xs text-gray-500 mb-1">H&#7871;t h&#7841;n</p>
         <div class="text-sm font-semibold" id="expiresAt">—</div>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-5">
-        <p class="text-xs text-gray-500 mb-1">T&#7893;ng &#273;&#227; d&#249;ng</p>
-        <div class="text-2xl font-bold" id="totalTokensUsed">—</div>
-        <p class="text-xs text-gray-500 mt-1">token</p>
-      </div>
     </div>
   </div>
 
@@ -246,9 +241,6 @@ function renderBalance(data) {
   document.getElementById("baseUrlDisplay").textContent = `${BASE}/v1`;
   document.getElementById("clineKey").textContent = data.key_masked;
 
-  // Tổng token đã dùng sẽ lấy từ lịch sử sử dụng thật trong loadHistory().
-  const usedEl = document.getElementById("totalTokensUsed");
-  if (usedEl) usedEl.textContent = "Đang tải...";
 
   const tokenLabelEl = document.querySelector('#mainContent .grid.grid-cols-1.md\\:grid-cols-3 .bg-dark-700 .text-sm.text-gray-400') || null;
   if (tokenLabelEl) tokenLabelEl.textContent = quotaLabel + " token";
@@ -263,8 +255,6 @@ function loadHistory() {
       const rows = data.history || [];
       if (!rows.length) {
         tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; l&#7883;ch s&#7917;</td></tr>';
-        const usedEl = document.getElementById("totalTokensUsed");
-        if (usedEl) usedEl.textContent = "0";
         return;
       }
       const hashString = (value) => {
@@ -279,11 +269,9 @@ function loadHistory() {
         return Math.max(0, Number(row.tokens_in || 0) + Number(row.tokens_out || 0));
       };
 
-      let totalUsedTokens = 0;
       tbody.innerHTML = rows.map((r) => {
         const isUsage = r.delta < 0;
-        const displayTokens = makeDisplayTokens(r);
-        if (isUsage) totalUsedTokens += displayTokens;
+        const displayTokens = Math.max(0, Number(r.tokens_in || 0) + Number(r.tokens_out || 0));
         const tokenText = isUsage
           ? `-${displayTokens.toLocaleString()}`
           : `+${displayTokens.toLocaleString()}`;
@@ -296,8 +284,6 @@ function loadHistory() {
           <td class="py-3 text-right font-mono text-xs ${tokenClass}">${displayTokens ? tokenText : "—"}</td>
         </tr>`;
       }).join("");
-      const usedEl = document.getElementById("totalTokensUsed");
-      if (usedEl) usedEl.textContent = totalUsedTokens.toLocaleString();
       return fetch(`${BASE}/api/credit/balance`, { headers: { Authorization: `Bearer ${currentKey}` } });
     })
     .then(r => r ? r.json() : null)
