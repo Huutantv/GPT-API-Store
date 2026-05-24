@@ -2004,10 +2004,50 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   }
   const oldJson = res.json.bind(res);
   res.json = (data) => {
+    if (wantsStream && data && data.error) {
+      const responseId = `resp_${Date.now()}`;
+      responseSseWrite(res, "response.created", {
+        type: "response.created",
+        response: {
+          id: responseId,
+          object: "response",
+          created_at: Math.floor(Date.now() / 1000),
+          status: "failed",
+          model: original.model || "opus",
+          output: [],
+        },
+      });
+      responseSseWrite(res, "response.failed", {
+        type: "response.failed",
+        response_id: responseId,
+        error: data.error,
+      });
+      return endResponsesStream(res);
+    }
     if (data && data.choices) {
       const publicModel = publicModelName(original.model || "opus");
       if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel);
       return oldJson(chatCompletionToResponses(data, publicModel));
+    }
+    if (wantsStream) {
+      const responseId = `resp_${Date.now()}`;
+      responseSseWrite(res, "response.created", {
+        type: "response.created",
+        response: {
+          id: responseId,
+          object: "response",
+          created_at: Math.floor(Date.now() / 1000),
+          status: "failed",
+          model: original.model || "opus",
+          output: [],
+        },
+      });
+      responseSseWrite(res, "response.failed", {
+        type: "response.failed",
+        response_id: responseId,
+        error: { message: "Unexpected upstream response format", type: "api_error" },
+      });
+      return endResponsesStream(res);
     }
     return oldJson(data);
   };
