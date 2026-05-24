@@ -1708,7 +1708,7 @@ app.use((req, res, next) => {
   return next();
 });
 app.use(express.json({
-  limit: process.env.DORO_BODY_LIMIT || "100mb",
+  limit: process.env.DORO_BODY_LIMIT || "500mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 
