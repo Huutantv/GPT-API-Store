@@ -256,7 +256,7 @@ function renderBalance(data) {
 
 function loadHistory() {
   if (!currentKey) return;
-  fetch(`${BASE}/api/credit/my-history?limit=50`, { headers: { Authorization: `Bearer ${currentKey}` } })
+  fetch(`${BASE}/api/credit/my-history?limit=100`, { headers: { Authorization: `Bearer ${currentKey}` } })
     .then(r => r.json())
     .then(data => {
       const tbody = document.getElementById("historyTable");
@@ -275,32 +275,24 @@ function loadHistory() {
         return Math.abs(hash);
       };
 
-      const makeDisplayTokens = (row, index) => {
-        const base = Number(row.tokens_in || 0) + Number(row.tokens_out || 0);
-        if (!base) return 0;
-
-        // Trộn hash theo thời gian + model + req để tránh lặp theo chu kỳ cố định.
-        const seed = `${row.created_at || ""}|${row.model || ""}|${row.req_id || ""}|${index}|${base}`;
-        const hash = hashString(seed);
-        const spread = (hash % 13) - 6; // -6..+6
-        const extra = ((hash >> 3) % 9) * 850;
-        const signed = (hash % 2 === 0 ? 1 : -1) * (spread * 1200 + extra);
-        return Math.max(1, base + signed);
+      const makeDisplayTokens = (row) => {
+        return Math.max(0, Number(row.tokens_in || 0) + Number(row.tokens_out || 0));
       };
 
       let totalUsedTokens = 0;
-      tbody.innerHTML = rows.map((r, index) => {
+      tbody.innerHTML = rows.map((r) => {
         const isUsage = r.delta < 0;
-        const displayTokens = makeDisplayTokens(r, index);
+        const displayTokens = makeDisplayTokens(r);
         if (isUsage) totalUsedTokens += displayTokens;
-        const displayDelta = isUsage ? -displayTokens : displayTokens;
-        const tokenText = displayDelta < 0 ? `-${Math.abs(displayDelta).toLocaleString()}` : `+${displayDelta.toLocaleString()}`;
+        const tokenText = isUsage
+          ? `-${displayTokens.toLocaleString()}`
+          : `+${displayTokens.toLocaleString()}`;
         const tokenClass = isUsage ? "text-red-400" : "text-green-400";
         return `<tr class="border-b border-white/5 hover:bg-white/2">
           <td class="py-3 text-gray-400 text-xs">${new Date(r.created_at.includes("T") || r.created_at.includes("Z") ? r.created_at : r.created_at.replace(" ","T")+"Z").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"})}</td>
           <td class="py-3"><span class="px-2 py-0.5 rounded text-xs ${isUsage ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}">${isUsage ? "S&#7917; d&#7909;ng" : r.reason}</span></td>
           <td class="py-3 text-gray-300 text-xs">${r.model || "—"}</td>
-          <td class="py-3 text-right text-gray-400 text-xs">${displayTokens ? displayTokens.toLocaleString() : "—"}</td>
+          <td class="py-3 text-right text-gray-400 text-xs">${displayTokens ? displayTokens.toLocaleString("vi-VN") : "—"}</td>
           <td class="py-3 text-right font-mono text-xs ${tokenClass}">${displayTokens ? tokenText : "—"}</td>
         </tr>`;
       }).join("");
