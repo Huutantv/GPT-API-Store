@@ -1161,6 +1161,45 @@ function syncBackendWeights(source) {
   var b2Bar = document.getElementById("weightB2Bar");
   if (b1Bar) b1Bar.style.width = b1 + "%";
   if (b2Bar) b2Bar.style.width = b2 + "%";
+  updateBackendRouterStatus();
+}
+
+function backendRouterLabel(mode) {
+  if (mode === "weighted") return "Weighted";
+  if (mode === "round_robin") return "Round-robin";
+  return "Failover";
+}
+
+function updateBackendRouterStatus(data) {
+  var el = document.getElementById("activeStatus");
+  if (!el) return;
+
+  var c1El = document.getElementById("chkBackend1");
+  var c2El = document.getElementById("chkBackend2");
+  var routerEl = document.getElementById("cfgRouter");
+  var b1ModelEl = document.getElementById("cfg1Model");
+  var b2ModelEl = document.getElementById("cfg2Model");
+  var b1WeightEl = document.getElementById("cfgBackend1WeightInput");
+
+  var c1 = c1El && c1El.checked;
+  var c2 = c2El && c2El.checked;
+  var activeLabel = data && data.active_backend_label ? data.active_backend_label : (c1 && c2 ? "Backend 1 + Backend 2" : (c1 ? "Backend 1" : (c2 ? "Backend 2" : "—")));
+  var parts = ["Hiện tại: " + activeLabel];
+
+  if (c1 && c2) {
+    var mode = routerEl ? routerEl.value : ((data && data.backend_router_mode) || "failover");
+    parts.push("Mode: " + backendRouterLabel(mode));
+    if (mode === "weighted") {
+      var b1 = normalizeWeight(b1WeightEl ? b1WeightEl.value : (data && data.backend_weights ? data.backend_weights.backend1 : 50));
+      parts.push("B1 " + b1 + "% / B2 " + (100 - b1) + "%");
+    }
+  }
+
+  var models = [];
+  if (c1 && b1ModelEl && b1ModelEl.value) models.push("B1: " + b1ModelEl.value);
+  if (c2 && b2ModelEl && b2ModelEl.value) models.push("B2: " + b2ModelEl.value);
+  if (models.length) parts.push(models.join(" · "));
+  el.textContent = parts.join(" | ");
 }
 
 async function loadBackendConfig() {
@@ -1193,9 +1232,8 @@ async function loadBackendConfig() {
   var profiles = data.backend_profiles || [];
   var b1 = profiles.find(function(p){return p.id==="1";}) || {};
   var b2 = profiles.find(function(p){return p.id==="2";}) || {};
-
-  document.getElementById("b1Summary").textContent = (b1.backend_api_keys || 0) + " keys · " + (b1.backend_model || "—");
-  document.getElementById("b2Summary").textContent = (b2.backend_api_keys || 0) + " keys · " + (b2.backend_model || "—");
+  document.getElementById("b1Summary").textContent = (b1.backend_api_keys || 0) + " keys · Model: " + (b1.backend_model || "—");
+  document.getElementById("b2Summary").textContent = (b2.backend_api_keys || 0) + " keys · Model: " + (b2.backend_model || "—");
   document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
 
   document.getElementById("cfg1BaseUrl").value = b1.base_url || "";
@@ -1212,6 +1250,7 @@ async function loadBackendConfig() {
   document.getElementById("cfgTokenPerRequestMax").value = data.token_per_request_max || 120000;
 
   toggleRouterBox();
+  updateBackendRouterStatus(data);
   if (!_vietapiSynced) loadModelFallback();
 }
 
@@ -1224,6 +1263,7 @@ function toggleRouterBox() {
   var weightedBox = document.getElementById("weightedConfigBox");
   if (weightedBox) weightedBox.classList.toggle("hidden", !(both && router && router.value === "weighted"));
   syncBackendWeights();
+  updateBackendRouterStatus();
 }
 
 function syncBackendWeightsFromConfig(weights) {
