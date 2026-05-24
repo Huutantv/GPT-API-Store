@@ -581,23 +581,42 @@ function authHeaders() {
 }
 
 /* ===== DATE HELPERS ===== */
+function parseVNDate(dateStr, endOfDayForDateOnly) {
+  if (!dateStr) return null;
+  var raw = String(dateStr).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return new Date(raw + (endOfDayForDateOnly ? "T23:59:59+07:00" : "T00:00:00+07:00"));
+  }
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+    var normalized = raw.replace(" ", "T");
+    return new Date((normalized.length === 16 ? normalized + ":00" : normalized) + "+07:00");
+  }
+  return new Date(raw);
+}
+function formatVNLocalDateTime(date) {
+  var year = date.getFullYear();
+  var month = String(date.getMonth() + 1).padStart(2, "0");
+  var day = String(date.getDate()).padStart(2, "0");
+  var hour = String(date.getHours()).padStart(2, "0");
+  var minute = String(date.getMinutes()).padStart(2, "0");
+  var second = String(date.getSeconds()).padStart(2, "0");
+  return year + "-" + month + "-" + day + " " + hour + ":" + minute + ":" + second;
+}
 function fmtVN(dateStr, opts) {
-  if (!dateStr) return "\u2014";
-  var s = String(dateStr);
-  var d = new Date(s.indexOf("T") >= 0 || s.indexOf("Z") >= 0 ? s : s.replace(" ", "T") + "Z");
+  var d = parseVNDate(dateStr, false);
+  if (!d) return "\u2014";
   var def = { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" };
   return d.toLocaleString("vi-VN", opts || def);
 }
 function fmtDateVN(dateStr) {
-  if (!dateStr) return "\u2014";
-  var s = String(dateStr);
-  var d = new Date(s.indexOf("T") >= 0 || s.indexOf("Z") >= 0 ? s : s.replace(" ", "T") + "Z");
+  var d = parseVNDate(dateStr, false);
+  if (!d) return "\u2014";
   return d.toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 function fmtTimeVN(dateStr) {
-  if (!dateStr) return "\u2014";
-  var s = String(dateStr);
-  var d = new Date(s.indexOf("T") >= 0 || s.indexOf("Z") >= 0 ? s : s.replace(" ", "T") + "Z");
+  var d = parseVNDate(dateStr, false);
+  if (!d) return "\u2014";
   return d.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
 }
 
@@ -613,8 +632,7 @@ function copyText(text, btn) {
 /* ===== EXPIRY FORMAT ===== */
 function formatExpiry(expiresAt) {
   if (!expiresAt) return '<span class="text-gray-600">Khong gioi han</span>';
-  var s = String(expiresAt);
-  var exp = new Date(s.indexOf("T") >= 0 || s.indexOf("Z") >= 0 ? s : s.replace(" ", "T") + "Z");
+  var exp = parseVNDate(expiresAt, true);
   var now = new Date();
   var diffMs = exp - now;
   var diffDays = Math.ceil(diffMs / 86400000);
@@ -831,7 +849,7 @@ function updateCreateKeyTokenPreview() {
 async function createKey() {
   var days = Number(document.getElementById("newExpires").value || 0);
   var expiresAt = null;
-  if (days > 0) { var d = new Date(); d.setDate(d.getDate() + days); expiresAt = d.toISOString().slice(0, 10); }
+  if (days > 0) { var d = new Date(); d.setDate(d.getDate() + days); expiresAt = formatVNLocalDateTime(new Date(d.getTime() + d.getTimezoneOffset() * 60000)); }
   var tokenQuota = Number(document.getElementById("newTokenQuota").value || 0);
   var requestQuota = Number(document.getElementById("newCredit").value || 0);
   var body = {
