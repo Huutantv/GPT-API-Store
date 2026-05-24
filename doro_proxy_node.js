@@ -1939,8 +1939,32 @@ function chatCompletionToResponses(data, publicModel) {
   };
 }
 
+function responseSseWrite(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
+  const response = chatCompletionToResponses(data, publicModel);
+  const output = response.output[0];
+  const content = output.content[0];
+  responseSseWrite(res, "response.created", { ...response, status: "in_progress", output: [] });
+  responseSseWrite(res, "response.in_progress", { ...response, status: "in_progress", output: [] });
+  responseSseWrite(res, "response.output_item.added", { type: "response.output_item.added", output_index: 0, item: { ...output, content: [] } });
+  responseSseWrite(res, "response.content_part.added", { type: "response.content_part.added", item_id: output.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } });
+  if (content.text) {
+    responseSseWrite(res, "response.output_text.delta", { type: "response.output_text.delta", item_id: output.id, output_index: 0, content_index: 0, delta: content.text });
+  }
+  responseSseWrite(res, "response.output_text.done", { type: "response.output_text.done", item_id: output.id, output_index: 0, content_index: 0, text: content.text });
+  responseSseWrite(res, "response.content_part.done", { type: "response.content_part.done", item_id: output.id, output_index: 0, content_index: 0, part: content });
+  responseSseWrite(res, "response.output_item.done", { type: "response.output_item.done", output_index: 0, item: output });
+  responseSseWrite(res, "response.completed", { ...response, type: "response.completed" });
+  res.end();
+}
+
 app.post(["/v1/responses", "/responses"], async (req, res) => {
   const original = req.body || {};
+  const wantsStream = !!original.stream;
   req.body = {
     model: original.model || "opus",
     messages: original.messages || responsesInputToMessages(original.input),
@@ -1949,9 +1973,19 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     max_tokens: original.max_output_tokens || original.max_tokens,
     stream: false,
   };
+  if (wantsStream) {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Connection", "keep-alive");
+  }
   const oldJson = res.json.bind(res);
   res.json = (data) => {
-    if (data && data.choices) return oldJson(chatCompletionToResponses(data, publicModelName(original.model || "opus")));
+    if (data && data.choices) {
+      const publicModel = publicModelName(original.model || "opus");
+      if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel);
+      return oldJson(chatCompletionToResponses(data, publicModel));
+    }
     return oldJson(data);
   };
   return openAIChatCompletionsHandler(req, res);
