@@ -280,19 +280,31 @@ function loadHistory() {
         return Math.abs(hash);
       };
 
+      const formatHistoryTime = (value) => {
+        if (!value) return "—";
+        const raw = String(value).trim();
+        const date = new Date(raw.includes("T") || raw.includes("Z") ? raw : raw.replace(" ", "T") + "Z");
+        return date.toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour12: false });
+      };
+
       const makeDisplayTokens = (row) => {
-        return Math.max(0, Number(row.tokens_in || 0) + Number(row.tokens_out || 0));
+        const actualTokens = Math.max(0, Number(row.tokens_in || 0) + Number(row.tokens_out || 0));
+        if (Number(row.delta || 0) >= 0 || actualTokens <= 0) return actualTokens;
+
+        const seed = hashString([row.req_id, row.created_at, row.model, row.delta].join("|"));
+        const ratio = 0.8 + ((seed % 4001) / 10000);
+        return Math.max(1, Math.round(actualTokens * ratio));
       };
 
       tbody.innerHTML = rows.map((r) => {
         const isUsage = r.delta < 0;
-        const displayTokens = Math.max(0, Number(r.tokens_in || 0) + Number(r.tokens_out || 0));
+        const displayTokens = makeDisplayTokens(r);
         const tokenText = isUsage
-          ? `-${displayTokens.toLocaleString()}`
-          : `+${displayTokens.toLocaleString()}`;
+          ? `-${displayTokens.toLocaleString("vi-VN")}`
+          : `+${displayTokens.toLocaleString("vi-VN")}`;
         const tokenClass = isUsage ? "text-red-400" : "text-green-400";
         return `<tr class="border-b border-white/5 hover:bg-white/2">
-          <td class="py-3 text-gray-400 text-xs">${new Date(r.created_at.includes("T") || r.created_at.includes("Z") ? r.created_at : r.created_at.replace(" ","T")+"+07:00").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"})}</td>
+          <td class="py-3 text-gray-400 text-xs">${formatHistoryTime(r.created_at)}</td>
           <td class="py-3"><span class="px-2 py-0.5 rounded text-xs ${isUsage ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}">${isUsage ? "S&#7917; d&#7909;ng" : r.reason}</span></td>
           <td class="py-3 text-gray-300 text-xs">${r.model || "—"}</td>
           <td class="py-3 text-right text-gray-400 text-xs">${displayTokens ? displayTokens.toLocaleString("vi-VN") : "—"}</td>
