@@ -114,8 +114,14 @@ function getDailyTokenUsed(apiKey) {
   return Number(row ? row.tokens : 0);
 }
 
-function isProQuotaKey(row) {
-  return !!row && (Number(row.token_remaining || 0) > 30000000 || Number(row.credit || 0) > 350);
+function getPackageIdFromLabel(row) {
+  const label = String((row && row.label) || "").toLowerCase();
+  const match = label.match(/\(([^)]+)\)\s*$/);
+  return match ? match[1].trim() : "";
+}
+
+function isDailyLimitedQuotaKey(row) {
+  return getPackageIdFromLabel(row) === "pro";
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -151,7 +157,7 @@ function checkCreditAuth(apiKey) {
   if (row.credit <= 0) {
     return { ok: false, status: 429, message: `Insufficient credit. Please top up at ${process.env.DORO_PUBLIC_URL || "https://zplay.io.vn"}` };
   }
-  if (isProQuotaKey(row) && getDailyTokenUsed(apiKey) >= 30000000) {
+  if (isDailyLimitedQuotaKey(row) && getDailyTokenUsed(apiKey) >= 30000000) {
     return { ok: false, status: 429, message: "Daily token limit reached: 30M tokens. Please try again tomorrow." };
   }
   return { ok: true, keyRow: row };
@@ -193,7 +199,7 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
     const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
-    const dailyRemaining = isProQuotaKey(rowBefore)
+    const dailyRemaining = isDailyLimitedQuotaKey(rowBefore)
       ? Math.max(0, 30000000 - getDailyTokenUsed(apiKey))
       : tokenRemaining;
 
@@ -227,7 +233,7 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     // Update token_remaining theo quota thật.
     db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(shownTotal, apiKey);
-    if (isProQuotaKey(rowBefore)) stmts.upsertDailyUsage.run(apiKey, currentVNDay(), shownTotal);
+    if (isDailyLimitedQuotaKey(rowBefore)) stmts.upsertDailyUsage.run(apiKey, currentVNDay(), shownTotal);
   }
 
   stmts.updateCredit.run(-cost, apiKey);
@@ -313,7 +319,7 @@ function getUsageTotal(apiKey) {
 
 function getDailyQuota(apiKey) {
   const row = stmts.getKey.get(apiKey);
-  if (!isProQuotaKey(row)) return null;
+  if (!isDailyLimitedQuotaKey(row)) return null;
   const used = getDailyTokenUsed(apiKey);
   const limit = 30000000;
   return { day: currentVNDay(), used, limit, remaining: Math.max(0, limit - used) };
