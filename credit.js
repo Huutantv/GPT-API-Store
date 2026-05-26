@@ -114,14 +114,43 @@ function getDailyTokenUsed(apiKey) {
   return Number(row ? row.tokens : 0);
 }
 
+const PACKAGE_TOKEN_QUOTAS = {
+  starter: 30000000,
+  pro: 900000000,
+  pro_v2: 900000000,
+};
+
 function getPackageIdFromLabel(row) {
   const label = String((row && row.label) || "").toLowerCase();
   const match = label.match(/\(([^)]+)\)\s*$/);
   return match ? match[1].trim() : "";
 }
 
+function getQuotaTokenLimit(row) {
+  return PACKAGE_TOKEN_QUOTAS[getPackageIdFromLabel(row)] || 0;
+}
+
+function getTokenPerRequest() {
+  return Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || 85000));
+}
+
+function inferQuotaTokenRemaining(row) {
+  const tokenRemaining = Math.max(0, Number((row && row.token_remaining) || 0));
+  if (tokenRemaining > 0) return tokenRemaining;
+
+  const packageTokenQuota = getQuotaTokenLimit(row);
+  const creditRemaining = Math.max(0, Number((row && row.credit) || 0));
+  if (!packageTokenQuota || !creditRemaining) return 0;
+
+  return Math.min(packageTokenQuota, creditRemaining * getTokenPerRequest());
+}
+
+function isQuotaKey(row) {
+  return getQuotaTokenLimit(row) > 0;
+}
+
 function isDailyLimitedQuotaKey(row) {
-  return getPackageIdFromLabel(row) === "pro";
+  return ["pro", "pro_v2"].includes(getPackageIdFromLabel(row));
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -193,19 +222,21 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
   const rowBefore = stmts.getKey.get(apiKey);
 
-  // Starter mode: credit = request quota, token_remaining = synthetic token quota
-  if (rowBefore && rowBefore.token_remaining > 0) {
+  // Quota package mode: credit = request quota, token_remaining = synthetic token quota.
+  // Old keys may have token_remaining=0, so infer remaining quota from current request credit.
+  const inferredTokenRemaining = inferQuotaTokenRemaining(rowBefore);
+  if (rowBefore && isQuotaKey(rowBefore) && inferredTokenRemaining > 0) {
     cost = 1; // 1 request
 
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
-    const tokenRemaining = Math.max(0, Number(rowBefore.token_remaining || 0));
+    const tokenRemaining = inferredTokenRemaining;
     const dailyRemaining = isDailyLimitedQuotaKey(rowBefore)
       ? Math.max(0, 30000000 - getDailyTokenUsed(apiKey))
       : tokenRemaining;
 
     const totalTokens = tokenRemaining;
 
-    const configuredPerRequest = Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || 85000));
+    const configuredPerRequest = getTokenPerRequest();
     const minPerRequest = Math.max(1, Math.floor(configuredPerRequest * 0.8));
     const maxPerRequest = Math.max(minPerRequest, Math.ceil(configuredPerRequest * 1.2));
     const remainingRequestsAfterThis = Math.max(0, reqRemaining - 1);
@@ -231,8 +262,13 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
     tIn = shownTotal <= 1 ? shownTotal : crypto.randomInt(minIn, maxIn + 1);
     tOut = Math.max(0, shownTotal - tIn);
 
-    // Update token_remaining theo quota thật.
-    db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(shownTotal, apiKey);
+    // Update token_remaining theo quota thật. Với key cũ chưa có token_remaining,
+    // set thẳng về phần còn lại đã suy ra để các request sau tiếp tục random đúng mode quota.
+    if (Number(rowBefore.token_remaining || 0) > 0) {
+      db.prepare("UPDATE api_keys SET token_remaining = MAX(0, token_remaining - ?) WHERE key = ?").run(shownTotal, apiKey);
+    } else {
+      db.prepare("UPDATE api_keys SET token_remaining = ? WHERE key = ?").run(Math.max(0, tokenRemaining - shownTotal), apiKey);
+    }
     if (isDailyLimitedQuotaKey(rowBefore)) stmts.upsertDailyUsage.run(apiKey, currentVNDay(), shownTotal);
   }
 
