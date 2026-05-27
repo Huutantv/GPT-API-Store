@@ -1066,12 +1066,33 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
   throw lastError || new Error("No backend profile available");
 }
 
+function trimMessagesKeepLatest(messages, maxMessages = 24) {
+  const list = Array.isArray(messages) ? messages.filter((message) => message && typeof message === "object") : [];
+  if (!list.length || maxMessages <= 0 || list.length <= maxMessages) return list;
+
+  const systemMessages = list.filter((message) => message.role === "system");
+  const nonSystemMessages = list.filter((message) => message.role !== "system");
+  if (nonSystemMessages.length <= maxMessages) return [...systemMessages, ...nonSystemMessages];
+
+  const trimmed = nonSystemMessages.slice(-maxMessages);
+  return [...systemMessages, ...trimmed];
+}
+
 function applyBackendPayloadLimits(payload, settings) {
+  if (!payload || typeof payload !== "object") return payload;
+
+  const maxMessages = optionalPositiveInt((settings && settings.maxMessages) || process.env.DORO_MAX_MESSAGES || "24");
+  if (Array.isArray(payload.messages) && maxMessages && payload.messages.length > maxMessages) {
+    const before = payload.messages.length;
+    payload.messages = trimMessagesKeepLatest(payload.messages, maxMessages);
+    addLog(`messages clamp ${(settings && settings.profileLabel) || "backend"} ${before} -> ${payload.messages.length}`);
+  }
+
   const limit = optionalPositiveInt(settings && settings.maxTokens);
   const current = optionalPositiveInt(payload && payload.max_tokens);
   if (limit && current && current > limit) {
     payload.max_tokens = limit;
-    addLog(`max_tokens clamp ${settings.profileLabel} ${current} -> ${limit}`);
+    addLog(`max_tokens clamp ${(settings && settings.profileLabel) || "backend"} ${current} -> ${limit}`);
   }
   return payload;
 }
