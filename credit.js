@@ -150,7 +150,7 @@ function isQuotaKey(row) {
 }
 
 function isDailyLimitedQuotaKey(row) {
-  return ["pro", "pro_v2"].includes(getPackageIdFromLabel(row));
+  return getPackageIdFromLabel(row) === "pro";
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
