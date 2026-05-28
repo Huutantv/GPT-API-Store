@@ -439,6 +439,7 @@ const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT ||
 const retryBaseDelayMs = Number(process.env.DORO_RETRY_BASE_DELAY_MS || "500");
 const retryMaxDelayMs = Number(process.env.DORO_RETRY_MAX_DELAY_MS || "5000");
 const retryJitterMs = Number(process.env.DORO_RETRY_JITTER_MS || "300");
+const backendRequestRetryCount = Math.max(0, Math.min(3, Number(process.env.DORO_BACKEND_REQUEST_RETRIES || "2")));
 let activeBackend = 0;
 const backendQueue = [];
 let backendKeyCounter = 0;
@@ -998,69 +999,86 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
   let lastError;
   for (let i = 0; i < settingsChain.length; i += 1) {
     const settings = settingsChain[i];
-    try {
-      if (obs) {
-        obs.backend_id = settings.profileId || "";
-        obs.backend_profile = settings.profileLabel || settings.profileId || "";
-        obs.backend_model = settings.backendModel || "";
-        obs.backend_base_url = settings.baseUrl || "";
-      }
-      const payload = payloadBuilder(settings);
-      // Auto model fallback: chọn model tốt nhất
-      const originalModel = payload.model;
-      payload.model = selectBestModel(payload.model);
-      if (payload.model !== originalModel) {
-        addLog(`model-fallback: ${originalModel} -> ${payload.model}`);
-      }
-      applyBackendPayloadLimits(payload, settings);
-      applyBackendMessageCompatibility(payload, settings);
-      applyBackendToolCompatibility(payload, settings);
-      const url = `${settings.baseUrl}${pathSuffix}`;
-      const response = await postWithKeyFailover(url, payload, settings.apiKeys, {}, obs);
-      // Track thành công
-      trackModelRequest(payload.model);
-      trackBackendSuccess(settings.profileId);
-      return { response, settings, payload };
-    } catch (err) {
-      lastError = err;
-      // Detect quota exceeded → block model + retry với model khác
-      if (isQuotaExceededError(err.status, err.text)) {
+    for (let attempt = 0; attempt <= backendRequestRetryCount; attempt += 1) {
+      try {
+        if (obs) {
+          obs.backend_id = settings.profileId || "";
+          obs.backend_profile = settings.profileLabel || settings.profileId || "";
+          obs.backend_model = settings.backendModel || "";
+          obs.backend_base_url = settings.baseUrl || "";
+        }
         const payload = payloadBuilder(settings);
-        blockModel(payload.model || settings.backendModel, `HTTP ${err.status} quota exceeded`);
-        // Retry với model fallback
-        const nextModel = selectBestModel(payload.model || settings.backendModel);
-        if (nextModel !== (payload.model || settings.backendModel)) {
-          addLog(`model-fallback: retrying with ${nextModel} after quota error`);
-          try {
-            const retryPayload = payloadBuilder(settings);
-            retryPayload.model = nextModel;
-            applyBackendPayloadLimits(retryPayload, settings);
-            applyBackendMessageCompatibility(retryPayload, settings);
-            applyBackendToolCompatibility(retryPayload, settings);
-            const url = `${settings.baseUrl}${pathSuffix}`;
-            const response = await postWithKeyFailover(url, retryPayload, settings.apiKeys, {}, obs);
-            trackModelRequest(nextModel);
-            trackBackendSuccess(settings.profileId);
-            return { response, settings, payload: retryPayload };
-          } catch (retryErr) {
-            lastError = retryErr;
+        // Auto model fallback: chọn model tốt nhất
+        const originalModel = payload.model;
+        payload.model = selectBestModel(payload.model);
+        if (payload.model !== originalModel) {
+          addLog(`model-fallback: ${originalModel} -> ${payload.model}`);
+        }
+        applyBackendPayloadLimits(payload, settings);
+        applyBackendMessageCompatibility(payload, settings);
+        applyBackendToolCompatibility(payload, settings);
+        const url = `${settings.baseUrl}${pathSuffix}`;
+        const response = await postWithKeyFailover(url, payload, settings.apiKeys, {}, obs);
+        // Track thành công
+        trackModelRequest(payload.model);
+        trackBackendSuccess(settings.profileId);
+        return { response, settings, payload };
+      } catch (err) {
+        lastError = err;
+        // Detect quota exceeded → block model + retry với model khác
+        if (isQuotaExceededError(err.status, err.text)) {
+          const payload = payloadBuilder(settings);
+          blockModel(payload.model || settings.backendModel, `HTTP ${err.status} quota exceeded`);
+          // Retry với model fallback
+          const nextModel = selectBestModel(payload.model || settings.backendModel);
+          if (nextModel !== (payload.model || settings.backendModel)) {
+            addLog(`model-fallback: retrying with ${nextModel} after quota error`);
+            try {
+              const retryPayload = payloadBuilder(settings);
+              retryPayload.model = nextModel;
+              applyBackendPayloadLimits(retryPayload, settings);
+              applyBackendMessageCompatibility(retryPayload, settings);
+              applyBackendToolCompatibility(retryPayload, settings);
+              const url = `${settings.baseUrl}${pathSuffix}`;
+              const response = await postWithKeyFailover(url, retryPayload, settings.apiKeys, {}, obs);
+              trackModelRequest(nextModel);
+              trackBackendSuccess(settings.profileId);
+              return { response, settings, payload: retryPayload };
+            } catch (retryErr) {
+              lastError = retryErr;
+              err = retryErr;
+            }
           }
         }
-      }
-      // Auto-mode: track backend lỗi để tự ngắt
-      if (err.status) trackBackendError(settings.profileId, err.status);
-      const canTryNext = !err.status || (isRetryableStatus(err.status) && i < settingsChain.length - 1);
-      if (canTryNext && i < settingsChain.length - 1) {
-        if (obs) {
-          obs.is_retry = true;
-          obs.retry_count += 1;
-          obs.error_type = err.status ? "backend" : "network";
-          obs.final_backend_status = err.status || obs.final_backend_status;
+
+        const canRetrySameBackend = attempt < backendRequestRetryCount && (!err.status || isRetryableStatus(err.status));
+        if (canRetrySameBackend) {
+          if (obs) {
+            obs.is_retry = true;
+            obs.retry_count += 1;
+            obs.error_type = err.status ? "backend" : "network";
+            obs.final_backend_status = err.status || obs.final_backend_status;
+          }
+          addLog(`backend request retry ${settings.profileLabel} attempt=${attempt + 1}/${backendRequestRetryCount + 1} error=${err.status || err.name || "network"}`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt + 1)));
+          continue;
         }
-        addLog(`backend profile retry ${settings.profileLabel} -> ${settingsChain[i + 1].profileLabel} error=${err.status || err.name || "network"}`);
-        continue;
+
+        // Auto-mode: track backend lỗi để tự ngắt
+        if (err.status) trackBackendError(settings.profileId, err.status);
+        const canTryNext = !err.status || (isRetryableStatus(err.status) && i < settingsChain.length - 1);
+        if (canTryNext && i < settingsChain.length - 1) {
+          if (obs) {
+            obs.is_retry = true;
+            obs.retry_count += 1;
+            obs.error_type = err.status ? "backend" : "network";
+            obs.final_backend_status = err.status || obs.final_backend_status;
+          }
+          addLog(`backend profile retry ${settings.profileLabel} -> ${settingsChain[i + 1].profileLabel} error=${err.status || err.name || "network"}`);
+          break;
+        }
+        throw err;
       }
-      throw err;
     }
   }
   throw lastError || new Error("No backend profile available");
@@ -3154,6 +3172,7 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Active    : ${activeBackendId() === "both" ? "Backend 1 + Backend 2" : settings.profileLabel} (${activeBackendId()})`);
   printLog(`  Router    : ${backendRouterMode()} | ${backendWeights().backend1}% / ${backendWeights().backend2}%`);
   printLog(`  Timeout   : ${backendTimeoutMs / 1000}s | Max concurrent: ${maxConcurrent}`);
+  printLog(`  Retries   : request=${backendRequestRetryCount} | base=${retryBaseDelayMs}ms | max=${retryMaxDelayMs}ms`);
   printLog(`  Keys      : ${validProxyKeys.length} virtual keys | ${settings.apiKeys.length} backend keys`);
   printLog("--------------------------------------------------");
 }).on("connection", (socket) => {
