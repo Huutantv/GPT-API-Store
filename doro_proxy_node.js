@@ -949,6 +949,26 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
+function parseBackendJsonResponse(responseText, status, contextLabel = "backend") {
+  const raw = String(responseText || "").trim();
+  if (!raw) {
+    const err = new Error(`${contextLabel} returned empty body`);
+    err.status = status || 502;
+    err.text = raw;
+    err.code = "empty_upstream_body";
+    throw err;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (_parseErr) {
+    const err = new Error(`${contextLabel} returned non-JSON body`);
+    err.status = status || 502;
+    err.text = raw;
+    err.code = "invalid_upstream_json";
+    throw err;
+  }
+}
+
 async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs) {
   const ordered = orderedBackendKeys(apiKeys);
   if (!ordered.length) throw new Error("Missing backend API key");
@@ -1923,7 +1943,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       payload.messages = prependIdentityGuard(payload.messages, publicModel);
       return payload;
     }, "/chat/completions", req.obs);
-    const data = JSON.parse(response.text);
+    const data = parseBackendJsonResponse(response.text, response.status, "chat.completions");
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
@@ -1944,8 +1964,8 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       req.obs.error_type = "backend";
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
-      const parsed = parseBackendError(err.status, err.text || "");
-      return res.status(err.status).json(anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, settings.backendModel, publicModel), parsed.type, parsed.code));
+      const parsed = parseBackendError(err.status, err.text || err.message || "");
+      return res.status(err.status).json(anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, settings.backendModel, publicModel), parsed.type, parsed.code || err.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
@@ -2173,7 +2193,7 @@ async function openAIChatCompletionsHandler(req, res) {
       if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
       return payload;
     }, "/chat/completions", req.obs);
-    const data = JSON.parse(response.text);
+    const data = parseBackendJsonResponse(response.text, response.status, "chat.completions");
     data.model = publicModel;
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
@@ -2199,8 +2219,8 @@ async function openAIChatCompletionsHandler(req, res) {
       req.obs.error_type = "backend";
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
-      const parsed = parseBackendError(err.status, err.text || "");
-      return res.status(err.status).json(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, settings.backendModel, publicModel), parsed.type, parsed.code));
+      const parsed = parseBackendError(err.status, err.text || err.message || "");
+      return res.status(err.status).json(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, settings.backendModel, publicModel), parsed.type, parsed.code || err.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
