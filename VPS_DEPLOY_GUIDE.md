@@ -163,6 +163,36 @@ Tren VPS:
 curl http://127.0.0.1:4000/health
 ```
 
+## 6.1. Cho phep request anh lon hon 1MB
+
+App Node doc JSON body theo bien `.env`:
+
+```env
+DORO_BODY_LIMIT=50mb
+```
+
+Anh gui qua API thuong nam trong JSON base64, nen 1MB anh goc se thanh khoang 1.33MB request body. Neu khach gui anh tren 1MB bi loi `413 Payload Too Large`, kiem tra nginx tren VPS:
+
+```bash
+nginx -T | grep -i client_max_body_size
+```
+
+Neu nginx chua cau hinh size, them vao block `server` hoac `http`:
+
+```nginx
+client_max_body_size 50m;
+proxy_read_timeout 300s;
+proxy_send_timeout 300s;
+```
+
+Sau do reload:
+
+```bash
+nginx -t && systemctl reload nginx
+cd ~/doro-proxy
+docker compose restart doro-proxy
+```
+
 Tren may Windows hoac trinh duyet:
 
 ```text

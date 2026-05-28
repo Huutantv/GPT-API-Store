@@ -1955,6 +1955,26 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  const configuredLimit = process.env.DORO_BODY_LIMIT || "500mb";
+  const contentLength = req.get("content-length") || "unknown";
+  if (err.type === "entity.too.large" || err.status === 413) {
+    addLog(`payload too large path=${req.path} content_length=${contentLength} limit=${configuredLimit}`);
+    return res.status(413).json({
+      detail: `Request body too large. Proxy app limit is ${configuredLimit}. If this happens around 1MB, check nginx client_max_body_size.`,
+      code: "payload_too_large",
+      limit: configuredLimit,
+      content_length: contentLength,
+    });
+  }
+  if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
+    addLog(`invalid json path=${req.path} content_length=${contentLength}`);
+    return res.status(400).json({ detail: "Invalid JSON request body", code: "invalid_json" });
+  }
+  return next(err);
+});
+
 app.use((req, res, next) => {
   const p = req.path;
   const shouldPrint = isObservableClientRequest(req);
