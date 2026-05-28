@@ -1743,7 +1743,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
   res.status(502).json(anthropicErrorPayload(502, `Backend stream failed: ${lastError ? lastError.message : "unknown"}`));
 }
 
-async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId) {
+async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth = 0) {
   const ordered = orderedBackendKeys(apiKeys);
   let lastError;
   for (let i = 0; i < ordered.length; i += 1) {
@@ -1846,6 +1846,12 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
       if (err.status) {
+        if (!wroteResponse && isRetryableStatus(err.status) && retryDepth < backendRequestRetryCount) {
+          if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
+          addLog(`stream openai retry attempt=${retryDepth + 1}/${backendRequestRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
+          return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
+        }
         if (!wroteResponse && isRetryableStatus(err.status) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           continue;
@@ -1858,6 +1864,12 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code))}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
+      }
+      if (!wroteResponse && retryDepth < backendRequestRetryCount) {
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
+        addLog(`stream openai retry attempt=${retryDepth + 1}/${backendRequestRetryCount + 1} error=${err.name || "Error"}: ${err.message}`);
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
+        return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
