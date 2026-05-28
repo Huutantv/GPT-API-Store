@@ -2,9 +2,6 @@ const express = require("express");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const credit = require("./credit");
-const orders = require("./orders");
-const mailer = require("./mailer");
 
 const ROOT_DIR = __dirname;
 const ENV_FILE = path.join(ROOT_DIR, ".env");
@@ -33,6 +30,15 @@ function loadLocalEnv(force = true) {
 }
 
 loadLocalEnv(false);
+
+const credit = require("./credit");
+const orders = require("./orders");
+const mailer = require("./mailer");
+const {
+  getPackageRequestQuota,
+  getPackageTokenQuota,
+  getTokenPerRequest,
+} = require("./package_quotas");
 
 function firstEnv(...names) {
   const fallback = names[names.length - 1];
@@ -79,6 +85,18 @@ function optionalPositiveInt(value) {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return 0;
   return Math.floor(n);
+}
+
+function vnDateTimeAfterDays(days) {
+  const vnNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
+  vnNow.setDate(vnNow.getDate() + days);
+  const yyyy = vnNow.getFullYear();
+  const mm = String(vnNow.getMonth() + 1).padStart(2, "0");
+  const dd = String(vnNow.getDate()).padStart(2, "0");
+  const hh = String(vnNow.getHours()).padStart(2, "0");
+  const mi = String(vnNow.getMinutes()).padStart(2, "0");
+  const ss = String(vnNow.getSeconds()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
 }
 
 function envFlag(value, fallback = false) {
@@ -2547,9 +2565,9 @@ async function processPayment(orderCode, amount, note) {
 
   // Tạo API key và nạp credit — đọc expires_at từ cột riêng
   const expiresAt = order.expires_at || null;
-  const packageTokenQuota = { starter: 30000000, pro: 900000000, pro_v2: 900000000 };
-  const tokenRemaining = packageTokenQuota[order.package_id] || 0;
-  const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: order.credit, rpmLimit: order.rpm_limit, expiresAt, tokenRemaining });
+  const tokenRemaining = getPackageTokenQuota(order.package_id);
+  const requestQuota = tokenRemaining > 0 ? getPackageRequestQuota(order.package_id) : order.credit;
+  const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: requestQuota, rpmLimit: order.rpm_limit, expiresAt, tokenRemaining });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
   const baseUrl = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
@@ -2558,7 +2576,7 @@ async function processPayment(orderCode, amount, note) {
     `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
     `\ud83d\udce6 <b>G\u00f3i:</b> ${order.package_id.toUpperCase()}\n` +
     `\ud83d\udcb0 <b>S\u1ed1 ti\u1ec1n:</b> ${Number(order.amount).toLocaleString("vi-VN")}\u0111\n` +
-    `\ud83d\udcca <b>Credit:</b> ${Number(order.credit).toLocaleString()} credit\n` +
+    `\ud83d\udcca <b>Credit:</b> ${Number(requestQuota).toLocaleString()} credit\n` +
     `\u23f1 <b>RPM:</b> ${order.rpm_limit} req/ph\u00fat\n` +
     `\u23f0 <b>H\u1ebft h\u1ea1n:</b> ${order.expires_at ? new Date(order.expires_at.replace(" ","T")+"+07:00").toLocaleString("vi-VN",{timeZone:"Asia/Ho_Chi_Minh"}) : "Kh\u00f4ng gi\u1edbi h\u1ea1n"}\n` +
     `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
@@ -2574,7 +2592,7 @@ async function processPayment(orderCode, amount, note) {
   // Gửi email
   const pkg = orders.getPackage(order.package_id);
   try {
-    await mailer.sendApiKey({ to: order.customer_email, customerName: order.customer_name, packageName: pkg ? pkg.name : order.package_id, apiKey: keyRow.key, credit: order.credit, rpmLimit: order.rpm_limit, baseUrl });
+    await mailer.sendApiKey({ to: order.customer_email, customerName: order.customer_name, packageName: pkg ? pkg.name : order.package_id, apiKey: keyRow.key, credit: requestQuota, rpmLimit: order.rpm_limit, baseUrl });
     addLog(`email sent to ${order.customer_email}`);
   } catch (err) {
     addLog(`email error: ${err.message}`);
@@ -2787,7 +2805,7 @@ app.get("/api/config", (req, res) => {
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
     model_daily_limit: Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"),
     model_limits: (process.env.DORO_MODEL_LIMITS || "").trim(),
-    token_per_request: Number(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || "85000"),
+    token_per_request: getTokenPerRequest(),
     telegram_bot_token_set: !!String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
     telegram_bot_token_masked: maskSecret(process.env.TELEGRAM_BOT_TOKEN || ""),
     telegram_chat_id: String(process.env.TELEGRAM_CHAT_ID || "").trim(),
@@ -3010,6 +3028,7 @@ app.get("/api/credit/key-lookup", (req, res) => {
   if (!row) return res.status(404).json({ detail: "Key not found" });
 
   const usage = credit.getUsageTotal(key);
+  const quotaInfo = credit.getQuotaInfo(row);
   const history = credit.getHistory(key, 10);
   const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
   const order = db.prepare("SELECT * FROM orders WHERE api_key = ? ORDER BY paid_at DESC, created_at DESC LIMIT 1").get(key) || null;
@@ -3018,6 +3037,10 @@ app.get("/api/credit/key-lookup", (req, res) => {
     ok: true,
     key: {
       ...row,
+      token_remaining_raw: row.token_remaining,
+      token_remaining: quotaInfo.token_remaining,
+      token_quota: quotaInfo.token_quota,
+      token_per_request: quotaInfo.token_per_request,
       key_masked: key.slice(0, 12) + "..." + key.slice(-4),
       active: !!row.active,
     },
@@ -3046,15 +3069,21 @@ app.post("/api/credit/keys", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
   try {
-    const tokenPerRequest = optionalPositiveInt(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || "85000") || 85000;
+    const tokenPerRequest = getTokenPerRequest();
     const tokenQuota = optionalPositiveInt(body.token_quota);
     const creditAmount = tokenQuota ? Math.floor(tokenQuota / tokenPerRequest) : Number(body.credit || 0);
     const tokenRemaining = tokenQuota || 0;
+    const durationRaw = String(body.duration_days ?? "").trim();
+    const durationDays = optionalPositiveInt(durationRaw);
+    if (durationRaw && (!durationDays || durationDays > 3650)) {
+      return res.status(400).json({ detail: "duration_days must be between 1 and 3650" });
+    }
+    const expiresAt = durationDays > 0 ? vnDateTimeAfterDays(durationDays) : null;
     const row = credit.createKey({
       label: String(body.label || ""),
       credit: creditAmount,
       rpmLimit: Number(body.rpm_limit || 10),
-      expiresAt: body.expires_at || null,
+      expiresAt,
       tokenRemaining,
     });
     addLog(`CREDIT KEY + ${row.key.slice(0, 20)} credit=${row.credit}`);
@@ -3086,7 +3115,7 @@ app.post("/api/credit/topup", (req, res) => {
   const reason = String(body.reason || "topup");
   if (!key || !amount) return res.status(400).json({ detail: "Missing key or amount" });
   try {
-    const tokenPerRequest = optionalPositiveInt(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || "85000") || 85000;
+    const tokenPerRequest = getTokenPerRequest();
     const tokenQuota = optionalPositiveInt(body.token_quota);
     const tokenAmount = tokenQuota || Math.max(0, Math.floor(amount * tokenPerRequest));
     const result = credit.topupCredit(key, amount, reason, tokenAmount);
@@ -3123,10 +3152,15 @@ app.get("/api/credit/balance", (req, res) => {
   if (!row) return res.status(403).json({ detail: "Invalid API key" });
   const usage = credit.getUsageTotal(token);
   const daily_quota = credit.getDailyQuota(token);
+  const quotaInfo = credit.getQuotaInfo(row);
   res.json({
     key_masked: token.slice(0, 8) + "..." + token.slice(-4),
     credit: row.credit,
-    token_remaining: row.token_remaining,
+    token_remaining_raw: row.token_remaining,
+    token_remaining: quotaInfo.token_remaining,
+    token_quota: quotaInfo.token_quota,
+    token_per_request: quotaInfo.token_per_request,
+    package_id: quotaInfo.package_id,
     rpm_limit: row.rpm_limit,
     active: !!row.active,
     expires_at: row.expires_at || null,

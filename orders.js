@@ -5,6 +5,11 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 const crypto = require("crypto");
+const {
+  getPackageDurationDays,
+  getPackageRequestQuota,
+  withComputedPackageQuota,
+} = require("./package_quotas");
 
 const db = new Database(path.join(__dirname, "credit.db"));
 
@@ -50,10 +55,10 @@ try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAUL
 
 // Seed default packages
 const seedPkgs = [
-  // credit ở đây dùng làm "request quota" cho Starter
-  { id: "starter", name: "Starter", price: 20000,  credit: 350,   rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
-  { id: "pro",     name: "Pro",     price: 250000, credit: 10500, rpm_limit: 10, description: "900,000,000 token / 30 ngày, 10 RPM", active: 1 },
-  { id: "pro_v2",  name: "Pro v2",  price: 270000, credit: 10500, rpm_limit: 10, description: "900,000,000 token / 30 ngày, 10 RPM", active: 1 },
+  // credit là request quota, được tính lại theo DORO_TOKEN_PER_REQUEST khi đọc/tạo order
+  { id: "starter", name: "Starter", price: 20000,  credit: getPackageRequestQuota("starter"), rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
+  { id: "pro",     name: "Pro",     price: 250000, credit: getPackageRequestQuota("pro"),     rpm_limit: 10, description: "900,000,000 token / 30 ngày, 10 RPM", active: 1 },
+  { id: "pro_v2",  name: "Pro v2",  price: 270000, credit: getPackageRequestQuota("pro_v2"),  rpm_limit: 10, description: "900,000,000 token / 30 ngày, 10 RPM", active: 1 },
   { id: "ultra",   name: "Ultra",   price: 299000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
@@ -64,9 +69,9 @@ for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_l
 
 // Cập nhật packages đã tồn tại
 const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description=?, active=? WHERE id=?");
-updatePkg.run(20000,  350,   "30,000,000 token, 10 RPM, 1 ngày",                1, "starter");
-updatePkg.run(250000, 10500, "900,000,000 token / 30 ngày, 10 RPM",             1, "pro");
-updatePkg.run(270000, 10500, "900,000,000 token / 30 ngày, 10 RPM",             1, "pro_v2");
+updatePkg.run(20000,  getPackageRequestQuota("starter"), "30,000,000 token, 10 RPM, 1 ngày",    1, "starter");
+updatePkg.run(250000, getPackageRequestQuota("pro"),     "900,000,000 token / 30 ngày, 10 RPM", 1, "pro");
+updatePkg.run(270000, getPackageRequestQuota("pro_v2"),  "900,000,000 token / 30 ngày, 10 RPM", 1, "pro_v2");
 updatePkg.run(299000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
@@ -92,8 +97,8 @@ function genOrderId()   { return crypto.randomBytes(8).toString("hex").toUpperCa
 function genOrderCode() { return "GPT" + Date.now().toString(36).toUpperCase().slice(-6); }
 
 // ── Public API ────────────────────────────────────────────────────────────────
-function listPackages() { return stmts.listPackages.all(); }
-function getPackage(id) { return stmts.getPackage.get(id); }
+function listPackages() { return stmts.listPackages.all().map(withComputedPackageQuota); }
+function getPackage(id) { return withComputedPackageQuota(stmts.getPackage.get(id)); }
 function getOrder(id)   { return stmts.getOrder.get(id); }
 function getOrderByCode(code) { return stmts.getOrderCode.get(code); }
 function listOrders(limit = 100) { return stmts.listOrders.all(limit); }
@@ -108,8 +113,7 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
 
   // Tính ngày hết hạn theo giờ Việt Nam để tránh lệch timezone
   let expiresAt = null;
-  const expiryDays = { starter: 1, pro: 30, pro_v2: 30, ultra: 30 };
-  const days = expiryDays[packageId];
+  const days = getPackageDurationDays(packageId);
   if (days) {
     const now = new Date();
     const vnNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));

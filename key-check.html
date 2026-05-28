@@ -110,15 +110,7 @@ function formatExpiry(value) {
 }
 
 function renderResult(data) {
-  const rawTokenRemaining = Number(data.token_remaining || 0);
-  const creditRemaining = Number(data.credit || 0);
-  const quotaPlans = [
-    { credit: 10500, tokens: 900000000 },
-    { credit: 350, tokens: 30000000 },
-  ];
-  const plan = quotaPlans.find(p => creditRemaining <= p.credit && creditRemaining > 0) || null;
-  const estimatedTokens = plan ? Math.round((creditRemaining / plan.credit) * plan.tokens) : 0;
-  const tokenRemaining = rawTokenRemaining > 0 ? rawTokenRemaining : estimatedTokens;
+  const tokenRemaining = Number(data.token_remaining || 0);
   document.getElementById('tokenBalance').textContent = Number(tokenRemaining || 0).toLocaleString('vi-VN');
   const expiryDate = parseVNExpiry(data.expires_at);
   const isExpired = expiryDate && !Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() < Date.now();

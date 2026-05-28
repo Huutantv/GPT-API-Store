@@ -198,16 +198,9 @@ function logout() {
 }
 
 function renderBalance(data) {
-  const rawTokenRemaining = Number(data.token_remaining || 0);
-  const creditRemaining = Number(data.credit || 0);
-  const tokenQuotaFromCredit = {
-    350: 30000000,
-    10500: 900000000,
-  };
-  const tokenRemaining = rawTokenRemaining > 0
-    ? rawTokenRemaining
-    : (tokenQuotaFromCredit[creditRemaining] || 0);
-  const quotaLabel = tokenRemaining >= 900000000 ? "900,000,000" : tokenRemaining >= 30000000 ? "30,000,000" : "—";
+  const tokenRemaining = Number(data.token_remaining || 0);
+  const tokenQuota = Number(data.token_quota || 0);
+  const quotaLabel = tokenQuota > 0 ? tokenQuota.toLocaleString() : "—";
 
   const tokenEl = document.getElementById("tokenBalance");
   if (tokenEl) tokenEl.textContent = tokenRemaining.toLocaleString();

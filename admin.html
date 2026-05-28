@@ -154,7 +154,7 @@ body{font-family:'Inter',sans-serif}
   <div id="keyLookupResult" class="hidden bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4"></div>
   <div id="createKeyForm" class="hidden bg-dark-700 border border-white/10 rounded-xl p-6 space-y-4">
     <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
-    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
       <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguyen Van A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#7893;ng token</label><input id="newTokenQuota" type="number" placeholder="30000000" value="30000000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" oninput="updateCreateKeyTokenPreview()"></div>
       <div><label class="text-xs text-gray-400 block mb-1">S&#7889; request quy &#273;&#7893;i</label><input id="newCredit" type="number" placeholder="350" value="350" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary bg-dark-800 text-gray-400" readonly></div>
@@ -171,6 +171,7 @@ body{font-family:'Inter',sans-serif}
         </select>
         <p class="text-xs text-primary mt-1" id="expiryPreview"></p>
       </div>
+      <div><label class="text-xs text-gray-400 block mb-1">T&#249;y ch&#7881;nh ng&#224;y</label><input id="newCustomDays" type="number" min="1" max="3650" placeholder="VD: 45" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" oninput="updateExpiryPreview()"><p class="text-xs text-gray-500 mt-1">B&#7887; tr&#7889;ng th&#236; d&#249;ng dropdown.</p></div>
     </div>
     <p class="text-xs text-gray-500">Request quota sẽ tự tính theo setting <code>1 request = N token</code> ở tab <code>N&#7841;p Credit</code>.</p>
     <div class="flex gap-3">
@@ -673,12 +674,30 @@ function formatExpiry(expiresAt) {
 }
 
 function updateExpiryPreview() {
-  var days = Number(document.getElementById("newExpires").value || 0);
   var preview = document.getElementById("expiryPreview");
+  var customEl = document.getElementById("newCustomDays");
+  var customRaw = customEl ? customEl.value.trim() : "";
+  var customDays = Number(customRaw || 0);
+  if (customRaw && (!Number.isFinite(customDays) || customDays < 1 || customDays > 3650)) {
+    preview.textContent = "So ngay tuy chinh phai tu 1 den 3650";
+    return;
+  }
+  var days = customRaw ? Math.floor(customDays) : Number(document.getElementById("newExpires").value || 0);
   if (!days) { preview.textContent = "Khong gioi han thoi gian"; return; }
   var d = new Date();
   d.setDate(d.getDate() + days);
   preview.textContent = "Het han luc: " + d.toLocaleString("vi-VN", { dateStyle: "full", timeStyle: "short" });
+}
+
+function getCreateKeyExpiryDays() {
+  var customEl = document.getElementById("newCustomDays");
+  var customRaw = customEl ? customEl.value.trim() : "";
+  if (customRaw) {
+    var customDays = Number(customRaw);
+    if (!Number.isFinite(customDays) || customDays < 1 || customDays > 3650) return { ok: false, message: "Số ngày tùy chỉnh phải từ 1 đến 3650" };
+    return { ok: true, days: Math.floor(customDays) };
+  }
+  return { ok: true, days: Number(document.getElementById("newExpires").value || 0) };
 }
 
 /* ===== AUTH ===== */
@@ -876,9 +895,10 @@ function updateCreateKeyTokenPreview() {
 }
 
 async function createKey() {
-  var days = Number(document.getElementById("newExpires").value || 0);
-  var expiresAt = null;
-  if (days > 0) { var d = new Date(); d.setDate(d.getDate() + days); expiresAt = formatVNLocalDateTime(new Date(d.getTime() + d.getTimezoneOffset() * 60000)); }
+  var expiry = getCreateKeyExpiryDays();
+  var msg = document.getElementById("createMsg");
+  if (!expiry.ok) { msg.className = "text-sm py-2 text-red-400"; msg.textContent = expiry.message; return; }
+  var days = expiry.days;
   var tokenQuota = Number(document.getElementById("newTokenQuota").value || 0);
   var requestQuota = Number(document.getElementById("newCredit").value || 0);
   var body = {
@@ -886,11 +906,10 @@ async function createKey() {
     credit: requestQuota,
     token_quota: tokenQuota,
     rpm_limit: Number(document.getElementById("newRpm").value || 10),
-    expires_at: expiresAt
+    duration_days: days > 0 ? days : ""
   };
   var r = await fetch(BASE + "/api/credit/keys", { method: "POST", headers: authHeaders(), body: JSON.stringify(body) });
   var data = await r.json();
-  var msg = document.getElementById("createMsg");
   if (data.ok) { msg.className = "text-sm py-2 text-green-400"; msg.textContent = "\u0110\u00e3 t\u1ea1o: " + data.key.key + " (" + Number(tokenQuota).toLocaleString("vi-VN") + " token / " + Number(requestQuota).toLocaleString("vi-VN") + " request)"; loadKeys(); }
   else { msg.className = "text-sm py-2 text-red-400"; msg.textContent = data.detail || "L\u1ed7i"; }
 }

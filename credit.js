@@ -8,6 +8,10 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 const crypto = require("crypto");
+const {
+  PACKAGE_TOKEN_QUOTAS,
+  getTokenPerRequest,
+} = require("./package_quotas");
 
 const DB_PATH = path.join(__dirname, "credit.db");
 const db = new Database(DB_PATH);
@@ -115,12 +119,6 @@ function getDailyTokenUsed(apiKey) {
   return Number(row ? row.tokens : 0);
 }
 
-const PACKAGE_TOKEN_QUOTAS = {
-  starter: 30000000,
-  pro: 900000000,
-  pro_v2: 900000000,
-};
-
 function getPackageIdFromLabel(row) {
   const label = String((row && row.label) || "").toLowerCase();
   const match = label.match(/\(([^)]+)\)\s*$/);
@@ -129,10 +127,6 @@ function getPackageIdFromLabel(row) {
 
 function getQuotaTokenLimit(row) {
   return PACKAGE_TOKEN_QUOTAS[getPackageIdFromLabel(row)] || 0;
-}
-
-function getTokenPerRequest() {
-  return Math.max(1, Number(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || 85000));
 }
 
 function inferQuotaTokenRemaining(row) {
@@ -152,6 +146,17 @@ function isQuotaKey(row) {
 
 function isDailyLimitedQuotaKey(row) {
   return getPackageIdFromLabel(row) === "pro";
+}
+
+function getQuotaInfo(row) {
+  const packageId = getPackageIdFromLabel(row);
+  const tokenQuota = getQuotaTokenLimit(row);
+  return {
+    package_id: packageId,
+    token_quota: tokenQuota,
+    token_per_request: getTokenPerRequest(),
+    token_remaining: inferQuotaTokenRemaining(row),
+  };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -277,6 +282,11 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
   stmts.insertTxn.run(apiKey, -cost, "usage", tIn || 0, tOut || 0, model || "", reqId || "");
   const row = stmts.getKey.get(apiKey);
 
+  if (row && isQuotaKey(row) && getQuotaTokenLimit(row) > 0 && Number(row.token_remaining || 0) <= 0) {
+    db.prepare("UPDATE api_keys SET credit = 0 WHERE key = ?").run(apiKey);
+    row.credit = 0;
+  }
+
   // Khi hết request quota: ép token_remaining về 0 (không để dư)
   if (row && row.credit <= 0 && row.token_remaining > 0) {
     db.prepare("UPDATE api_keys SET token_remaining = 0 WHERE key = ?").run(apiKey);
@@ -396,6 +406,7 @@ module.exports = {
   getUsageTotal,
   getAllHistory,
   getDailyQuota,
+  getQuotaInfo,
   getStats,
   parseExpiryTime,
 };
