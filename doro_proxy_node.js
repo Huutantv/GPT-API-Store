@@ -969,6 +969,72 @@ function parseBackendJsonResponse(responseText, status, contextLabel = "backend"
   }
 }
 
+function backendErrorFromPayload(data, fallbackStatus = 502) {
+  if (!data || typeof data !== "object" || !data.error) return null;
+  const source = typeof data.error === "object" ? data.error : { message: data.error };
+  const fallback = Number(fallbackStatus) >= 400 ? Number(fallbackStatus) : 502;
+  const err = new Error(String(source.message || "Backend returned an error"));
+  err.status = Number(source.status_code || source.status || data.status_code || data.status || fallback) || fallback;
+  err.text = JSON.stringify(data);
+  err.code = source.code ? String(source.code) : undefined;
+  return err;
+}
+
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return "";
+}
+
+function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
+  if (!data || typeof data !== "object") return data;
+  if (data.model && publicModel) data.model = publicModel;
+  for (const choice of Array.isArray(data.choices) ? data.choices : []) {
+    if (!choice || typeof choice !== "object") continue;
+    if (choice.delta && typeof choice.delta === "object") {
+      const delta = choice.delta;
+      if (typeof delta.content !== "string" || !delta.content) {
+        const fallback = firstNonEmptyString(delta.reasoning_content, delta.reasoning, delta.text, delta.refusal);
+        if (fallback) delta.content = fallback;
+      }
+      if (typeof delta.content === "string") {
+        delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel);
+      }
+    }
+    if (choice.message && typeof choice.message === "object") {
+      const message = choice.message;
+      if (typeof message.content !== "string" || !message.content) {
+        const fallback = firstNonEmptyString(message.reasoning_content, message.reasoning, message.text, message.refusal, choice.text);
+        if (fallback) message.content = fallback;
+      }
+      if (typeof message.content === "string") {
+        message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
+      }
+    }
+  }
+  return data;
+}
+
+function hasOpenAIAssistantOutput(data) {
+  normalizeOpenAIAssistantPayload(data);
+  const choice = data && (data.choices || [])[0];
+  if (!choice || typeof choice !== "object") return false;
+  const message = choice.message || {};
+  const delta = choice.delta || {};
+  const hasContent = (value) => {
+    if (typeof value === "string") return value.length > 0;
+    if (Array.isArray(value)) return value.length > 0;
+    return false;
+  };
+  return (
+    hasContent(message.content) ||
+    hasContent(delta.content) ||
+    (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) ||
+    (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0)
+  );
+}
+
 async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs) {
   const ordered = orderedBackendKeys(apiKeys);
   if (!ordered.length) throw new Error("Missing backend API key");
@@ -1700,33 +1766,67 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.text = text;
           throw err;
         }
-        wroteResponse = true;
-        setSseHeaders(res);
-        stopHeartbeat = startSseHeartbeat(res);
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        const pendingChunks = [];
+        let hasAssistantOutput = false;
+        let streamOpened = false;
+        const openStream = () => {
+          if (streamOpened) return;
+          wroteResponse = true;
+          setSseHeaders(res);
+          stopHeartbeat = startSseHeartbeat(res);
+          for (const pending of pendingChunks) res.write(pending);
+          pendingChunks.length = 0;
+          streamOpened = true;
+        };
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
+          let outbound = "";
+          const wasPending = !streamOpened;
           // Parse usage từ SSE chunks
           buffer += chunk;
           const lines = buffer.split(/\r?\n/);
           buffer = lines.pop() || "";
           for (const line of lines) {
-            if (!line.startsWith("data:")) continue;
+            if (!line.startsWith("data:")) {
+              outbound += `${line}\n`;
+              continue;
+            }
             const dataStr = line.slice(5).trim();
-            if (!dataStr || dataStr === "[DONE]") continue;
+            if (!dataStr || dataStr === "[DONE]") {
+              outbound += `${line}\n`;
+              continue;
+            }
+            let parsed;
             try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.usage && parsed.usage.total_tokens) {
-                totalTokens = parsed.usage.total_tokens;
-              }
-            } catch (_) {}
+              parsed = JSON.parse(dataStr);
+            } catch (_) {
+              outbound += `${sanitizeBackendText(line, backendModel, publicModel)}\n`;
+              continue;
+            }
+            const payloadError = backendErrorFromPayload(parsed, resp.status || 502);
+            if (payloadError && !hasAssistantOutput) throw payloadError;
+            normalizeOpenAIAssistantPayload(parsed, publicModel, backendModel);
+            if (parsed.usage && parsed.usage.total_tokens) {
+              totalTokens = parsed.usage.total_tokens;
+            }
+            if (hasOpenAIAssistantOutput(parsed)) hasAssistantOutput = true;
+            outbound += `data: ${JSON.stringify(parsed)}\n`;
           }
-          const sanitized = sanitizeBackendText(chunk, backendModel, publicModel);
-          res.write(sanitized);
+          if (wasPending && outbound) pendingChunks.push(outbound);
+          if (hasAssistantOutput) openStream();
+          if (streamOpened && !wasPending && outbound) res.write(outbound);
+        }
+        if (!hasAssistantOutput) {
+          const err = new Error("Backend stream ended without assistant output");
+          err.status = 502;
+          err.text = JSON.stringify({ error: { message: err.message, type: "api_error", code: "empty_assistant_stream" } });
+          err.code = "empty_assistant_stream";
+          throw err;
         }
       });
       if (stopHeartbeat) stopHeartbeat();
@@ -2211,6 +2311,9 @@ async function openAIChatCompletionsHandler(req, res) {
       return payload;
     }, "/chat/completions", req.obs);
     const data = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+    const payloadError = backendErrorFromPayload(data, response.status || 502);
+    if (payloadError) throw payloadError;
+    normalizeOpenAIAssistantPayload(data, publicModel, settings.backendModel);
     data.model = publicModel;
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
@@ -2218,6 +2321,13 @@ async function openAIChatCompletionsHandler(req, res) {
     req.obs.backend_base_url = finalSettings.baseUrl || req.obs.backend_base_url;
     req.obs.final_backend_status = response.status;
     const choice = (data.choices || [])[0] || {};
+    if (!hasOpenAIAssistantOutput(data)) {
+      const err = new Error("Backend response did not include assistant output");
+      err.status = 502;
+      err.text = JSON.stringify({ error: { message: err.message, type: "api_error", code: "empty_assistant_response" } });
+      err.code = "empty_assistant_response";
+      throw err;
+    }
     if (choice.message && choice.message.content) {
       choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, settings.backendModel);
     }
