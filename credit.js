@@ -67,6 +67,7 @@ const stmts = {
   listKeys:     db.prepare("SELECT key, label, credit, rpm_limit, created_at, expires_at, active, token_remaining FROM api_keys ORDER BY created_at DESC"),
   insertKey:    db.prepare("INSERT INTO api_keys (key, label, credit, rpm_limit, expires_at, token_remaining) VALUES (?, ?, ?, ?, ?, ?)"),
   updateCredit: db.prepare("UPDATE api_keys SET credit = credit + ? WHERE key = ?"),
+  updateTokenRemaining: db.prepare("UPDATE api_keys SET token_remaining = token_remaining + ? WHERE key = ?"),
   setCredit:    db.prepare("UPDATE api_keys SET credit = ? WHERE key = ?"),
   setActive:    db.prepare("UPDATE api_keys SET active = ? WHERE key = ?"),
   deleteKey:    db.prepare("DELETE FROM api_keys WHERE key = ?"),
@@ -146,7 +147,7 @@ function inferQuotaTokenRemaining(row) {
 }
 
 function isQuotaKey(row) {
-  return getQuotaTokenLimit(row) > 0;
+  return Number((row && row.token_remaining) || 0) > 0 || getQuotaTokenLimit(row) > 0;
 }
 
 function isDailyLimitedQuotaKey(row) {
@@ -287,13 +288,15 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 /**
  * Nạp credit cho key
  */
-function topupCredit(apiKey, amount, reason = "topup") {
+function topupCredit(apiKey, amount, reason = "topup", tokenAmount = 0) {
   const row = stmts.getKey.get(apiKey);
   if (!row) throw new Error("Key not found");
   stmts.updateCredit.run(amount, apiKey);
+  const tokens = Math.max(0, Number(tokenAmount || 0));
+  if (tokens > 0) stmts.updateTokenRemaining.run(tokens, apiKey);
   stmts.insertTxn.run(apiKey, amount, reason, 0, 0, "", "");
   const updated = stmts.getKey.get(apiKey);
-  return { key: apiKey, credit: updated.credit };
+  return { key: apiKey, credit: updated.credit, token_remaining: updated.token_remaining };
 }
 
 /**

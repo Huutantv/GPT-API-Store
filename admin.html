@@ -901,13 +901,15 @@ async function doTopup() {
   var key = document.getElementById("topupKey").value.trim();
   var amount = Number(document.getElementById("topupAmount").value);
   var reason = document.getElementById("topupReason").value.trim() || "topup";
+  var tokenPerRequest = Math.max(1, Math.floor(Number(window.CURRENT_TOKEN_PER_REQUEST || 85714)));
+  var tokenQuota = Math.max(0, Math.floor(amount * tokenPerRequest));
   var msg = document.getElementById("topupMsg");
   if (!key || !amount) { msg.textContent = "Vui l\u00f2ng nh\u1eadp \u0111\u1ea7y \u0111\u1ee7"; return; }
-  var r = await fetch(BASE + "/api/credit/topup", { method: "POST", headers: authHeaders(), body: JSON.stringify({ key: key, amount: amount, reason: reason }) });
+  var r = await fetch(BASE + "/api/credit/topup", { method: "POST", headers: authHeaders(), body: JSON.stringify({ key: key, amount: amount, reason: reason, token_quota: tokenQuota }) });
   var data = await r.json();
   if (data.ok) {
     msg.className = "text-sm text-green-400";
-    msg.textContent = "\u0110\u00e3 n\u1ea1p " + amount + " credit. S\u1ed1 d\u01b0 m\u1edbi: " + Number(data.credit).toLocaleString();
+    msg.textContent = "\u0110\u00e3 n\u1ea1p " + amount + " request (" + Number(tokenQuota).toLocaleString("vi-VN") + " token). S\u1ed1 d\u01b0 m\u1edbi: " + Number(data.credit).toLocaleString();
     document.getElementById("topupAmount").value = "";
   } else { msg.className = "text-sm text-red-400"; msg.textContent = data.detail || "L\u1ed7i"; }
 }

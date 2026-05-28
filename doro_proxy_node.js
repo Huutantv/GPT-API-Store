@@ -3086,8 +3086,11 @@ app.post("/api/credit/topup", (req, res) => {
   const reason = String(body.reason || "topup");
   if (!key || !amount) return res.status(400).json({ detail: "Missing key or amount" });
   try {
-    const result = credit.topupCredit(key, amount, reason);
-    addLog(`CREDIT TOPUP ${key.slice(0, 20)} +${amount} -> ${result.credit}`);
+    const tokenPerRequest = optionalPositiveInt(process.env.DORO_TOKEN_PER_REQUEST || process.env.DORO_TOKEN_PER_REQUEST_MIN || "85000") || 85000;
+    const tokenQuota = optionalPositiveInt(body.token_quota);
+    const tokenAmount = tokenQuota || Math.max(0, Math.floor(amount * tokenPerRequest));
+    const result = credit.topupCredit(key, amount, reason, tokenAmount);
+    addLog(`CREDIT TOPUP ${key.slice(0, 20)} +${amount} credit +${tokenAmount} tokens -> ${result.credit}`);
     res.json({ ok: true, ...result });
   } catch (err) {
     res.status(404).json({ detail: err.message });
