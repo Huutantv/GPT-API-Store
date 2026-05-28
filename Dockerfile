@@ -10,9 +10,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Copy source code
-COPY doro_proxy_node.js .
-COPY ecosystem.config.cjs .
-COPY dashboard.html .
+COPY doro_proxy_node.js credit.js orders.js mailer.js ./
+COPY ecosystem.config.cjs ./
+COPY *.html ./
 
 # Port mặc định
 EXPOSE 4000

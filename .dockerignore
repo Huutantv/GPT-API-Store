@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+node_modules
+logs
+*.db
+*.db-shm
+*.db-wal
+.venv
+.vscode
+.claude
+.qodo

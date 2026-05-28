@@ -685,7 +685,7 @@ function backendHeaders(apiKey, extra = {}) {
 }
 
 function isRetryableStatus(status) {
-  return [401, 402, 403, 429, 500, 502, 503, 504].includes(status);
+  return [408, 401, 402, 403, 429, 500, 502, 503, 504, 524].includes(status);
 }
 
 function publicModelName(requestedModel, backendModel) {
@@ -1419,6 +1419,23 @@ function sseWrite(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+function setSseHeaders(res) {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.setHeader("Connection", "keep-alive");
+  if (typeof res.flushHeaders === "function") res.flushHeaders();
+}
+
+function startSseHeartbeat(res) {
+  const heartbeat = setInterval(() => {
+    try { res.write(": ping\n\n"); } catch (_) {}
+  }, 15000);
+  const stop = () => clearInterval(heartbeat);
+  res.once("close", stop);
+  return stop;
+}
+
 function emitAnthropicBufferedStream(res, data, model, backendModel) {
   const response = openaiToAnthropic(data, model, backendModel);
   sseWrite(res, "message_start", {
@@ -1581,6 +1598,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
   let lastError;
   for (let i = 0; i < ordered.length; i += 1) {
     let wroteResponse = false;
+    let stopHeartbeat = null;
     try {
       const tokens = await withBackendKeySlot(ordered[i], async () => {
         const resp = await fetchWithTimeout(url, {
@@ -1598,8 +1616,11 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           throw err;
         }
         wroteResponse = true;
+        setSseHeaders(res);
+        stopHeartbeat = startSseHeartbeat(res);
         return pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel);
       });
+      if (stopHeartbeat) stopHeartbeat();
       // Trừ credit sau khi stream xong
       if (apiKeyToken && tokens > 0) {
         const tokensIn = Math.floor(tokens * 0.4);
@@ -1610,6 +1631,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       uptimeTrackSuccess();
       return;
     } catch (err) {
+      if (stopHeartbeat) stopHeartbeat();
       lastError = err;
       if (err.status) {
         if (!wroteResponse && isRetryableStatus(err.status) && i < ordered.length - 1) {
@@ -1630,9 +1652,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           sseWrite(res, "error", anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
           return res.end();
         }
-        res.status(err.status);
-        sseWrite(res, "error", anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
-        return res.end();
+        return res.status(err.status).json(anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) {
@@ -1647,18 +1667,22 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         obs.error_type = "network";
         obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180);
       }
-      sseWrite(res, "error", anthropicErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
-      return res.end();
+      if (wroteResponse) {
+        sseWrite(res, "error", anthropicErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
+        return res.end();
+      }
+      return res.status(502).json(anthropicErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
     }
   }
-  sseWrite(res, "error", anthropicErrorPayload(502, `Backend stream failed: ${lastError ? lastError.message : "unknown"}`));
-  res.end();
+  res.status(502).json(anthropicErrorPayload(502, `Backend stream failed: ${lastError ? lastError.message : "unknown"}`));
 }
 
 async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId) {
   const ordered = orderedBackendKeys(apiKeys);
+  let lastError;
   for (let i = 0; i < ordered.length; i += 1) {
     let wroteResponse = false;
+    let stopHeartbeat = null;
     try {
       let totalTokens = 0;
       await withBackendKeySlot(ordered[i], async () => {
@@ -1676,6 +1700,9 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.text = text;
           throw err;
         }
+        wroteResponse = true;
+        setSseHeaders(res);
+        stopHeartbeat = startSseHeartbeat(res);
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -1699,10 +1726,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
             } catch (_) {}
           }
           const sanitized = sanitizeBackendText(chunk, backendModel, publicModel);
-          wroteResponse = true;
           res.write(sanitized);
         }
       });
+      if (stopHeartbeat) stopHeartbeat();
       // Trừ credit sau khi stream xong
       if (apiKeyToken && totalTokens > 0) {
         const tokensIn = Math.floor(totalTokens * 0.4);
@@ -1716,6 +1743,8 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       }
       return res.end();
     } catch (err) {
+      if (stopHeartbeat) stopHeartbeat();
+      lastError = err;
       if (err.status) {
         if (!wroteResponse && isRetryableStatus(err.status) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
@@ -1723,6 +1752,9 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         }
         if (obs) { obs.error_type = "backend"; obs.error_message = logPreview(err.text || err.message, 180); }
         const parsed = parseBackendError(err.status, err.text || "");
+        if (!wroteResponse) {
+          return res.status(err.status).json(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
+        }
         res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code))}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
@@ -1732,11 +1764,15 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         continue;
       }
       if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
+      if (!wroteResponse) {
+        return res.status(502).json(openaiErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
+      }
       res.write(`data: ${JSON.stringify(openaiErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`))}\n\n`);
       res.write("data: [DONE]\n\n");
       return res.end();
     }
   }
+  return res.status(502).json(openaiErrorPayload(502, `Backend stream failed: ${lastError ? lastError.message : "unknown"}`));
 }
 
 function friendlyErrorMessage(err, backendModel, publicModel) {
@@ -1898,9 +1934,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     req.obs.backend_model = "direct";
     req.obs.final_backend_status = 200;
     if (useStream) {
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("X-Accel-Buffering", "no");
+      setSseHeaders(res);
       return emitDirectAnthropicStream(res, publicModel, answer);
     }
     return res.json(directAnthropicResponse(publicModel, answer));
@@ -1926,15 +1960,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     applyBackendMessageCompatibility(payload, settings);
     applyBackendToolCompatibility(payload, settings);
     const backendUrl = `${settings.baseUrl}/chat/completions`;
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Connection", "keep-alive");
-    // Heartbeat mỗi 15s để tránh Nginx/client timeout khi backend chậm
-    const heartbeat = setInterval(() => { try { res.write(": ping\n\n"); } catch(_) {} }, 15000);
-    res.on("close", () => clearInterval(heartbeat));
-    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId)
-      .finally(() => clearInterval(heartbeat));
+    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
   }
   try {
     const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
@@ -2152,9 +2178,7 @@ async function openAIChatCompletionsHandler(req, res) {
     req.obs.backend_model = "direct";
     req.obs.final_backend_status = 200;
     if (body.stream) {
-      res.setHeader("Content-Type", "text/event-stream");
-      res.setHeader("Cache-Control", "no-cache");
-      res.setHeader("X-Accel-Buffering", "no");
+      setSseHeaders(res);
       return emitDirectOpenAIStream(res, publicModel, answer);
     }
     return res.json(directOpenAIResponse(publicModel, answer));
@@ -2178,14 +2202,7 @@ async function openAIChatCompletionsHandler(req, res) {
     applyBackendMessageCompatibility(payload, settings);
     applyBackendToolCompatibility(payload, settings);
     const backendUrl = `${settings.baseUrl}/chat/completions`;
-    res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
-    res.setHeader("X-Accel-Buffering", "no");
-    res.setHeader("Connection", "keep-alive");
-    const heartbeat = setInterval(() => { try { res.write(": ping\n\n"); } catch(_) {} }, 15000);
-    res.on("close", () => clearInterval(heartbeat));
-    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId)
-      .finally(() => clearInterval(heartbeat));
+    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
   }
   try {
     const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
