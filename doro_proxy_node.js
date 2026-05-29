@@ -971,7 +971,7 @@ function parseBackendJsonResponse(responseText, status, contextLabel = "backend"
   const raw = String(responseText || "").trim();
   if (!raw) {
     const err = new Error(`${contextLabel} returned empty body`);
-    err.status = status || 502;
+    err.status = Number(status) >= 400 ? status : 502;
     err.text = raw;
     err.code = "empty_upstream_body";
     throw err;
@@ -980,7 +980,7 @@ function parseBackendJsonResponse(responseText, status, contextLabel = "backend"
     return JSON.parse(raw);
   } catch (_parseErr) {
     const err = new Error(`${contextLabel} returned non-JSON body`);
-    err.status = status || 502;
+    err.status = Number(status) >= 400 ? status : 502;
     err.text = raw;
     err.code = "invalid_upstream_json";
     throw err;
@@ -2214,6 +2214,160 @@ function endResponsesStream(res, delayMs = 75) {
   }, delayMs);
 }
 
+function createResponsesStreamBridge(res, publicModel) {
+  const rawWrite = res.write.bind(res);
+  const rawEnd = res.end.bind(res);
+  const responseId = `resp_${Date.now()}`;
+  const outputId = `msg_${Date.now()}`;
+  const createdAt = Math.floor(Date.now() / 1000);
+  let started = false;
+  let completed = false;
+  let buffer = "";
+  let outputText = "";
+  let usage = null;
+
+  const writeEvent = (event, data) => {
+    rawWrite(`event: ${event}\n`);
+    rawWrite(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  const writeDone = () => rawWrite("event: done\ndata: [DONE]\n\n");
+  const eventPayload = (type, data = {}) => ({ type, response_id: responseId, ...data });
+  const responseBase = () => ({
+    id: responseId,
+    object: "response",
+    created_at: createdAt,
+    model: publicModel,
+  });
+
+  const start = () => {
+    if (started) return;
+    const response = { ...responseBase(), status: "in_progress", output: [] };
+    writeEvent("response.created", { type: "response.created", response });
+    writeEvent("response.in_progress", { type: "response.in_progress", response });
+    writeEvent("response.output_item.added", eventPayload("response.output_item.added", {
+      output_index: 0,
+      item: { id: outputId, type: "message", status: "in_progress", role: "assistant", content: [] },
+    }));
+    writeEvent("response.content_part.added", eventPayload("response.content_part.added", {
+      item_id: outputId,
+      output_index: 0,
+      content_index: 0,
+      part: { type: "output_text", text: "", annotations: [] },
+    }));
+    started = true;
+  };
+
+  const fail = (error) => {
+    if (completed) return;
+    const message = error && typeof error === "object" ? error : { message: String(error || "Backend stream failed"), type: "api_error" };
+    writeEvent("response.created", {
+      type: "response.created",
+      response: { ...responseBase(), status: "failed", output: [] },
+    });
+    writeEvent("response.failed", eventPayload("response.failed", { error: message }));
+    writeDone();
+    completed = true;
+  };
+
+  const complete = () => {
+    if (completed) return;
+    start();
+    const normalizedUsage = usage ? {
+      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      total_tokens: usage.total_tokens || ((usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0)),
+    } : null;
+    const message = {
+      id: outputId,
+      type: "message",
+      status: "completed",
+      role: "assistant",
+      content: [{ type: "output_text", text: outputText, annotations: [] }],
+    };
+    writeEvent("response.output_text.done", eventPayload("response.output_text.done", {
+      item_id: outputId,
+      output_index: 0,
+      content_index: 0,
+      text: outputText,
+    }));
+    writeEvent("response.content_part.done", eventPayload("response.content_part.done", {
+      item_id: outputId,
+      output_index: 0,
+      content_index: 0,
+      part: message.content[0],
+    }));
+    writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
+      output_index: 0,
+      item: message,
+    }));
+    writeEvent("response.completed", {
+      type: "response.completed",
+      response: {
+        ...responseBase(),
+        status: "completed",
+        output: [message],
+        output_text: outputText,
+        usage: normalizedUsage,
+      },
+    });
+    writeDone();
+    completed = true;
+  };
+
+  const consumeLine = (line) => {
+    if (!line.startsWith("data:")) return;
+    const dataStr = line.slice(5).trim();
+    if (!dataStr) return;
+    if (dataStr === "[DONE]") {
+      complete();
+      return;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(dataStr);
+    } catch (_) {
+      return;
+    }
+    if (parsed.error) {
+      fail(parsed.error);
+      return;
+    }
+    if (parsed.usage) usage = parsed.usage;
+    const choice = (parsed.choices || [])[0] || {};
+    const delta = choice.delta || {};
+    const text = typeof delta.content === "string" ? delta.content : "";
+    if (text) {
+      start();
+      outputText += text;
+      writeEvent("response.output_text.delta", eventPayload("response.output_text.delta", {
+        item_id: outputId,
+        output_index: 0,
+        content_index: 0,
+        delta: text,
+      }));
+    }
+  };
+
+  res.write = function responsesBridgeWrite(chunk, encoding, cb) {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString(typeof encoding === "string" ? encoding : "utf8") : String(chunk || "");
+    buffer += text;
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) consumeLine(line);
+    if (typeof cb === "function") cb();
+    return true;
+  };
+
+  res.end = function responsesBridgeEnd(chunk, encoding, cb) {
+    if (chunk) res.write(chunk, encoding);
+    if (buffer.trim()) consumeLine(buffer.trim());
+    complete();
+    return rawEnd("", encoding, cb);
+  };
+
+  return { fail, complete, rawWrite, rawEnd };
+}
+
 function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   const response = chatCompletionToResponses(data, publicModel);
   const output = response.output[0];
@@ -2224,7 +2378,7 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: 0, item: { ...output, content: [] } }));
   responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
   if (content.text) {
-    responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: 0, content_index: 0, delta: { type: "output_text_delta", text: content.text } }));
+    responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: 0, content_index: 0, delta: content.text }));
   }
   responseSseWrite(res, "response.output_text.done", responseStreamEvent(response, "response.output_text.done", { item_id: output.id, output_index: 0, content_index: 0, text: content.text }));
   responseSseWrite(res, "response.content_part.done", responseStreamEvent(response, "response.content_part.done", { item_id: output.id, output_index: 0, content_index: 0, part: content }));
@@ -2236,6 +2390,8 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
 app.post(["/v1/responses", "/responses"], async (req, res) => {
   const original = req.body || {};
   const wantsStream = !!original.stream;
+  const publicModel = publicModelName(original.model || "opus");
+  const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel) : null;
   req.body = {
     model: original.model || "opus",
     messages: original.messages || responsesInputToMessages(original.input),
@@ -2245,7 +2401,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     tools: original.tools,
     tool_choice: original.tool_choice,
     parallel_tool_calls: original.parallel_tool_calls,
-    stream: false,
+    stream: wantsStream,
   };
   if (wantsStream) {
     res.statusCode = 200;
@@ -2258,49 +2414,16 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const oldJson = res.json.bind(res);
   res.json = (data) => {
     if (wantsStream && data && data.error) {
-      const responseId = `resp_${Date.now()}`;
-      responseSseWrite(res, "response.created", {
-        type: "response.created",
-        response: {
-          id: responseId,
-          object: "response",
-          created_at: Math.floor(Date.now() / 1000),
-          status: "failed",
-          model: original.model || "opus",
-          output: [],
-        },
-      });
-      responseSseWrite(res, "response.failed", {
-        type: "response.failed",
-        response_id: responseId,
-        error: data.error,
-      });
-      return endResponsesStream(res);
+      streamBridge.fail(data.error);
+      return streamBridge.rawEnd();
     }
     if (data && data.choices) {
-      const publicModel = publicModelName(original.model || "opus");
       if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel);
       return oldJson(chatCompletionToResponses(data, publicModel));
     }
     if (wantsStream) {
-      const responseId = `resp_${Date.now()}`;
-      responseSseWrite(res, "response.created", {
-        type: "response.created",
-        response: {
-          id: responseId,
-          object: "response",
-          created_at: Math.floor(Date.now() / 1000),
-          status: "failed",
-          model: original.model || "opus",
-          output: [],
-        },
-      });
-      responseSseWrite(res, "response.failed", {
-        type: "response.failed",
-        response_id: responseId,
-        error: { message: "Unexpected upstream response format", type: "api_error" },
-      });
-      return endResponsesStream(res);
+      streamBridge.fail({ message: "Unexpected upstream response format", type: "api_error" });
+      return streamBridge.rawEnd();
     }
     return oldJson(data);
   };
