@@ -2,26 +2,17 @@
 
 
 
-cd ~/doro-proxy
-
-git stash push -u -m "backup local vps changes before github pull"
 
 
-cd ~/doro-proxy
-git pull
-docker compose up -d --build
 
+
+
+
+
+cd ~/gpt-api-store
 git pull --ff-only origin main
-
 npm install --omit=dev
-
-pm2 restart doro-proxy --update-env
-
-
-
-cd ~/doro-proxy
-git pull --ff-only origin main
-pm2 restart doro-proxy --update-env
+pm2 restart gpt-api-store --update-env
 
 Quy trinh moi:
 
