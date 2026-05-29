@@ -5,12 +5,16 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 # Cài dependencies
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Copy source code
-COPY doro_proxy_node.js credit.js orders.js mailer.js ./
+COPY doro_proxy_node.js credit.js orders.js mailer.js package_quotas.js ./
 COPY ecosystem.config.cjs ./
 COPY *.html ./
 
