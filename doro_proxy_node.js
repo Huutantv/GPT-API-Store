@@ -2151,23 +2151,64 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   }
 });
 
-function responsesInputToMessages(input) {
-  if (Array.isArray(input)) {
-    const messages = [];
-    for (const item of input) {
-      if (typeof item === "string") {
-        messages.push({ role: "user", content: item });
-      } else if (item && typeof item === "object") {
-        const role = item.role || (item.type === "message" ? item.role : "user") || "user";
-        const content = Array.isArray(item.content)
-          ? item.content.map((part) => typeof part === "string" ? part : (part.text || part.input_text || part.output_text || "")).filter(Boolean).join("\n")
-          : (item.content || item.text || item.input_text || "");
-        if (content) messages.push({ role, content });
-      }
-    }
-    return messages.length ? messages : [{ role: "user", content: "" }];
+function responsesContentToText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (!part || typeof part !== "object") return "";
+      return part.text || part.input_text || part.output_text || part.content || "";
+    }).filter(Boolean).join("\n");
   }
-  return [{ role: "user", content: String(input || "") }];
+  if (!content || typeof content !== "object") return String(content || "");
+  return content.text || content.input_text || content.output_text || content.content || "";
+}
+
+function responsesInputToMessages(input) {
+  const items = Array.isArray(input) ? input : [input];
+  const messages = [];
+
+  for (const item of items) {
+    if (typeof item === "string") {
+      messages.push({ role: "user", content: item });
+      continue;
+    }
+    if (!item || typeof item !== "object") continue;
+
+    if (item.type === "function_call") {
+      const name = String(item.name || "").trim();
+      if (!name) continue;
+      messages.push({
+        role: "assistant",
+        content: item.content || "",
+        tool_calls: [{
+          id: item.call_id || item.id || `call_${messages.length}`,
+          type: "function",
+          function: {
+            name,
+            arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+          },
+        }],
+      });
+      continue;
+    }
+
+    if (item.type === "function_call_output") {
+      messages.push({
+        role: "tool",
+        tool_call_id: item.call_id,
+        content: responsesContentToText(item.output || item.content),
+      });
+      continue;
+    }
+
+    if (item.type && item.type !== "message") continue;
+    const role = item.role === "developer" ? "system" : (item.role || "user");
+    const content = responsesContentToText(item.content || item.text || item.input_text);
+    if (content) messages.push({ role, content });
+  }
+
+  return messages.length ? messages : [{ role: "user", content: "" }];
 }
 
 function responsesToolsToChatTools(tools) {
@@ -2192,23 +2233,51 @@ function responsesToolsToChatTools(tools) {
   return normalized.length ? normalized : undefined;
 }
 
+function responsesToolsSummary(tools) {
+  return (Array.isArray(tools) ? tools : []).map((tool) => ({
+    type: tool && tool.type,
+    name: String((tool && (tool.name || (tool.function && tool.function.name))) || "").slice(0, 80),
+  }));
+}
+
 function chatCompletionToResponses(data, publicModel) {
   const choice = (data.choices || [])[0] || {};
   const message = choice.message || {};
   const text = typeof message.content === "string" ? message.content : "";
-  return {
-    id: data.id || `resp_${Date.now()}`,
-    object: "response",
-    created_at: data.created || Math.floor(Date.now() / 1000),
-    status: "completed",
-    model: publicModel || data.model,
-    output: [{
-      id: `msg_${Date.now()}`,
+  const output = [];
+  const createdAt = data.created || Math.floor(Date.now() / 1000);
+  const messageId = `msg_${Date.now()}`;
+
+  if (text || !Array.isArray(message.tool_calls) || !message.tool_calls.length) {
+    output.push({
+      id: messageId,
       type: "message",
       status: "completed",
       role: "assistant",
       content: [{ type: "output_text", text, annotations: [] }],
-    }],
+    });
+  }
+
+  for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
+    const name = String((call.function && call.function.name) || "").trim();
+    if (!name) continue;
+    output.push({
+      id: call.id || `call_${output.length}`,
+      type: "function_call",
+      status: "completed",
+      call_id: call.id || `call_${output.length}`,
+      name,
+      arguments: (call.function && call.function.arguments) || "{}",
+    });
+  }
+
+  return {
+    id: data.id || `resp_${Date.now()}`,
+    object: "response",
+    created_at: createdAt,
+    status: "completed",
+    model: publicModel || data.model,
+    output,
     output_text: text,
     usage: data.usage || null,
   };
@@ -2240,13 +2309,17 @@ function createResponsesStreamBridge(res, publicModel) {
   const rawWrite = res.write.bind(res);
   const rawEnd = res.end.bind(res);
   const responseId = `resp_${Date.now()}`;
-  const outputId = `msg_${Date.now()}`;
+  const textOutputId = `msg_${Date.now()}`;
   const createdAt = Math.floor(Date.now() / 1000);
-  let started = false;
+  let responseStarted = false;
+  let textStarted = false;
+  let textOutputIndex = -1;
+  let nextOutputIndex = 0;
   let completed = false;
   let buffer = "";
   let outputText = "";
   let usage = null;
+  const toolCalls = new Map();
 
   const writeEvent = (event, data) => {
     rawWrite(`event: ${event}\n`);
@@ -2261,22 +2334,79 @@ function createResponsesStreamBridge(res, publicModel) {
     model: publicModel,
   });
 
-  const start = () => {
-    if (started) return;
+  const startResponse = () => {
+    if (responseStarted) return;
     const response = { ...responseBase(), status: "in_progress", output: [] };
     writeEvent("response.created", { type: "response.created", response });
     writeEvent("response.in_progress", { type: "response.in_progress", response });
+    responseStarted = true;
+  };
+
+  const startText = () => {
+    if (textStarted) return;
+    startResponse();
+    textOutputIndex = nextOutputIndex++;
     writeEvent("response.output_item.added", eventPayload("response.output_item.added", {
-      output_index: 0,
-      item: { id: outputId, type: "message", status: "in_progress", role: "assistant", content: [] },
+      output_index: textOutputIndex,
+      item: { id: textOutputId, type: "message", status: "in_progress", role: "assistant", content: [] },
     }));
     writeEvent("response.content_part.added", eventPayload("response.content_part.added", {
-      item_id: outputId,
-      output_index: 0,
+      item_id: textOutputId,
+      output_index: textOutputIndex,
       content_index: 0,
       part: { type: "output_text", text: "", annotations: [] },
     }));
-    started = true;
+    textStarted = true;
+  };
+
+  const ensureToolCall = (call) => {
+    const idx = call.index ?? toolCalls.size;
+    if (!toolCalls.has(idx)) {
+      const fallbackId = `call_${Date.now()}_${idx}`;
+      toolCalls.set(idx, {
+        id: call.id || fallbackId,
+        call_id: call.id || fallbackId,
+        name: "",
+        arguments: "",
+        output_index: -1,
+        started: false,
+        pendingDeltas: [],
+      });
+    }
+
+    const tracked = toolCalls.get(idx);
+    if (call.id) {
+      tracked.id = call.id;
+      tracked.call_id = call.id;
+    }
+    if (call.function && call.function.name) tracked.name += call.function.name;
+    return tracked;
+  };
+
+  const startToolCall = (tracked) => {
+    if (tracked.started || !tracked.name) return;
+    startResponse();
+    tracked.output_index = nextOutputIndex++;
+    tracked.started = true;
+    writeEvent("response.output_item.added", eventPayload("response.output_item.added", {
+      output_index: tracked.output_index,
+      item: {
+        id: tracked.id,
+        type: "function_call",
+        status: "in_progress",
+        call_id: tracked.call_id,
+        name: tracked.name,
+        arguments: "",
+      },
+    }));
+    for (const partial of tracked.pendingDeltas) {
+      writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
+        item_id: tracked.id,
+        output_index: tracked.output_index,
+        delta: partial,
+      }));
+    }
+    tracked.pendingDeltas.length = 0;
   };
 
   const fail = (error) => {
@@ -2293,41 +2423,72 @@ function createResponsesStreamBridge(res, publicModel) {
 
   const complete = () => {
     if (completed) return;
-    start();
+    if (!responseStarted) startResponse();
     const normalizedUsage = usage ? {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
       output_tokens: usage.completion_tokens || usage.output_tokens || 0,
       total_tokens: usage.total_tokens || ((usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0)),
     } : null;
-    const message = {
-      id: outputId,
-      type: "message",
-      status: "completed",
-      role: "assistant",
-      content: [{ type: "output_text", text: outputText, annotations: [] }],
-    };
-    writeEvent("response.output_text.done", eventPayload("response.output_text.done", {
-      item_id: outputId,
-      output_index: 0,
-      content_index: 0,
-      text: outputText,
-    }));
-    writeEvent("response.content_part.done", eventPayload("response.content_part.done", {
-      item_id: outputId,
-      output_index: 0,
-      content_index: 0,
-      part: message.content[0],
-    }));
-    writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
-      output_index: 0,
-      item: message,
-    }));
+
+    const output = [];
+
+    if (textStarted || (!outputText && !toolCalls.size)) {
+      if (!textStarted) startText();
+      const message = {
+        id: textOutputId,
+        type: "message",
+        status: "completed",
+        role: "assistant",
+        content: [{ type: "output_text", text: outputText, annotations: [] }],
+      };
+      writeEvent("response.output_text.done", eventPayload("response.output_text.done", {
+        item_id: textOutputId,
+        output_index: textOutputIndex,
+        content_index: 0,
+        text: outputText,
+      }));
+      writeEvent("response.content_part.done", eventPayload("response.content_part.done", {
+        item_id: textOutputId,
+        output_index: textOutputIndex,
+        content_index: 0,
+        part: message.content[0],
+      }));
+      writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
+        output_index: textOutputIndex,
+        item: message,
+      }));
+      output.push(message);
+    }
+
+    for (const tracked of [...toolCalls.values()].sort((a, b) => a.output_index - b.output_index)) {
+      if (!tracked.name) continue;
+      startToolCall(tracked);
+      const item = {
+        id: tracked.id,
+        type: "function_call",
+        status: "completed",
+        call_id: tracked.call_id,
+        name: tracked.name,
+        arguments: tracked.arguments,
+      };
+      writeEvent("response.function_call_arguments.done", eventPayload("response.function_call_arguments.done", {
+        item_id: tracked.id,
+        output_index: tracked.output_index,
+        arguments: tracked.arguments,
+      }));
+      writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
+        output_index: tracked.output_index,
+        item,
+      }));
+      output.push(item);
+    }
+
     writeEvent("response.completed", {
       type: "response.completed",
       response: {
         ...responseBase(),
         status: "completed",
-        output: [message],
+        output,
         output_text: outputText,
         usage: normalizedUsage,
       },
@@ -2359,14 +2520,30 @@ function createResponsesStreamBridge(res, publicModel) {
     const delta = choice.delta || {};
     const text = typeof delta.content === "string" ? delta.content : "";
     if (text) {
-      start();
+      startText();
       outputText += text;
       writeEvent("response.output_text.delta", eventPayload("response.output_text.delta", {
-        item_id: outputId,
-        output_index: 0,
+        item_id: textOutputId,
+        output_index: textOutputIndex,
         content_index: 0,
         delta: text,
       }));
+    }
+    for (const call of delta.tool_calls || []) {
+      const tracked = ensureToolCall(call);
+      if (tracked.name) startToolCall(tracked);
+      const partial = call.function && call.function.arguments ? call.function.arguments : "";
+      if (!partial) continue;
+      tracked.arguments += partial;
+      if (tracked.started) {
+        writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
+          item_id: tracked.id,
+          output_index: tracked.output_index,
+          delta: partial,
+        }));
+      } else {
+        tracked.pendingDeltas.push(partial);
+      }
     }
   };
 
@@ -2392,19 +2569,43 @@ function createResponsesStreamBridge(res, publicModel) {
 
 function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   const response = chatCompletionToResponses(data, publicModel);
-  const output = response.output[0];
-  const content = output.content[0];
   const inProgressResponse = { ...response, status: "in_progress", output: [] };
   responseSseWrite(res, "response.created", { type: "response.created", response: inProgressResponse });
   responseSseWrite(res, "response.in_progress", { type: "response.in_progress", response: inProgressResponse });
-  responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: 0, item: { ...output, content: [] } }));
-  responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: 0, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
-  if (content.text) {
-    responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: 0, content_index: 0, delta: content.text }));
+
+  for (const [outputIndex, output] of response.output.entries()) {
+    if (output.type === "function_call") {
+      responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", {
+        output_index: outputIndex,
+        item: { ...output, status: "in_progress", arguments: "" },
+      }));
+      if (output.arguments) {
+        responseSseWrite(res, "response.function_call_arguments.delta", responseStreamEvent(response, "response.function_call_arguments.delta", {
+          item_id: output.id,
+          output_index: outputIndex,
+          delta: output.arguments,
+        }));
+      }
+      responseSseWrite(res, "response.function_call_arguments.done", responseStreamEvent(response, "response.function_call_arguments.done", {
+        item_id: output.id,
+        output_index: outputIndex,
+        arguments: output.arguments,
+      }));
+      responseSseWrite(res, "response.output_item.done", responseStreamEvent(response, "response.output_item.done", { output_index: outputIndex, item: output }));
+      continue;
+    }
+
+    const content = output.content[0];
+    responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: outputIndex, item: { ...output, content: [] } }));
+    responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: outputIndex, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
+    if (content.text) {
+      responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: outputIndex, content_index: 0, delta: content.text }));
+    }
+    responseSseWrite(res, "response.output_text.done", responseStreamEvent(response, "response.output_text.done", { item_id: output.id, output_index: outputIndex, content_index: 0, text: content.text }));
+    responseSseWrite(res, "response.content_part.done", responseStreamEvent(response, "response.content_part.done", { item_id: output.id, output_index: outputIndex, content_index: 0, part: content }));
+    responseSseWrite(res, "response.output_item.done", responseStreamEvent(response, "response.output_item.done", { output_index: outputIndex, item: output }));
   }
-  responseSseWrite(res, "response.output_text.done", responseStreamEvent(response, "response.output_text.done", { item_id: output.id, output_index: 0, content_index: 0, text: content.text }));
-  responseSseWrite(res, "response.content_part.done", responseStreamEvent(response, "response.content_part.done", { item_id: output.id, output_index: 0, content_index: 0, part: content }));
-  responseSseWrite(res, "response.output_item.done", responseStreamEvent(response, "response.output_item.done", { output_index: 0, item: output }));
+
   responseSseWrite(res, "response.completed", { type: "response.completed", response });
   endResponsesStream(res);
 }
@@ -2414,14 +2615,18 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const wantsStream = !!original.stream;
   const publicModel = publicModelName(original.model || "opus");
   const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel) : null;
+  const chatTools = responsesToolsToChatTools(original.tools);
+  if (Array.isArray(original.tools)) {
+    addLog(`responses tools ${JSON.stringify(responsesToolsSummary(original.tools))} -> ${chatTools ? chatTools.length : 0}`);
+  }
   req.body = {
     model: original.model || "opus",
     messages: original.messages || responsesInputToMessages(original.input),
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: original.max_output_tokens || original.max_tokens,
-    tools: responsesToolsToChatTools(original.tools),
-    tool_choice: original.tool_choice,
+    tools: chatTools,
+    tool_choice: chatTools ? original.tool_choice : undefined,
     parallel_tool_calls: original.parallel_tool_calls,
     stream: wantsStream,
   };
