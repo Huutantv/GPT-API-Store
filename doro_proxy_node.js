@@ -2164,6 +2164,68 @@ function responsesContentToText(content) {
   return content.text || content.input_text || content.output_text || content.content || "";
 }
 
+function responsesImagePartToOpenAI(part) {
+  if (!part || typeof part !== "object") return null;
+
+  let rawUrl = part.image_url || part.url || part.image || part.input_image;
+  if (rawUrl && typeof rawUrl === "object") rawUrl = rawUrl.url || rawUrl.image_url || "";
+
+  const source = part.source || {};
+  if (!rawUrl && source.type === "base64" && source.data) {
+    rawUrl = `data:${source.media_type || part.media_type || "image/jpeg"};base64,${source.data}`;
+  }
+  if (!rawUrl && part.data && (part.media_type || part.mime_type)) {
+    rawUrl = `data:${part.media_type || part.mime_type};base64,${part.data}`;
+  }
+
+  if (!rawUrl) return null;
+  return {
+    type: "image_url",
+    image_url: {
+      url: String(rawUrl),
+      ...(part.detail ? { detail: part.detail } : {}),
+    },
+  };
+}
+
+function responsesContentToChatContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) {
+    const image = responsesImagePartToOpenAI(content);
+    if (image) return [image];
+    return responsesContentToText(content);
+  }
+
+  const parts = [];
+  let hasImage = false;
+
+  for (const part of content) {
+    if (typeof part === "string") {
+      if (part) parts.push({ type: "text", text: part });
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+
+    const image = responsesImagePartToOpenAI(part);
+    if (image || part.type === "input_image") {
+      if (image) {
+        parts.push(image);
+        hasImage = true;
+      } else if (part.file_id) {
+        parts.push({ type: "text", text: `[image file_id ${part.file_id} cannot be forwarded by this proxy]` });
+      }
+      continue;
+    }
+
+    const text = part.text || part.input_text || part.output_text || part.content || "";
+    if (text) parts.push({ type: "text", text: String(text) });
+  }
+
+  if (!parts.length) return "";
+  if (!hasImage) return parts.map((part) => part.text || "").filter(Boolean).join("\n");
+  return parts;
+}
+
 function responsesInputToMessages(input) {
   const items = Array.isArray(input) ? input : [input];
   const messages = [];
@@ -2202,9 +2264,22 @@ function responsesInputToMessages(input) {
       continue;
     }
 
+    if (item.type === "input_image") {
+      const content = responsesContentToChatContent(item);
+      if (content) messages.push({ role: "user", content });
+      continue;
+    }
+
+    if (item.type === "input_text") {
+      const content = responsesContentToText(item);
+      if (content) messages.push({ role: "user", content });
+      continue;
+    }
+
     if (item.type && item.type !== "message") continue;
     const role = item.role === "developer" ? "system" : (item.role || "user");
-    const content = responsesContentToText(item.content || item.text || item.input_text);
+    const rawContent = item.content || item.text || item.input_text;
+    const content = role === "user" ? responsesContentToChatContent(rawContent) : responsesContentToText(rawContent);
     if (content) messages.push({ role, content });
   }
 
@@ -2238,6 +2313,14 @@ function responsesToolsSummary(tools) {
     type: tool && tool.type,
     name: String((tool && (tool.name || (tool.function && tool.function.name))) || "").slice(0, 80),
   }));
+}
+
+function countResponsesImages(value) {
+  if (!value) return 0;
+  if (Array.isArray(value)) return value.reduce((sum, item) => sum + countResponsesImages(item), 0);
+  if (typeof value !== "object") return 0;
+  const self = value.type === "input_image" || value.type === "image_url" || !!value.image_url || !!value.image || !!value.input_image;
+  return (self ? 1 : 0) + countResponsesImages(value.content || value.output);
 }
 
 function chatCompletionToResponses(data, publicModel) {
@@ -2619,9 +2702,11 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (Array.isArray(original.tools)) {
     addLog(`responses tools ${JSON.stringify(responsesToolsSummary(original.tools))} -> ${chatTools ? chatTools.length : 0}`);
   }
+  const imageCount = countResponsesImages(original.messages || original.input);
+  if (imageCount) addLog(`responses images count=${imageCount}`);
   req.body = {
     model: original.model || "opus",
-    messages: original.messages || responsesInputToMessages(original.input),
+    messages: Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input),
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: original.max_output_tokens || original.max_tokens,
