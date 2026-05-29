@@ -2170,6 +2170,28 @@ function responsesInputToMessages(input) {
   return [{ role: "user", content: String(input || "") }];
 }
 
+function responsesToolsToChatTools(tools) {
+  if (!Array.isArray(tools)) return undefined;
+  const normalized = [];
+  for (const tool of tools) {
+    if (!tool || tool.type !== "function") continue;
+    const source = tool.function && typeof tool.function === "object" ? tool.function : tool;
+    const name = String(source.name || "").trim();
+    if (!name) continue;
+    normalized.push({
+      type: "function",
+      function: {
+        name,
+        description: String(source.description || ""),
+        parameters: source.parameters && typeof source.parameters === "object"
+          ? source.parameters
+          : { type: "object", properties: {} },
+      },
+    });
+  }
+  return normalized.length ? normalized : undefined;
+}
+
 function chatCompletionToResponses(data, publicModel) {
   const choice = (data.choices || [])[0] || {};
   const message = choice.message || {};
@@ -2398,7 +2420,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: original.max_output_tokens || original.max_tokens,
-    tools: original.tools,
+    tools: responsesToolsToChatTools(original.tools),
     tool_choice: original.tool_choice,
     parallel_tool_calls: original.parallel_tool_calls,
     stream: wantsStream,
