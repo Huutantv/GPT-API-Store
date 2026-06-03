@@ -314,11 +314,20 @@ function topupCredit(apiKey, amount, reason = "topup", tokenAmount = 0) {
  */
 function createKey({ label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0 } = {}) {
   const key = generateKey();
-  stmts.insertKey.run(key, label, credit, rpmLimit, expiresAt, Number(tokenRemaining || 0));
+  return createManualKey({ key, label, credit, rpmLimit, expiresAt, tokenRemaining });
+}
+
+function createManualKey({ key, label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0 } = {}) {
+  const apiKey = String(key || "").trim();
+  if (!apiKey) throw new Error("Manual key is required");
+  if (/\s/.test(apiKey)) throw new Error("Manual key must not contain spaces");
+  if (apiKey.length < 8 || apiKey.length > 160) throw new Error("Manual key length must be between 8 and 160 characters");
+  if (stmts.getKey.get(apiKey)) throw new Error("Key already exists");
+  stmts.insertKey.run(apiKey, label, credit, rpmLimit, expiresAt, Number(tokenRemaining || 0));
   if (credit > 0) {
-    stmts.insertTxn.run(key, credit, "initial", 0, 0, "", "");
+    stmts.insertTxn.run(apiKey, credit, "initial", 0, 0, "", "");
   }
-  return stmts.getKey.get(key);
+  return stmts.getKey.get(apiKey);
 }
 
 /**
@@ -398,6 +407,7 @@ module.exports = {
   deductCredit,
   topupCredit,
   createKey,
+  createManualKey,
   deleteKey,
   setKeyActive,
   getKey,

@@ -156,6 +156,7 @@ body{font-family:'Inter',sans-serif}
     <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
       <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguyen Van A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">API key thủ công</label><input id="newManualKey" placeholder="31F4E5C2-C364-4B59-B89C-B5C3A4270AEA" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#7893;ng token</label><input id="newTokenQuota" type="number" placeholder="30000000" value="30000000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" oninput="updateCreateKeyTokenPreview()"></div>
       <div><label class="text-xs text-gray-400 block mb-1">S&#7889; request quy &#273;&#7893;i</label><input id="newCredit" type="number" placeholder="350" value="350" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary bg-dark-800 text-gray-400" readonly></div>
       <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="10" value="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
@@ -173,7 +174,7 @@ body{font-family:'Inter',sans-serif}
       </div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#249;y ch&#7881;nh ng&#224;y</label><input id="newCustomDays" type="number" min="1" max="3650" placeholder="VD: 45" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" oninput="updateExpiryPreview()"><p class="text-xs text-gray-500 mt-1">B&#7887; tr&#7889;ng th&#236; d&#249;ng dropdown.</p></div>
     </div>
-    <p class="text-xs text-gray-500">Request quota sẽ tự tính theo setting <code>1 request = N token</code> ở tab <code>N&#7841;p Credit</code>.</p>
+    <p class="text-xs text-gray-500">Request quota sẽ tự tính theo setting <code>1 request = N token</code> ở tab <code>N&#7841;p Credit</code>. Nếu nhập <code>API key thủ công</code>, hệ thống sẽ dùng chính key đó; nếu bỏ trống thì tự tạo key <code>sk-...</code>.</p>
     <div class="flex gap-3">
       <button onclick="createKey()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">T&#7841;o key</button>
       <div id="createMsg" class="text-sm py-2 text-gray-400"></div>
@@ -901,8 +902,15 @@ async function createKey() {
   var days = expiry.days;
   var tokenQuota = Number(document.getElementById("newTokenQuota").value || 0);
   var requestQuota = Number(document.getElementById("newCredit").value || 0);
+  var manualKey = document.getElementById("newManualKey").value.trim();
+  if (manualKey && /\s/.test(manualKey)) {
+    msg.className = "text-sm py-2 text-red-400";
+    msg.textContent = "Key thủ công không được chứa khoảng trắng";
+    return;
+  }
   var body = {
     label: document.getElementById("newLabel").value.trim(),
+    manual_key: manualKey,
     credit: requestQuota,
     token_quota: tokenQuota,
     rpm_limit: Number(document.getElementById("newRpm").value || 10),

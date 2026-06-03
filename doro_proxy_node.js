@@ -3534,13 +3534,17 @@ app.post("/api/credit/keys", (req, res) => {
       return res.status(400).json({ detail: "duration_days must be between 1 and 3650" });
     }
     const expiresAt = durationDays > 0 ? vnDateTimeAfterDays(durationDays) : null;
-    const row = credit.createKey({
+    const manualKey = String(body.manual_key || "").trim();
+    const createPayload = {
       label: String(body.label || ""),
       credit: creditAmount,
       rpmLimit: Number(body.rpm_limit || 10),
       expiresAt,
       tokenRemaining,
-    });
+    };
+    const row = manualKey
+      ? credit.createManualKey({ ...createPayload, key: manualKey })
+      : credit.createKey(createPayload);
     addLog(`CREDIT KEY + ${row.key.slice(0, 20)} credit=${row.credit}`);
     res.json({ ok: true, key: row });
   } catch (err) {
