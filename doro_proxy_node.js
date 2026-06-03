@@ -2354,7 +2354,7 @@ function chatCompletionToResponses(data, publicModel) {
     });
   }
 
-  return {
+  return withResponsesCompatFields({
     id: data.id || `resp_${Date.now()}`,
     object: "response",
     created_at: createdAt,
@@ -2363,6 +2363,34 @@ function chatCompletionToResponses(data, publicModel) {
     output,
     output_text: text,
     usage: data.usage || null,
+  });
+}
+
+function withResponsesCompatFields(response) {
+  const base = response && typeof response === "object" ? response : {};
+  return {
+    error: null,
+    incomplete_details: null,
+    instructions: null,
+    metadata: {},
+    parallel_tool_calls: true,
+    previous_response_id: null,
+    reasoning: { effort: null, summary: [] },
+    store: true,
+    temperature: null,
+    text: { format: { type: "text" } },
+    tool_choice: "auto",
+    tools: [],
+    top_p: null,
+    truncation: "disabled",
+    user: null,
+    ...base,
+    reasoning: base.reasoning && typeof base.reasoning === "object"
+      ? { effort: base.reasoning.effort ?? null, summary: Array.isArray(base.reasoning.summary) ? base.reasoning.summary : [] }
+      : { effort: null, summary: [] },
+    metadata: base.metadata && typeof base.metadata === "object" ? base.metadata : {},
+    text: base.text && typeof base.text === "object" ? base.text : { format: { type: "text" } },
+    tools: Array.isArray(base.tools) ? base.tools : [],
   };
 }
 
@@ -2410,7 +2438,7 @@ function createResponsesStreamBridge(res, publicModel) {
   };
   const writeDone = () => rawWrite("event: done\ndata: [DONE]\n\n");
   const eventPayload = (type, data = {}) => ({ type, response_id: responseId, ...data });
-  const responseBase = () => ({
+    const responseBase = () => withResponsesCompatFields({
     id: responseId,
     object: "response",
     created_at: createdAt,
@@ -2568,13 +2596,13 @@ function createResponsesStreamBridge(res, publicModel) {
 
     writeEvent("response.completed", {
       type: "response.completed",
-      response: {
+      response: withResponsesCompatFields({
         ...responseBase(),
         status: "completed",
         output,
         output_text: outputText,
         usage: normalizedUsage,
-      },
+      }),
     });
     writeDone();
     completed = true;
@@ -2692,6 +2720,23 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   responseSseWrite(res, "response.completed", { type: "response.completed", response });
   endResponsesStream(res);
 }
+
+app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
+  const original = req.body || {};
+  const publicModel = publicModelName(original.model || "opus");
+  const response = withResponsesCompatFields({
+    id: `resp_${Date.now()}`,
+    object: "response",
+    created_at: Math.floor(Date.now() / 1000),
+    status: "completed",
+    model: publicModel,
+    output: [],
+    output_text: "",
+    usage: null,
+  });
+  addLog(`responses compact ok model=${publicModel}`);
+  res.json(response);
+});
 
 app.post(["/v1/responses", "/responses"], async (req, res) => {
   const original = req.body || {};
