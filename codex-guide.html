@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Huong dan setup Codex</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',sans-serif}
+</style>
+</head>
+<body class="bg-dark-900 text-white min-h-screen antialiased">
+<nav class="bg-dark-800 border-b border-white/5 px-6 py-4 flex items-center justify-between">
+  <a href="/" class="font-bold">GPT API Store</a>
+  <a href="/portal" class="text-sm text-gray-400 hover:text-white transition">Portal</a>
+</nav>
+
+<main class="max-w-5xl mx-auto px-4 md:px-6 py-8 md:py-10 space-y-6">
+  <section class="space-y-3">
+    <p class="text-sm text-primary font-semibold">Codex setup</p>
+    <h1 class="text-3xl md:text-4xl font-black tracking-tight">Huong dan su dung Codex voi API Zplay</h1>
+    <p class="text-gray-400 max-w-2xl">Dung API key sau khi mua de cau hinh Codex CLI hoac extension Codex theo chuan OpenAI Compatible.</p>
+  </section>
+
+  <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Base URL</p>
+      <code id="baseUrl" class="text-green-400 text-sm break-all">-</code>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Model goi y</p>
+      <code class="text-blue-300 text-sm">gpt-5.5</code>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
+      <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">API key</p>
+      <p class="text-sm text-gray-300">Lay trong email, checkout success, hoac Portal.</p>
+    </div>
+  </section>
+
+  <section class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-5">
+    <h2 class="text-xl font-bold">1. Cai Codex</h2>
+    <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code>npm install -g @openai/codex</code></pre>
+  </section>
+
+  <section class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
+      <h2 class="text-xl font-bold">2. Windows PowerShell</h2>
+      <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code id="winCmd">-</code></pre>
+      <button onclick="copyBlock('winCmd', this)" class="px-4 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Copy</button>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
+      <h2 class="text-xl font-bold">3. macOS/Linux</h2>
+      <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code id="unixCmd">-</code></pre>
+      <button onclick="copyBlock('unixCmd', this)" class="px-4 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Copy</button>
+    </div>
+  </section>
+
+  <section class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
+    <h2 class="text-xl font-bold">4. Extension Codex</h2>
+    <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code id="extensionCfg">-</code></pre>
+    <button onclick="copyBlock('extensionCfg', this)" class="px-4 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Copy</button>
+  </section>
+
+  <section class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
+    <h2 class="text-xl font-bold">Loi thuong gap</h2>
+    <div class="space-y-3 text-sm text-gray-400 leading-relaxed">
+      <p><strong class="text-gray-200">Codex khong nhan key:</strong> kiem tra bien moi truong hoac file <code class="text-primary">~/.codex/config.toml</code>.</p>
+      <p><strong class="text-gray-200">Sai endpoint:</strong> Base URL phai ket thuc bang <code class="text-primary">/v1</code>.</p>
+      <p><strong class="text-gray-200">Sai model:</strong> dung model goi y <code class="text-primary">gpt-5.5</code> de test truoc.</p>
+    </div>
+    <a href="https://docs.google.com/document/d/1CeFpdpPA6VsclU8UWWK2iunm18kWj8XyMspxKGgoYrs/edit?tab=t.0" target="_blank" rel="noopener noreferrer" class="inline-flex px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-gray-300 hover:text-white transition">Mo Google Docs goc</a>
+  </section>
+</main>
+
+<script>
+const BASE = window.location.origin;
+const MODEL = "gpt-5.5";
+const apiKey = new URLSearchParams(window.location.search).get("key") || "sk-your-api-key";
+document.getElementById("baseUrl").textContent = `${BASE}/v1`;
+document.getElementById("winCmd").textContent = `$env:OPENAI_API_KEY="${apiKey}"\n$env:OPENAI_BASE_URL="${BASE}/v1"\ncodex --model ${MODEL} "hello"`;
+document.getElementById("unixCmd").textContent = `export OPENAI_API_KEY="${apiKey}"\nexport OPENAI_BASE_URL="${BASE}/v1"\ncodex --model ${MODEL} "hello"`;
+document.getElementById("extensionCfg").textContent = `API Key  : ${apiKey}\nBase URL : ${BASE}/v1\nModel    : ${MODEL}`;
+function copyBlock(id, btn) {
+  navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => {
+    const old = btn.textContent;
+    btn.textContent = "Da copy";
+    setTimeout(() => btn.textContent = old, 1500);
+  });
+}
+</script>
+</body>
+</html>

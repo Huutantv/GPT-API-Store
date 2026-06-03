@@ -163,11 +163,84 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+<div id="codexOnboardingModal" class="hidden fixed inset-0 z-[60] bg-black/75 backdrop-blur-sm items-center justify-center p-4">
+  <div class="w-full max-w-5xl max-h-[92vh] overflow-y-auto bg-dark-800 border border-green-500/30 rounded-3xl shadow-2xl shadow-green-500/10">
+    <div class="bg-green-500/10 border-b border-green-500/20 px-5 py-4 flex items-center justify-between">
+      <div>
+        <h2 class="text-lg font-bold text-green-400">Thanh toan thanh cong</h2>
+        <p class="text-xs text-gray-400">API key da kich hoat, bat dau setup Codex ngay.</p>
+      </div>
+      <button onclick="closeCodexOnboardingModal()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition">x</button>
+    </div>
+    <div class="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+      <div class="lg:col-span-5 space-y-4">
+        <div class="bg-dark-900 border border-primary/30 rounded-2xl p-4">
+          <div class="flex items-center justify-between gap-3 mb-3">
+            <p class="text-xs text-gray-500 uppercase tracking-wider font-semibold">API Key</p>
+            <button onclick="copyCodexApiKey(this)" class="px-3 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">Copy key</button>
+          </div>
+          <code id="codexOnboardingKey" class="block text-primary font-mono text-sm break-all leading-relaxed">-</code>
+        </div>
+        <div class="bg-dark-900/70 border border-white/10 rounded-2xl p-4 space-y-3">
+          <p class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Cau hinh Codex</p>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-400">Base URL</span>
+            <code id="codexOnboardingBaseUrl" class="text-xs text-green-400 break-all text-right">-</code>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-sm text-gray-400">Model</span>
+            <code id="codexOnboardingModel" class="text-xs text-blue-300">gpt-5.5</code>
+          </div>
+          <button onclick="copyCodexConfig(this)" class="w-full px-4 py-2.5 bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20 rounded-xl text-sm font-semibold text-blue-300 transition">Copy cau hinh Codex</button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <a id="codexOnboardingPortalLink" href="/portal" class="text-center px-5 py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mo Portal</a>
+          <a href="/guides/codex" target="_blank" rel="noopener noreferrer" class="text-center px-5 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition">Xem huong dan</a>
+        </div>
+      </div>
+      <div class="lg:col-span-7 bg-dark-700/70 border border-white/10 rounded-2xl p-4">
+        <div class="flex flex-wrap items-center gap-2 mb-4">
+          <button id="codexTabWindows" onclick="setCodexTab('windows')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-white">Windows</button>
+          <button id="codexTabUnix" onclick="setCodexTab('unix')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10">macOS/Linux</button>
+          <button id="codexTabExtension" onclick="setCodexTab('extension')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10">Extension</button>
+        </div>
+        <div class="space-y-4">
+          <div>
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">1. Cai Codex</p>
+            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="codexInstallCmd">npm install -g @openai/codex</code></pre>
+          </div>
+          <div>
+            <div class="flex items-center justify-between gap-3 mb-2">
+              <p class="text-xs text-gray-500 uppercase tracking-wider">2. Dan cau hinh</p>
+              <button onclick="copyCodexVisibleCommand(this)" class="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white transition">Copy lenh</button>
+            </div>
+            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="codexCommandBlock">-</code></pre>
+          </div>
+          <div>
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">3. Chay thu</p>
+            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-green-300 overflow-x-auto"><code id="codexTestCmd">codex --model gpt-5.5 "hello"</code></pre>
+          </div>
+          <details class="bg-dark-900/70 border border-white/10 rounded-2xl p-4">
+            <summary class="cursor-pointer text-sm font-semibold text-gray-200">4. Loi thuong gap</summary>
+            <div class="mt-3 space-y-2 text-xs text-gray-400 leading-relaxed">
+              <p>Neu Codex khong nhan key, hay mo file <code class="text-primary">~/.codex/config.toml</code> va kiem tra API key, Base URL, model.</p>
+              <p>Neu chay tren Windows, dung PowerShell command trong tab Windows thay vi lenh export.</p>
+            </div>
+          </details>
+          <button onclick="finishCodexOnboarding()" class="w-full px-5 py-3 bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 rounded-xl text-sm font-semibold text-green-300 transition">Toi da setup xong</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 const BASE = window.location.origin;
+const CODEX_MODEL = "gpt-5.5";
 let selectedPkg = null;
 let currentOrder = null;
 let pollTimer = null;
+let codexActiveTab = "windows";
 
 // Load packages
 fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
@@ -284,6 +357,8 @@ function startPolling() {
 }
 
 function showSuccessModal(apiKey) {
+  showCodexOnboardingModal(apiKey);
+  return;
   document.getElementById("modalSuccessKey").textContent = apiKey;
   document.getElementById("modalSuccessEmail").textContent = currentOrder?.customer_email || document.getElementById("successEmail").textContent || "—";
   const modal = document.getElementById("successModal");
@@ -302,6 +377,81 @@ function copySuccessKey(btn) {
   navigator.clipboard.writeText(key).then(() => {
     const orig = btn.textContent;
     btn.textContent = "Đã copy ✓";
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+function showCodexOnboardingModal(apiKey) {
+  const key = apiKey || document.getElementById("successKey")?.textContent || "sk-...";
+  document.getElementById("codexOnboardingKey").textContent = key;
+  document.getElementById("codexOnboardingBaseUrl").textContent = `${BASE}/v1`;
+  document.getElementById("codexOnboardingModel").textContent = CODEX_MODEL;
+  const portalLink = document.getElementById("codexOnboardingPortalLink");
+  if (portalLink && key && key !== "-") portalLink.href = `/portal?key=${encodeURIComponent(key)}`;
+  setCodexTab(codexActiveTab);
+  const modal = document.getElementById("codexOnboardingModal");
+  modal.classList.remove("hidden");
+  modal.classList.add("flex");
+}
+
+function closeCodexOnboardingModal() {
+  const modal = document.getElementById("codexOnboardingModal");
+  modal.classList.add("hidden");
+  modal.classList.remove("flex");
+}
+
+function getCodexCommands(tab = codexActiveTab) {
+  const key = document.getElementById("codexOnboardingKey")?.textContent || "sk-...";
+  const baseUrl = `${BASE}/v1`;
+  if (tab === "unix") {
+    return `export OPENAI_API_KEY="${key}"\nexport OPENAI_BASE_URL="${baseUrl}"\ncodex --model ${CODEX_MODEL} "hello"`;
+  }
+  if (tab === "extension") {
+    return `API Key  : ${key}\nBase URL : ${baseUrl}\nModel    : ${CODEX_MODEL}`;
+  }
+  return `$env:OPENAI_API_KEY="${key}"\n$env:OPENAI_BASE_URL="${baseUrl}"\ncodex --model ${CODEX_MODEL} "hello"`;
+}
+
+function setCodexTab(tab) {
+  codexActiveTab = tab;
+  ["windows", "unix", "extension"].forEach(name => {
+    const btn = document.getElementById(`codexTab${name[0].toUpperCase()}${name.slice(1)}`);
+    if (!btn) return;
+    btn.className = name === tab
+      ? "px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-white"
+      : "px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10";
+  });
+  document.getElementById("codexInstallCmd").textContent = tab === "extension"
+    ? "Cai extension Codex, sau do chon OpenAI Compatible"
+    : "npm install -g @openai/codex";
+  document.getElementById("codexCommandBlock").textContent = getCodexCommands(tab);
+  document.getElementById("codexTestCmd").textContent = tab === "extension"
+    ? `Gui thu prompt: hello, model ${CODEX_MODEL}`
+    : `codex --model ${CODEX_MODEL} "hello"`;
+}
+
+function copyCodexApiKey(btn) {
+  copyPlainText(document.getElementById("codexOnboardingKey").textContent, btn);
+}
+
+function copyCodexConfig(btn) {
+  copyPlainText(getCodexCommands(codexActiveTab), btn);
+}
+
+function copyCodexVisibleCommand(btn) {
+  copyPlainText(document.getElementById("codexCommandBlock").textContent, btn);
+}
+
+function finishCodexOnboarding() {
+  localStorage.setItem("codex_onboarding_done", "1");
+  closeCodexOnboardingModal();
+}
+
+function copyPlainText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = "Da copy";
     setTimeout(() => btn.textContent = orig, 1500);
   });
 }

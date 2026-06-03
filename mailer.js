@@ -65,7 +65,18 @@ response = client.chat.completions.create(
     messages=[{"role":"user","content":"Hello!"}]
 )</pre>
     </div>
+    <div style="background:#1a1a2e;border-radius:12px;padding:20px;margin-bottom:24px">
+      <p style="margin:0 0 12px;font-size:13px;font-weight:600">Dung voi Codex</p>
+      <pre style="margin:0;font-size:12px;color:#9ca3af;overflow-x:auto">$env:OPENAI_API_KEY="${apiKey}"
+$env:OPENAI_BASE_URL="${baseUrl}/v1"
+codex --model gpt-5.5 "hello"</pre>
+      <p style="margin:12px 0 0;font-size:12px;color:#9ca3af;line-height:1.6">
+        Extension Codex: chon OpenAI Compatible, dien API Key, Base URL va model gpt-5.5.
+      </p>
+    </div>
     <div style="text-align:center;margin-bottom:24px">
+      <a href="${baseUrl}/portal?key=${encodeURIComponent(apiKey)}" style="display:inline-block;padding:12px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px;margin:0 6px 8px">Mo Portal</a>
+      <a href="${baseUrl}/guides/codex?key=${encodeURIComponent(apiKey)}" style="display:inline-block;padding:12px 20px;background:#1a1a2e;color:#c4b5fd;text-decoration:none;border:1px solid rgba(99,102,241,0.35);border-radius:10px;font-weight:600;font-size:14px;margin:0 6px 8px">Huong dan Codex</a>
       <a href="${baseUrl}/portal" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px">Xem số dư & lịch sử</a>
     </div>
     <p style="margin:0;font-size:12px;color:#4b5563;text-align:center;line-height:1.6">

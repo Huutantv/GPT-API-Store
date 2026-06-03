@@ -133,6 +133,34 @@ Model    : gpt-5.5</code></pre>
     </div>
   </section>
 
+  <section class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6">
+    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+      <div>
+        <h2 class="font-semibold">Huong dan Codex</h2>
+        <p class="text-xs text-gray-500 mt-1">Dung API key hien tai voi Codex CLI hoac extension Codex.</p>
+      </div>
+      <a href="/guides/codex" target="_blank" rel="noopener noreferrer" class="px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-xs text-primary font-semibold hover:bg-primary/20 transition text-center">Xem ban day du</a>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="bg-dark-900/60 border border-white/5 rounded-2xl p-4">
+        <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Windows PowerShell</p>
+        <pre class="bg-black/40 rounded-xl p-3 text-xs text-gray-300 overflow-x-auto"><code id="portalCodexWindows">-</code></pre>
+        <button onclick="copyPortalCodex('portalCodexWindows', this)" class="mt-3 w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-300 hover:text-white transition">Copy</button>
+      </div>
+      <div class="bg-dark-900/60 border border-white/5 rounded-2xl p-4">
+        <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">macOS/Linux</p>
+        <pre class="bg-black/40 rounded-xl p-3 text-xs text-gray-300 overflow-x-auto"><code id="portalCodexUnix">-</code></pre>
+        <button onclick="copyPortalCodex('portalCodexUnix', this)" class="mt-3 w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-300 hover:text-white transition">Copy</button>
+      </div>
+      <div class="bg-dark-900/60 border border-white/5 rounded-2xl p-4">
+        <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Extension Codex</p>
+        <pre class="bg-black/40 rounded-xl p-3 text-xs text-gray-300 overflow-x-auto"><code id="portalCodexExtension">-</code></pre>
+        <button onclick="copyPortalCodex('portalCodexExtension', this)" class="mt-3 w-full px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-gray-300 hover:text-white transition">Copy</button>
+      </div>
+    </div>
+    <p class="text-xs text-yellow-300/80 mt-4">Neu Portal chi hien key dang an, hay mo bang link trong email hoac dung API key day du ban da luu luc thanh toan.</p>
+  </section>
+
   <!-- History -->
   <section class="bg-dark-700 border border-white/10 rounded-3xl p-4 md:p-6">
     <div class="flex items-center justify-between mb-4">
@@ -246,12 +274,34 @@ function renderBalance(data) {
   document.getElementById("keyDisplay").textContent = data.key_masked;
   document.getElementById("baseUrlDisplay").textContent = `${BASE}/v1`;
   document.getElementById("clineKey").textContent = data.key_masked;
+  renderPortalCodexGuide();
 
 
   const quotaLabelEl = document.getElementById("tokenQuotaLabel");
   if (quotaLabelEl) quotaLabelEl.textContent = quotaLabel + " token";
   const expiresLabelEl = document.querySelector('#mainContent [id="expiresAt"]');
   if (expiresLabelEl) expiresLabelEl.title = data.expires_at || "";
+}
+
+function renderPortalCodexGuide() {
+  const keyForCopy = currentKey || "sk-your-api-key";
+  const baseUrl = `${BASE}/v1`;
+  const model = "gpt-5.5";
+  const windows = `$env:OPENAI_API_KEY="${keyForCopy}"\n$env:OPENAI_BASE_URL="${baseUrl}"\ncodex --model ${model} "hello"`;
+  const unix = `export OPENAI_API_KEY="${keyForCopy}"\nexport OPENAI_BASE_URL="${baseUrl}"\ncodex --model ${model} "hello"`;
+  const extension = `API Key  : ${keyForCopy}\nBase URL : ${baseUrl}\nModel    : ${model}`;
+  document.getElementById("portalCodexWindows").textContent = windows;
+  document.getElementById("portalCodexUnix").textContent = unix;
+  document.getElementById("portalCodexExtension").textContent = extension;
+}
+
+function copyPortalCodex(id, btn) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const old = btn.textContent;
+    btn.textContent = "Da copy";
+    setTimeout(() => btn.textContent = old, 1500);
+  });
 }
 
 function loadHistory() {

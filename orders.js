@@ -80,7 +80,13 @@ const stmts = {
   getPackage:    db.prepare("SELECT * FROM packages WHERE id = ?"),
   getOrder:      db.prepare("SELECT * FROM orders WHERE id = ?"),
   getOrderCode:  db.prepare("SELECT * FROM orders WHERE order_code = ?"),
-  listOrders:    db.prepare("SELECT * FROM orders ORDER BY created_at DESC LIMIT ?"),
+  listOrders:    db.prepare(`
+    SELECT *
+    FROM orders
+    WHERE (? = '' OR customer_name LIKE ? OR order_code LIKE ?)
+    ORDER BY created_at DESC
+    LIMIT ?
+  `),
   listByStatus:  db.prepare("SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC"),
   listByEmail:   db.prepare("SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC"),
   insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, rpm_limit, customer_name, customer_email, customer_phone)
@@ -101,7 +107,11 @@ function listPackages() { return stmts.listPackages.all().map(withComputedPackag
 function getPackage(id) { return withComputedPackageQuota(stmts.getPackage.get(id)); }
 function getOrder(id)   { return stmts.getOrder.get(id); }
 function getOrderByCode(code) { return stmts.getOrderCode.get(code); }
-function listOrders(limit = 100) { return stmts.listOrders.all(limit); }
+function listOrders(search = "", limit = 100) {
+  const normalizedSearch = String(search || "").trim();
+  const likeSearch = `%${normalizedSearch}%`;
+  return stmts.listOrders.all(normalizedSearch, likeSearch, likeSearch, limit);
+}
 function listByStatus(status)    { return stmts.listByStatus.all(status); }
 function listByEmail(email)      { return stmts.listByEmail.all(email); }
 

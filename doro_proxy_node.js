@@ -2873,6 +2873,10 @@ app.get("/checkout", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "checkout.html"));
 });
 
+app.get("/guides/codex", (_req, res) => {
+  return res.sendFile(path.join(ROOT_DIR, "codex-guide.html"));
+});
+
 // ── Orders API (public) ───────────────────────────────────────────────────────
 app.get("/api/orders/packages", (_req, res) => {
   res.json({ packages: orders.listPackages() });
