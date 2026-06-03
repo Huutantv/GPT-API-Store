@@ -167,8 +167,8 @@ body{font-family:'Inter',sans-serif}
   <div class="w-full max-w-5xl max-h-[92vh] overflow-y-auto bg-dark-800 border border-green-500/30 rounded-3xl shadow-2xl shadow-green-500/10">
     <div class="bg-green-500/10 border-b border-green-500/20 px-5 py-4 flex items-center justify-between">
       <div>
-        <h2 class="text-lg font-bold text-green-400">Thanh toan thanh cong</h2>
-        <p class="text-xs text-gray-400">API key da kich hoat, bat dau setup Codex ngay.</p>
+        <h2 class="text-lg font-bold text-green-400">Thanh toán thành công</h2>
+        <p class="text-xs text-gray-400">API key đã kích hoạt, bắt đầu setup Codex ngay.</p>
       </div>
       <button onclick="closeCodexOnboardingModal()" class="w-9 h-9 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition">x</button>
     </div>
@@ -182,7 +182,7 @@ body{font-family:'Inter',sans-serif}
           <code id="codexOnboardingKey" class="block text-primary font-mono text-sm break-all leading-relaxed">-</code>
         </div>
         <div class="bg-dark-900/70 border border-white/10 rounded-2xl p-4 space-y-3">
-          <p class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Cau hinh Codex</p>
+          <p class="text-xs text-gray-500 uppercase tracking-wider font-semibold">Cấu hình Codex</p>
           <div class="flex items-center justify-between gap-3">
             <span class="text-sm text-gray-400">Base URL</span>
             <code id="codexOnboardingBaseUrl" class="text-xs text-green-400 break-all text-right">-</code>
@@ -191,11 +191,11 @@ body{font-family:'Inter',sans-serif}
             <span class="text-sm text-gray-400">Model</span>
             <code id="codexOnboardingModel" class="text-xs text-blue-300">gpt-5.5</code>
           </div>
-          <button onclick="copyCodexConfig(this)" class="w-full px-4 py-2.5 bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20 rounded-xl text-sm font-semibold text-blue-300 transition">Copy cau hinh Codex</button>
+          <button onclick="copyCodexConfig(this)" class="w-full px-4 py-2.5 bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20 rounded-xl text-sm font-semibold text-blue-300 transition">Copy cấu hình Codex</button>
         </div>
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <a id="codexOnboardingPortalLink" href="/portal" class="text-center px-5 py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mo Portal</a>
-          <a href="/guides/codex" target="_blank" rel="noopener noreferrer" class="text-center px-5 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition">Xem huong dan</a>
+          <a id="codexOnboardingPortalLink" href="/portal" class="text-center px-5 py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mở Portal</a>
+          <a href="https://docs.google.com/document/d/1CeFpdpPA6VsclU8UWWK2iunm18kWj8XyMspxKGgoYrs/edit?tab=t.0" target="_blank" rel="noopener noreferrer" class="text-center px-5 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition">Mở Google Docs</a>
         </div>
       </div>
       <div class="lg:col-span-7 bg-dark-700/70 border border-white/10 rounded-2xl p-4">
@@ -206,28 +206,28 @@ body{font-family:'Inter',sans-serif}
         </div>
         <div class="space-y-4">
           <div>
-            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">1. Cai Codex</p>
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">1. Cài Codex</p>
             <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="codexInstallCmd">npm install -g @openai/codex</code></pre>
           </div>
           <div>
             <div class="flex items-center justify-between gap-3 mb-2">
-              <p class="text-xs text-gray-500 uppercase tracking-wider">2. Dan cau hinh</p>
-              <button onclick="copyCodexVisibleCommand(this)" class="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white transition">Copy lenh</button>
+              <p class="text-xs text-gray-500 uppercase tracking-wider">2. Dán cấu hình</p>
+              <button onclick="copyCodexVisibleCommand(this)" class="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white transition">Copy lệnh</button>
             </div>
             <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="codexCommandBlock">-</code></pre>
           </div>
           <div>
-            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">3. Chay thu</p>
+            <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">3. Chạy thử</p>
             <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-green-300 overflow-x-auto"><code id="codexTestCmd">codex --model gpt-5.5 "hello"</code></pre>
           </div>
           <details class="bg-dark-900/70 border border-white/10 rounded-2xl p-4">
-            <summary class="cursor-pointer text-sm font-semibold text-gray-200">4. Loi thuong gap</summary>
+            <summary class="cursor-pointer text-sm font-semibold text-gray-200">4. Lỗi thường gặp</summary>
             <div class="mt-3 space-y-2 text-xs text-gray-400 leading-relaxed">
-              <p>Neu Codex khong nhan key, hay mo file <code class="text-primary">~/.codex/config.toml</code> va kiem tra API key, Base URL, model.</p>
-              <p>Neu chay tren Windows, dung PowerShell command trong tab Windows thay vi lenh export.</p>
+              <p>Nếu Codex không nhận key, hãy mở file <code class="text-primary">~/.codex/config.toml</code> và kiểm tra API key, Base URL, model.</p>
+              <p>Nếu chạy trên Windows, dùng PowerShell command trong tab Windows thay vì lệnh export.</p>
             </div>
           </details>
-          <button onclick="finishCodexOnboarding()" class="w-full px-5 py-3 bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 rounded-xl text-sm font-semibold text-green-300 transition">Toi da setup xong</button>
+          <button onclick="finishCodexOnboarding()" class="w-full px-5 py-3 bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 rounded-xl text-sm font-semibold text-green-300 transition">Tôi đã setup xong</button>
         </div>
       </div>
     </div>
@@ -422,11 +422,11 @@ function setCodexTab(tab) {
       : "px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10";
   });
   document.getElementById("codexInstallCmd").textContent = tab === "extension"
-    ? "Cai extension Codex, sau do chon OpenAI Compatible"
+    ? "Cài extension Codex, sau đó chọn OpenAI Compatible"
     : "npm install -g @openai/codex";
   document.getElementById("codexCommandBlock").textContent = getCodexCommands(tab);
   document.getElementById("codexTestCmd").textContent = tab === "extension"
-    ? `Gui thu prompt: hello, model ${CODEX_MODEL}`
+    ? `Gửi thử prompt: hello, model ${CODEX_MODEL}`
     : `codex --model ${CODEX_MODEL} "hello"`;
 }
 
@@ -451,7 +451,7 @@ function copyPlainText(text, btn) {
   navigator.clipboard.writeText(text).then(() => {
     if (!btn) return;
     const orig = btn.textContent;
-    btn.textContent = "Da copy";
+    btn.textContent = "Đã copy";
     setTimeout(() => btn.textContent = orig, 1500);
   });
 }
