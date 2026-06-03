@@ -2255,11 +2255,11 @@ function responsesInputToMessages(input) {
       continue;
     }
 
-    if (item.type === "function_call_output") {
+    if (item.type === "function_call_output" || item.type === "local_shell_call_output" || item.type === "shell_call_output") {
       messages.push({
         role: "tool",
         tool_call_id: item.call_id,
-        content: responsesContentToText(item.output || item.content),
+        content: responsesContentToText(item.output || item.content || item.result),
       });
       continue;
     }
@@ -2290,7 +2290,47 @@ function responsesToolsToChatTools(tools) {
   if (!Array.isArray(tools)) return undefined;
   const normalized = [];
   for (const tool of tools) {
-    if (!tool || tool.type !== "function") continue;
+    if (!tool || typeof tool !== "object") continue;
+    if (tool.type === "local_shell") {
+      normalized.push({
+        type: "function",
+        function: {
+          name: "local_shell",
+          description: "Execute a local shell command.",
+          parameters: {
+            type: "object",
+            properties: {
+              command: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
+              timeout_ms: { type: "integer" },
+              working_directory: { type: "string" },
+              env: { type: "object" },
+            },
+            required: ["command"],
+          },
+        },
+      });
+      continue;
+    }
+    if (tool.type === "shell") {
+      normalized.push({
+        type: "function",
+        function: {
+          name: "shell",
+          description: "Execute shell command requests.",
+          parameters: {
+            type: "object",
+            properties: {
+              commands: { oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }] },
+              timeout_ms: { type: "integer" },
+              max_output_length: { type: "integer" },
+            },
+            required: ["commands"],
+          },
+        },
+      });
+      continue;
+    }
+    if (tool.type !== "function") continue;
     const source = tool.function && typeof tool.function === "object" ? tool.function : tool;
     const name = String(source.name || "").trim();
     if (!name) continue;
@@ -2306,6 +2346,67 @@ function responsesToolsToChatTools(tools) {
     });
   }
   return normalized.length ? normalized : undefined;
+}
+
+function parseToolArguments(raw) {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    const parsed = JSON.parse(String(raw));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function shellCommandArray(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter(Boolean);
+  if (value == null) return [];
+  const text = String(value).trim();
+  return text ? [text] : [];
+}
+
+function responsesOutputItemFromToolCall({ id, callId, name, args, status = "completed" }) {
+  const normalizedName = String(name || "").trim();
+  const parsed = parseToolArguments(args);
+  const fallbackId = id || callId || `call_${Date.now()}`;
+  if (normalizedName === "local_shell") {
+    return {
+      id: fallbackId,
+      type: "local_shell_call",
+      status,
+      call_id: callId || fallbackId,
+      action: {
+        type: "exec",
+        command: shellCommandArray(parsed.command || parsed.cmd || parsed.commands),
+        env: parsed.env && typeof parsed.env === "object" ? parsed.env : {},
+        timeout_ms: parsed.timeout_ms || null,
+        working_directory: parsed.working_directory || parsed.cwd || null,
+      },
+    };
+  }
+  if (normalizedName === "shell") {
+    return {
+      id: fallbackId,
+      type: "shell_call",
+      status,
+      call_id: callId || fallbackId,
+      action: {
+        type: "exec",
+        commands: shellCommandArray(parsed.commands || parsed.command || parsed.cmd),
+        timeout_ms: parsed.timeout_ms || null,
+        max_output_length: parsed.max_output_length || null,
+      },
+    };
+  }
+  return {
+    id: fallbackId,
+    type: "function_call",
+    status,
+    call_id: callId || fallbackId,
+    name: normalizedName,
+    arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
+  };
 }
 
 function responsesToolsSummary(tools) {
@@ -2344,14 +2445,13 @@ function chatCompletionToResponses(data, publicModel) {
   for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
     const name = String((call.function && call.function.name) || "").trim();
     if (!name) continue;
-    output.push({
+    output.push(responsesOutputItemFromToolCall({
       id: call.id || `call_${output.length}`,
-      type: "function_call",
-      status: "completed",
-      call_id: call.id || `call_${output.length}`,
+      callId: call.id || `call_${output.length}`,
       name,
-      arguments: (call.function && call.function.arguments) || "{}",
-    });
+      args: (call.function && call.function.arguments) || "{}",
+      status: "completed",
+    }));
   }
 
   return withResponsesCompatFields({
@@ -2501,21 +2601,22 @@ function createResponsesStreamBridge(res, publicModel) {
     tracked.started = true;
     writeEvent("response.output_item.added", eventPayload("response.output_item.added", {
       output_index: tracked.output_index,
-      item: {
+      item: responsesOutputItemFromToolCall({
         id: tracked.id,
-        type: "function_call",
-        status: "in_progress",
-        call_id: tracked.call_id,
+        callId: tracked.call_id,
         name: tracked.name,
-        arguments: "",
-      },
+        args: {},
+        status: "in_progress",
+      }),
     }));
     for (const partial of tracked.pendingDeltas) {
-      writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
-        item_id: tracked.id,
-        output_index: tracked.output_index,
-        delta: partial,
-      }));
+      if (tracked.name !== "local_shell" && tracked.name !== "shell") {
+        writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
+          item_id: tracked.id,
+          output_index: tracked.output_index,
+          delta: partial,
+        }));
+      }
     }
     tracked.pendingDeltas.length = 0;
   };
@@ -2574,19 +2675,20 @@ function createResponsesStreamBridge(res, publicModel) {
     for (const tracked of [...toolCalls.values()].sort((a, b) => a.output_index - b.output_index)) {
       if (!tracked.name) continue;
       startToolCall(tracked);
-      const item = {
+      const item = responsesOutputItemFromToolCall({
         id: tracked.id,
-        type: "function_call",
-        status: "completed",
-        call_id: tracked.call_id,
+        callId: tracked.call_id,
         name: tracked.name,
-        arguments: tracked.arguments,
-      };
-      writeEvent("response.function_call_arguments.done", eventPayload("response.function_call_arguments.done", {
-        item_id: tracked.id,
-        output_index: tracked.output_index,
-        arguments: tracked.arguments,
-      }));
+        args: tracked.arguments,
+        status: "completed",
+      });
+      if (item.type === "function_call") {
+        writeEvent("response.function_call_arguments.done", eventPayload("response.function_call_arguments.done", {
+          item_id: tracked.id,
+          output_index: tracked.output_index,
+          arguments: tracked.arguments,
+        }));
+      }
       writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
         output_index: tracked.output_index,
         item,
@@ -2647,11 +2749,13 @@ function createResponsesStreamBridge(res, publicModel) {
       if (!partial) continue;
       tracked.arguments += partial;
       if (tracked.started) {
-        writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
-          item_id: tracked.id,
-          output_index: tracked.output_index,
-          delta: partial,
-        }));
+        if (tracked.name !== "local_shell" && tracked.name !== "shell") {
+          writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
+            item_id: tracked.id,
+            output_index: tracked.output_index,
+            delta: partial,
+          }));
+        }
       } else {
         tracked.pendingDeltas.push(partial);
       }
