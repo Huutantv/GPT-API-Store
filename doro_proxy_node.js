@@ -2851,6 +2851,14 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (Array.isArray(original.tools)) {
     addLog(`responses tools ${JSON.stringify(responsesToolsSummary(original.tools))} -> ${chatTools ? chatTools.length : 0}`);
   }
+  const requestedMaxTokens = optionalPositiveInt(original.max_output_tokens || original.max_tokens);
+  const codexMinOutputTokens = chatTools ? (optionalPositiveInt(process.env.DORO_CODEX_MAX_OUTPUT_TOKENS) || 16384) : 0;
+  const responseMaxTokens = codexMinOutputTokens
+    ? Math.max(requestedMaxTokens || 0, codexMinOutputTokens)
+    : (original.max_output_tokens || original.max_tokens);
+  if (codexMinOutputTokens && requestedMaxTokens && requestedMaxTokens < codexMinOutputTokens) {
+    addLog(`responses max_tokens raised ${requestedMaxTokens} -> ${codexMinOutputTokens}`);
+  }
   const imageCount = countResponsesImages(original.messages || original.input);
   if (imageCount) addLog(`responses images count=${imageCount}`);
   req.body = {
@@ -2858,7 +2866,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     messages: Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input),
     temperature: original.temperature,
     top_p: original.top_p,
-    max_tokens: original.max_output_tokens || original.max_tokens,
+    max_tokens: responseMaxTokens,
     tools: chatTools,
     tool_choice: chatTools ? original.tool_choice : undefined,
     parallel_tool_calls: original.parallel_tool_calls,
