@@ -1053,6 +1053,205 @@ function hasOpenAIAssistantOutput(data) {
   );
 }
 
+function serverToolsEnabled() {
+  return envFlag(process.env.DORO_SERVER_TOOLS_ENABLED, true);
+}
+
+function serverToolMaxRounds() {
+  const value = optionalPositiveInt(process.env.DORO_SERVER_TOOLS_MAX_ROUNDS);
+  return Math.max(1, Math.min(value || 2, 5));
+}
+
+function serverToolSchemas() {
+  return [
+    {
+      type: "function",
+      function: {
+        name: "doro_lookup_order",
+        description: "Look up customer orders by order code or email. Read-only.",
+        parameters: {
+          type: "object",
+          properties: {
+            code: { type: "string", description: "Order code, for example GPTABC123." },
+            email: { type: "string", description: "Customer email address." },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "doro_check_credit_balance",
+        description: "Check balance and quota for the API key used in this request. Read-only.",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "doro_get_available_packages",
+        description: "List active packages customers can buy. Read-only.",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
+        name: "doro_get_model_quota_status",
+        description: "Show today's in-memory model usage, fallback chain, limits, and blocked models. Read-only.",
+        parameters: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+    },
+  ];
+}
+
+function mergeOpenAITools(existingTools, extraTools) {
+  const merged = [];
+  const seen = new Set();
+  for (const tool of [...(Array.isArray(existingTools) ? existingTools : []), ...(Array.isArray(extraTools) ? extraTools : [])]) {
+    const name = tool && tool.function && tool.function.name;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    merged.push(tool);
+  }
+  return merged.length ? merged : undefined;
+}
+
+function parseToolArguments(raw) {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(String(raw));
+  } catch (_) {
+    return {};
+  }
+}
+
+function publicOrderInfo(order) {
+  if (!order) return null;
+  let tokenRemaining = null;
+  if (order.api_key) {
+    const keyRow = credit.getKey(order.api_key);
+    tokenRemaining = keyRow ? Number(keyRow.token_remaining || 0) : null;
+  }
+  return {
+    id: order.id,
+    order_code: order.order_code,
+    package_id: order.package_id,
+    amount: Number(order.amount || 0),
+    credit: Number(order.credit || 0),
+    rpm_limit: Number(order.rpm_limit || 0),
+    customer_name: order.customer_name || "",
+    customer_email: order.customer_email || "",
+    customer_phone: order.customer_phone || "",
+    status: order.status || "",
+    created_at: order.created_at || null,
+    paid_at: order.paid_at || null,
+    expires_at: order.expires_at || null,
+    has_api_key: !!order.api_key,
+    api_key_masked: order.api_key ? maskSecret(order.api_key) : null,
+    token_remaining: tokenRemaining,
+  };
+}
+
+function modelQuotaSnapshot() {
+  const day = todayKey();
+  const usage = _modelUsage[day] || {};
+  const blocked = Object.keys(_modelBlocked).filter(m => isModelBlocked(m));
+  const chain = getModelFallbackChain();
+  const perModelLimits = getPerModelLimits();
+  const details = {};
+  for (const model of chain) {
+    const used = usage[model] || 0;
+    const modelLimit = perModelLimits[model] || MODEL_DAILY_LIMIT;
+    details[model] = { used, limit: modelLimit, remaining: Math.max(0, modelLimit - used), blocked: blocked.includes(model) };
+  }
+  for (const [model, used] of Object.entries(usage)) {
+    if (details[model]) continue;
+    const modelLimit = perModelLimits[model] || MODEL_DAILY_LIMIT;
+    details[model] = { used, limit: modelLimit, remaining: Math.max(0, modelLimit - used), blocked: blocked.includes(model) };
+  }
+  return { date: day, usage, details, blocked, fallback_chain: chain, daily_limit: MODEL_DAILY_LIMIT, per_model_limits: perModelLimits, checked_at: new Date().toISOString() };
+}
+
+async function executeServerTool(name, args, auth) {
+  if (name === "doro_lookup_order") {
+    const code = String(args.code || "").trim();
+    const email = String(args.email || "").trim().toLowerCase();
+    if (!code && !email) return { ok: false, error: "Missing code or email" };
+    const found = code ? [orders.getOrderByCode(code)] : orders.listByEmail(email).slice(0, 10);
+    return { ok: true, orders: found.filter(Boolean).map(publicOrderInfo) };
+  }
+  if (name === "doro_check_credit_balance") {
+    const token = auth && auth.token;
+    const row = token ? credit.getKey(token) : null;
+    if (!row) return { ok: false, error: "No valid credit key for this request" };
+    const usage = credit.getUsageTotal(token);
+    const quotaInfo = credit.getQuotaInfo(row);
+    return {
+      ok: true,
+      key_masked: maskSecret(token),
+      credit: row.credit,
+      token_remaining_raw: row.token_remaining,
+      token_remaining: quotaInfo.token_remaining,
+      token_quota: quotaInfo.token_quota,
+      token_per_request: quotaInfo.token_per_request,
+      package_id: quotaInfo.package_id,
+      rpm_limit: row.rpm_limit,
+      active: !!row.active,
+      expires_at: row.expires_at || null,
+      total_spent: Number(usage.total_spent || 0),
+      usage_count: Number(usage.usage_count || 0),
+      daily_quota: credit.getDailyQuota(token),
+    };
+  }
+  if (name === "doro_get_available_packages") {
+    return { ok: true, packages: orders.listPackages() };
+  }
+  if (name === "doro_get_model_quota_status") {
+    return { ok: true, ...modelQuotaSnapshot() };
+  }
+  return { ok: false, error: `Tool not allowed: ${name}` };
+}
+
+async function runServerToolCalls(toolCalls, auth) {
+  const allowed = new Set(serverToolSchemas().map((tool) => tool.function.name));
+  const results = [];
+  for (const call of Array.isArray(toolCalls) ? toolCalls : []) {
+    const fn = call && call.function ? call.function : {};
+    const name = String(fn.name || "");
+    if (!allowed.has(name)) continue;
+    const args = parseToolArguments(fn.arguments || "{}");
+    const started = Date.now();
+    let result;
+    try {
+      result = await executeServerTool(name, args, auth);
+    } catch (err) {
+      result = { ok: false, error: err.message || String(err) };
+    }
+    addLog(`server-tool ${name} ${Date.now() - started}ms ok=${!!(result && result.ok)}`);
+    results.push({
+      role: "tool",
+      tool_call_id: call.id || `call_${results.length}`,
+      content: JSON.stringify(result),
+    });
+  }
+  return results;
+}
+
 async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs) {
   const ordered = orderedBackendKeys(apiKeys);
   if (!ordered.length) throw new Error("Missing backend API key");
@@ -2943,21 +3142,75 @@ async function openAIChatCompletionsHandler(req, res) {
     return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
   }
   try {
-    const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
-      const payload = { ...body, model: profileSettings.backendModel };
-      if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
-      return payload;
-    }, "/chat/completions", req.obs);
-    const data = parseBackendJsonResponse(response.text, response.status, "chat.completions");
-    const payloadError = backendErrorFromPayload(data, response.status || 502);
-    if (payloadError) throw payloadError;
-    normalizeOpenAIAssistantPayload(data, publicModel, settings.backendModel);
+    const internalTools = serverToolsEnabled() ? serverToolSchemas() : [];
+    const mergedTools = mergeOpenAITools(body.tools, internalTools);
+    const maxRounds = internalTools.length ? serverToolMaxRounds() : 1;
+    let messages = Array.isArray(body.messages) ? body.messages : [];
+    let data = null;
+    let finalSettings = settings;
+    const totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+
+    for (let round = 0; round < maxRounds; round += 1) {
+      const roundBody = { ...body, messages };
+      if (mergedTools) roundBody.tools = mergedTools;
+      const result = await postWithBackendChain(settingsChain, (profileSettings) => {
+        const payload = { ...roundBody, model: profileSettings.backendModel };
+        if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+        return payload;
+      }, "/chat/completions", req.obs);
+
+      finalSettings = result.settings;
+      data = parseBackendJsonResponse(result.response.text, result.response.status, "chat.completions");
+      const payloadError = backendErrorFromPayload(data, result.response.status || 502);
+      if (payloadError) throw payloadError;
+      normalizeOpenAIAssistantPayload(data, publicModel, finalSettings.backendModel);
+
+      const usage = data.usage || {};
+      totalUsage.total_tokens += Number(usage.total_tokens || 0);
+      totalUsage.prompt_tokens += Number(usage.prompt_tokens || usage.input_tokens || 0);
+      totalUsage.completion_tokens += Number(usage.completion_tokens || usage.output_tokens || 0);
+
+      const choice = (data.choices || [])[0] || {};
+      const message = choice.message || {};
+      const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+      const serverToolNames = new Set(internalTools.map((tool) => tool.function.name));
+      const hasExternalToolCall = toolCalls.some((call) => !serverToolNames.has(String(call && call.function && call.function.name || "")));
+      if (!internalTools.length || hasExternalToolCall) break;
+
+      const toolResults = await runServerToolCalls(toolCalls, auth);
+      if (!toolResults.length) break;
+
+      if (round >= maxRounds - 1) {
+        const err = new Error("Server tool round limit reached");
+        err.status = 502;
+        err.text = JSON.stringify({ error: { message: err.message, type: "api_error", code: "server_tool_round_limit" } });
+        err.code = "server_tool_round_limit";
+        throw err;
+      }
+
+      messages = [
+        ...messages,
+        {
+          role: "assistant",
+          content: typeof message.content === "string" ? message.content : "",
+          tool_calls: message.tool_calls || [],
+        },
+        ...toolResults,
+      ];
+      addLog(`server-tool round ${round + 1} results=${toolResults.length}`);
+    }
+
+    if (data && data.usage) {
+      data.usage.total_tokens = totalUsage.total_tokens || data.usage.total_tokens || 0;
+      data.usage.prompt_tokens = totalUsage.prompt_tokens || data.usage.prompt_tokens || 0;
+      data.usage.completion_tokens = totalUsage.completion_tokens || data.usage.completion_tokens || 0;
+    }
     data.model = publicModel;
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
     req.obs.backend_base_url = finalSettings.baseUrl || req.obs.backend_base_url;
-    req.obs.final_backend_status = response.status;
+    req.obs.final_backend_status = req.obs.final_backend_status || 200;
     const choice = (data.choices || [])[0] || {};
     if (!hasOpenAIAssistantOutput(data)) {
       const err = new Error("Backend response did not include assistant output");
@@ -2967,9 +3220,9 @@ async function openAIChatCompletionsHandler(req, res) {
       throw err;
     }
     if (choice.message && choice.message.content) {
-      choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, settings.backendModel);
+      choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, finalSettings.backendModel);
     }
-    if (data.error && data.error.message) data.error.message = sanitizeBackendText(data.error.message, settings.backendModel, publicModel);
+    if (data.error && data.error.message) data.error.message = sanitizeBackendText(data.error.message, finalSettings.backendModel, publicModel);
     const tokens = Number((data.usage || {}).total_tokens || 0);
     const tokensIn = Number((data.usage || {}).prompt_tokens || 0);
     const tokensOut = Number((data.usage || {}).completion_tokens || 0);
