@@ -864,11 +864,62 @@ function extractAdminToken(req) {
   return req.get("x-api-key") || "";
 }
 
+function formatVnDateTime(value) {
+  if (!value) return "";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date).replace(",", "");
+}
+
+function authErrorContext(req, auth) {
+  const context = {
+    timestamp: new Date().toISOString(),
+    provider: "openai (proxy)",
+    status_code: auth.status || 403,
+    endpoint: `${req.method} ${req.path}`,
+    api_key_masked: maskSecret(auth.token || extractToken(req)),
+    error: auth.message || "Authentication error",
+    code: auth.code || undefined,
+  };
+  if (auth.details && auth.details.expired_at) context.expired_at = auth.details.expired_at;
+  if (auth.details && auth.details.expired_at_iso) {
+    context.expired_at_iso = auth.details.expired_at_iso;
+    context.expired_at_vn = formatVnDateTime(auth.details.expired_at_iso);
+  }
+  context.user_message = [
+    `Date/time: ${context.timestamp}`,
+    `Provider: ${context.provider}`,
+    `Endpoint: ${context.endpoint}`,
+    `API key: ${context.api_key_masked}`,
+    `Status: ${context.status_code}`,
+    `Error: ${context.error}`,
+    context.expired_at_vn ? `Expired at: ${context.expired_at_vn} Asia/Ho_Chi_Minh` : "",
+    `Action: This API key is expired. Please renew the package or use a new active key.`,
+  ].filter(Boolean).join("\n");
+  return context;
+}
+
+function authErrorMessage(req, auth, context) {
+  if (auth && auth.code === "api_key_expired") {
+    return (context || authErrorContext(req, auth)).user_message;
+  }
+  return (auth && auth.message) || "Authentication error";
+}
+
 function checkAuth(req) {
   const token = extractToken(req);
   // Credit-based auth
   const result = credit.checkCreditAuth(token);
-  if (!result.ok) return { ok: false, status: result.status, message: result.message };
+  if (!result.ok) return { ok: false, status: result.status, message: result.message, code: result.code, details: result.details, token };
   return { ok: true, token, keyRow: result.keyRow };
 }
 
@@ -881,15 +932,24 @@ function checkAdminAuth(req) {
   return { ok: true };
 }
 
-function anthropicErrorPayload(status, message, type = "api_error", code) {
+function appendErrorContext(error, context) {
+  if (!context || typeof context !== "object") return;
+  error.context = context;
+  error.details = context;
+  if (context.user_message) error.user_message = context.user_message;
+}
+
+function anthropicErrorPayload(status, message, type = "api_error", code, context) {
   const error = { type, message };
   if (code) error.code = code;
+  appendErrorContext(error, context);
   return { type: "error", error };
 }
 
-function openaiErrorPayload(status, message, type = "api_error", code) {
+function openaiErrorPayload(status, message, type = "api_error", code, context) {
   const error = { message, type, status_code: status };
   if (code) error.code = code;
+  appendErrorContext(error, context);
   return { error };
 }
 
@@ -2332,7 +2392,9 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   if (!auth.ok) {
     req.obs.error_type = "auth";
     req.obs.error_message = auth.message;
-    return res.status(auth.status).json(anthropicErrorPayload(auth.status, auth.message, auth.status === 401 ? "authentication_error" : "permission_error"));
+    const context = authErrorContext(req, auth);
+    const message = authErrorMessage(req, auth, context);
+    return res.status(auth.status).json(anthropicErrorPayload(auth.status, message, auth.status === 401 ? "authentication_error" : "permission_error", auth.code, context));
   }
   const body = req.body || {};
   addLog(requestSummary(body, req.rawBody ? req.rawBody.length : JSON.stringify(body).length, "anthropic"));
@@ -3165,7 +3227,9 @@ async function openAIChatCompletionsHandler(req, res) {
   if (!auth.ok) {
     req.obs.error_type = "auth";
     req.obs.error_message = auth.message;
-    return res.status(auth.status).json(openaiErrorPayload(auth.status, auth.message, auth.status === 401 ? "authentication_error" : "permission_error"));
+    const context = authErrorContext(req, auth);
+    const message = authErrorMessage(req, auth, context);
+    return res.status(auth.status).json(openaiErrorPayload(auth.status, message, auth.status === 401 ? "authentication_error" : "permission_error", auth.code, context));
   }
   const body = req.body || {};
   addLog(requestSummary(body, req.rawBody ? req.rawBody.length : JSON.stringify(body).length, "openai"));

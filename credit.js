@@ -187,7 +187,17 @@ function checkCreditAuth(apiKey) {
   if (!row.active) return { ok: false, status: 403, message: "API key is disabled" };
   const expiresAt = parseExpiryTime(row.expires_at);
   if (expiresAt && expiresAt < new Date()) {
-    return { ok: false, status: 403, message: "API key has expired" };
+    return {
+      ok: false,
+      status: 403,
+      message: "API key has expired",
+      code: "api_key_expired",
+      keyRow: row,
+      details: {
+        expired_at: row.expires_at || null,
+        expired_at_iso: Number.isNaN(expiresAt.getTime()) ? null : expiresAt.toISOString(),
+      },
+    };
   }
   if (row.credit <= 0) {
     return { ok: false, status: 429, message: `Insufficient credit. Please top up at ${process.env.DORO_PUBLIC_URL || "https://zplay.io.vn"}` };
