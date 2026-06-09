@@ -3444,6 +3444,10 @@ const DASHBOARD_PATH = (() => {
   const raw = String(process.env.DORO_DASHBOARD_PATH || "/dashboard_@@admin").trim();
   return raw.startsWith("/") ? raw : "/" + raw;
 })();
+const ADMIN_PANEL_PATH = (() => {
+  const raw = String(process.env.DORO_ADMIN_PATH || "/admin9797").trim();
+  return raw.startsWith("/") ? raw : "/" + raw;
+})();
 
 app.get(DASHBOARD_PATH, (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "dashboard.html"));
@@ -3461,8 +3465,12 @@ app.get("/key-check", (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "key-check.html"));
 });
 
-app.get("/admin", (_req, res) => {
+app.get(ADMIN_PANEL_PATH, (_req, res) => {
   return res.sendFile(path.join(ROOT_DIR, "admin.html"));
+});
+
+app.get("/admin", (_req, res) => {
+  return res.status(404).json({ detail: "Not found" });
 });
 
 app.get("/customers", (_req, res) => {
@@ -3588,7 +3596,7 @@ function uptimeTrackError(status) {
         `\ud83d\udea8 <b>L\u1ed7i:</b> ${_uptimeState.errorCount} l\u1ed7i ${status} trong 1 ph\u00fat\n` +
         `\ud83c\udf10 <b>Backend:</b> ${process.env.ANTHROPIC_BASE_URL || "N/A"}\n` +
         `\ud83d\udd52 <b>Th\u1eddi gian:</b> ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}\n` +
-        `\ud83d\udd17 <b>Monitor:</b> ${baseUrl}/admin`
+        `\ud83d\udd17 <b>Monitor:</b> ${baseUrl}${ADMIN_PANEL_PATH}`
       );
       addLog(`uptime alert sent: ${_uptimeState.errorCount} errors in 1min`);
     }
