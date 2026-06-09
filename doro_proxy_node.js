@@ -720,6 +720,71 @@ function sanitizeBackendText(text, backendModel, publicModel) {
   return cleaned;
 }
 
+function publicBackendFallbackMessage(status) {
+  if (status === 429) return "The AI service is busy right now. Please wait a moment and try again.";
+  if (status === 401 || status === 403) return "Authentication error with AI service. Please contact support.";
+  if (status === 408 || status === 504) return "The AI service timed out. Please try again.";
+  if (status === 503) return "The AI service is temporarily unavailable. Please try again later.";
+  if (status >= 500) return "The AI service is temporarily unavailable. Please try again later.";
+  return "The AI service returned an error. Please try again.";
+}
+
+function knownBackendHostnames() {
+  const values = [
+    process.env.DORO_API_BASE,
+    process.env.ANTHROPIC_BASE_URL,
+    process.env.DORO_BACKEND2_BASE_URL,
+  ];
+  const hosts = [];
+  for (const value of values) {
+    const raw = String(value || "").trim();
+    if (!raw) continue;
+    try {
+      hosts.push(new URL(raw).hostname.toLowerCase());
+    } catch (_) {
+      const match = raw.match(/^[a-z][a-z0-9+.-]*:\/\/([^/]+)/i);
+      if (match) hosts.push(match[1].toLowerCase());
+    }
+  }
+  return hosts.filter(Boolean);
+}
+
+function containsBackendLeak(text, backendModel) {
+  const value = String(text || "");
+  if (!value) return false;
+  const lower = value.toLowerCase();
+  if (
+    /<!doctype\s+html/i.test(value) ||
+    /<html[\s>]/i.test(value) ||
+    /<title[\s>]/i.test(value) ||
+    /<body[\s>]/i.test(value) ||
+    /<\/?[a-z][^>]*>/i.test(value)
+  ) return true;
+  if (/https?:\/\//i.test(value)) return true;
+  if (/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/i.test(value)) return true;
+  if (/\b(nginx|cloudflare|bad gateway|gateway timeout|upstream|backend|provider)\b/i.test(value)) return true;
+  if (backendModel && lower.includes(String(backendModel).toLowerCase())) return true;
+  return knownBackendHostnames().some((host) => host && lower.includes(host));
+}
+
+function publicBackendError(status, text, backendModel, publicModel, code) {
+  const parsed = parseBackendError(status, text || "");
+  const raw = `${text || ""}\n${parsed.message || ""}`;
+  if (containsBackendLeak(raw, backendModel)) {
+    return {
+      message: publicBackendFallbackMessage(Number(status) || 502),
+      type: parsed.type || "api_error",
+      code: code || parsed.code,
+    };
+  }
+  const message = sanitizeBackendText(parsed.message, backendModel, publicModel).slice(0, 500);
+  return {
+    message: message || publicBackendFallbackMessage(Number(status) || 502),
+    type: parsed.type || "api_error",
+    code: code || parsed.code,
+  };
+}
+
 function modelIdentityAnswer(publicModel) {
   return `I'm ${publicModel}, a large language model created by OpenAI. How can I help you today?`;
 }
@@ -1930,12 +1995,12 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           obs.error_type = "backend";
           obs.error_message = logPreview(err.text || err.message, 180);
         }
-        const parsed = parseBackendError(err.status, err.text || "");
+        const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (wroteResponse) {
-          sseWrite(res, "error", anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
+          sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
           return res.end();
         }
-        return res.status(err.status).json(anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
+        return res.status(err.status).json(anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) {
@@ -1951,13 +2016,13 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180);
       }
       if (wroteResponse) {
-        sseWrite(res, "error", anthropicErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
+        sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
         return res.end();
       }
-      return res.status(502).json(anthropicErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
+      return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
     }
   }
-  res.status(502).json(anthropicErrorPayload(502, `Backend stream failed: ${lastError ? lastError.message : "unknown"}`));
+  res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
 }
 
 async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth = 0) {
@@ -2074,11 +2139,11 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           continue;
         }
         if (obs) { obs.error_type = "backend"; obs.error_message = logPreview(err.text || err.message, 180); }
-        const parsed = parseBackendError(err.status, err.text || "");
+        const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
-          return res.status(err.status).json(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code));
+          return res.status(err.status).json(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
         }
-        res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, backendModel, publicModel), parsed.type, parsed.code))}\n\n`);
+        res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code))}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
       }
@@ -2094,14 +2159,14 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       }
       if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
       if (!wroteResponse) {
-        return res.status(502).json(openaiErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`));
+        return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
       }
-      res.write(`data: ${JSON.stringify(openaiErrorPayload(502, `Backend unreachable: ${err.name || "Error"}: ${err.message}`))}\n\n`);
+      res.write(`data: ${JSON.stringify(openaiErrorPayload(502, publicBackendFallbackMessage(502)))}\n\n`);
       res.write("data: [DONE]\n\n");
       return res.end();
     }
   }
-  return res.status(502).json(openaiErrorPayload(502, `Backend stream failed: ${lastError ? lastError.message : "unknown"}`));
+  return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
 }
 
 function friendlyErrorMessage(err, backendModel, publicModel) {
@@ -2114,8 +2179,8 @@ function friendlyErrorMessage(err, backendModel, publicModel) {
   if (err.name === "AbortError" || (err.message && err.message.includes("timeout"))) {
     return "Request timed out. The AI is taking too long to respond. Please try a shorter message or try again.";
   }
-  const parsed = err.text ? parseBackendError(status, err.text) : null;
-  if (parsed) return sanitizeBackendText(parsed.message, backendModel, publicModel);
+  const parsed = err.text ? publicBackendError(status, err.text, backendModel, publicModel, err.code) : null;
+  if (parsed) return parsed.message;
   return "An unexpected error occurred. Please try again.";
 }
 
@@ -2339,14 +2404,14 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       req.obs.error_type = "backend";
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
-      const parsed = parseBackendError(err.status, err.text || err.message || "");
-      return res.status(err.status).json(anthropicErrorPayload(err.status, sanitizeBackendText(parsed.message, settings.backendModel, publicModel), parsed.type, parsed.code || err.code));
+      const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
+      return res.status(err.status).json(anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
     req.obs.error_message = detail.slice(0, 180);
     addLog(`backend network error=${detail}`);
-    return res.status(502).json(anthropicErrorPayload(502, `Backend unreachable: ${detail}`));
+    return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
   }
 });
 
@@ -2822,7 +2887,7 @@ function createResponsesStreamBridge(res, publicModel) {
 
   const fail = (error) => {
     if (completed) return;
-    const message = error && typeof error === "object" ? error : { message: String(error || "Backend stream failed"), type: "api_error" };
+    const message = error && typeof error === "object" ? error : { message: String(error || publicBackendFallbackMessage(502)), type: "api_error" };
     writeEvent("response.created", {
       type: "response.created",
       response: { ...responseBase(), status: "failed", output: [] },
@@ -3237,14 +3302,14 @@ async function openAIChatCompletionsHandler(req, res) {
       req.obs.error_type = "backend";
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
-      const parsed = parseBackendError(err.status, err.text || err.message || "");
-      return res.status(err.status).json(openaiErrorPayload(err.status, sanitizeBackendText(parsed.message, settings.backendModel, publicModel), parsed.type, parsed.code || err.code));
+      const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
+      return res.status(err.status).json(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
     req.obs.error_message = detail.slice(0, 180);
     addLog(`backend network error=${detail}`);
-    return res.status(502).json(openaiErrorPayload(502, `Backend unreachable: ${detail}`));
+    return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
   }
 }
 
