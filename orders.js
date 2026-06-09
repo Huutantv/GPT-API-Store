@@ -45,6 +45,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_orders_code   ON orders(order_code);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
   CREATE INDEX IF NOT EXISTS idx_orders_email  ON orders(customer_email);
+  CREATE INDEX IF NOT EXISTS idx_orders_api_key ON orders(api_key);
 `);
 
 // Migration: thêm cột expires_at vào orders nếu chưa có
@@ -80,6 +81,7 @@ const stmts = {
   getPackage:    db.prepare("SELECT * FROM packages WHERE id = ?"),
   getOrder:      db.prepare("SELECT * FROM orders WHERE id = ?"),
   getOrderCode:  db.prepare("SELECT * FROM orders WHERE order_code = ?"),
+  getOrderByApiKey: db.prepare("SELECT * FROM orders WHERE api_key = ? ORDER BY paid_at DESC, created_at DESC LIMIT 1"),
   listOrders:    db.prepare(`
     SELECT *
     FROM orders
@@ -107,6 +109,7 @@ function listPackages() { return stmts.listPackages.all().map(withComputedPackag
 function getPackage(id) { return withComputedPackageQuota(stmts.getPackage.get(id)); }
 function getOrder(id)   { return stmts.getOrder.get(id); }
 function getOrderByCode(code) { return stmts.getOrderCode.get(code); }
+function getOrderByApiKey(apiKey) { return stmts.getOrderByApiKey.get(apiKey); }
 function listOrders(search = "", limit = 100) {
   const normalizedSearch = String(search || "").trim();
   const likeSearch = `%${normalizedSearch}%`;
@@ -174,4 +177,4 @@ function getStats() {
   };
 }
 
-module.exports = { listPackages, getPackage, getOrder, getOrderByCode, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, getStats };
+module.exports = { listPackages, getPackage, getOrder, getOrderByCode, getOrderByApiKey, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, getStats };

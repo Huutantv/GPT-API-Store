@@ -299,7 +299,7 @@ body{font-family:'Inter',sans-serif}
         <th class="text-right px-4 py-3">Status</th>
         <th class="text-right px-4 py-3">Latency</th>
       </tr></thead>
-      <tbody id="monitorTable"><tr><td colspan="12" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
+      <tbody id="monitorTable"><tr><td colspan="13" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -649,6 +649,15 @@ function fmtTimeVN(dateStr) {
   var d = parseVNDate(dateStr, false);
   if (!d) return "\u2014";
   return d.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+}
+
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 /* ===== COPY ===== */
@@ -1077,16 +1086,25 @@ async function loadMonitor() {
     var errShort = err ? String(err).slice(0, 56) : "\u2014";
     var retryText = r.is_retry || r.retry_count ? (r.retry_count || 1) : "\u2014";
     var upstream = r.final_backend_status || "\u2014";
+    var userDisplay = r.user_display || r.user_name || r.customer_name || r.user_email || r.customer_email || r.key_label || r.owner || "\u2014";
+    var userTitleParts = [];
+    if (r.user_name || r.customer_name) userTitleParts.push("Tên: " + (r.user_name || r.customer_name));
+    if (r.user_email || r.customer_email) userTitleParts.push("Email: " + (r.user_email || r.customer_email));
+    if (r.user_phone || r.customer_phone) userTitleParts.push("SĐT: " + (r.user_phone || r.customer_phone));
+    if (r.order_code) userTitleParts.push("Mã đơn: " + r.order_code);
+    if (r.package_id) userTitleParts.push("Gói: " + r.package_id);
+    if (r.key_label) userTitleParts.push("Label: " + r.key_label);
+    var userTitle = userTitleParts.join("\n");
     return '<tr class="border-b border-white/5 hover:bg-white/2 align-top">' +
       '<td class="px-4 py-2 whitespace-nowrap">' + fmtTimeVN(r.ts) + '</td>' +
       '<td class="px-4 py-2 text-gray-400 whitespace-nowrap">' + (r.client_ip || "\u2014") + '</td>' +
       '<td class="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">' + (r.api_key_masked || "\u2014") + copyBtn + '</td>' +
-      '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + ((r.key_label || r.customer_name || r.owner || "\u2014")) + '</td>' +
+      '<td class="px-4 py-2 text-gray-300 whitespace-nowrap max-w-[180px] truncate" title="' + escapeHtml(userTitle) + '">' + escapeHtml(userDisplay) + '</td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.path || "\u2014") + '</td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.model_requested || "\u2014") + '</td>' +
       '<td class="px-4 py-2 whitespace-nowrap"><span class="px-2 py-0.5 rounded font-semibold ' + backendCls + '">' + backend + '</span></td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + backendModel + '</td>' +
-      '<td class="px-4 py-2 text-gray-400 max-w-[260px] truncate" title="' + err.replace(/"/g, '"') + '">' + errShort + '</td>' +
+      '<td class="px-4 py-2 text-gray-400 max-w-[260px] truncate" title="' + escapeHtml(err) + '">' + escapeHtml(errShort) + '</td>' +
       '<td class="px-4 py-2 text-right text-gray-400">' + retryText + '</td>' +
       '<td class="px-4 py-2 text-right text-gray-400">' + upstream + '</td>' +
       '<td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ' + sCls + '">' + r.status + '</span></td>' +

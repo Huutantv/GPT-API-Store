@@ -470,6 +470,8 @@ const ACCESS_LOG_DIR = path.join(ROOT_DIR, "logs");
 const RECENT_REQUEST_LIMIT = Number(process.env.DORO_RECENT_REQUEST_LIMIT || "5000");
 const ACCESS_LOG_RETENTION_DAYS = Number(process.env.DORO_ACCESS_LOG_RETENTION_DAYS || "14");
 const recentRequests = [];
+const requestOwnerCache = new Map();
+const REQUEST_OWNER_CACHE_TTL_MS = Number(process.env.DORO_REQUEST_OWNER_CACHE_TTL_MS || "60000");
 let reqCounter = 0;
 let lastLogCleanupDay = "";
 
@@ -590,6 +592,43 @@ function recordAccess(entry) {
   recentRequests.push(entry);
   if (recentRequests.length > RECENT_REQUEST_LIMIT) recentRequests.splice(0, recentRequests.length - RECENT_REQUEST_LIMIT);
   writeAccessLog(entry);
+}
+
+function requestUserDisplay(owner) {
+  if (!owner) return "";
+  return owner.user_name || owner.customer_name || owner.user_email || owner.customer_email || owner.user_phone || owner.customer_phone || owner.key_label || "";
+}
+
+function getRequestOwnerInfo(apiKey) {
+  const key = String(apiKey || "").trim();
+  if (!key || key === "none") return {};
+  const now = Date.now();
+  const cached = requestOwnerCache.get(key);
+  if (cached && now - cached.ts < REQUEST_OWNER_CACHE_TTL_MS) return cached.value;
+
+  let value = {};
+  try {
+    const order = orders.getOrderByApiKey ? orders.getOrderByApiKey(key) : null;
+    const keyRow = credit.getKey(key);
+    value = {
+      user_name: order ? (order.customer_name || "") : "",
+      user_email: order ? (order.customer_email || "") : "",
+      user_phone: order ? (order.customer_phone || "") : "",
+      customer_name: order ? (order.customer_name || "") : "",
+      customer_email: order ? (order.customer_email || "") : "",
+      customer_phone: order ? (order.customer_phone || "") : "",
+      order_code: order ? (order.order_code || "") : "",
+      package_id: order ? (order.package_id || "") : "",
+      key_label: keyRow ? (keyRow.label || "") : "",
+    };
+    value.user_display = requestUserDisplay(value);
+  } catch (err) {
+    value = {};
+    addLog(`request owner lookup error=${err.message}`);
+  }
+  requestOwnerCache.set(key, { ts: now, value });
+  if (requestOwnerCache.size > 10000) requestOwnerCache.clear();
+  return value;
 }
 
 function percentile(values, p) {
@@ -2306,6 +2345,8 @@ app.use((req, res, next) => {
   const reqId = nextReqId();
   const forwardedFor = req.get("x-forwarded-for") || "";
   const host = clientIp(req) || "?";
+  const apiToken = extractToken(req);
+  const ownerInfo = shouldPrint ? getRequestOwnerInfo(apiToken) : {};
   let bytesOut = 0;
   req.reqId = reqId;
   req.obs = {
@@ -2313,7 +2354,17 @@ app.use((req, res, next) => {
     started,
     client_ip: host,
     forwarded_for: forwardedFor,
-    api_key_masked: maskSecret(extractToken(req)),
+    api_key_masked: maskSecret(apiToken),
+    user_name: ownerInfo.user_name || "",
+    user_email: ownerInfo.user_email || "",
+    user_phone: ownerInfo.user_phone || "",
+    user_display: ownerInfo.user_display || "",
+    customer_name: ownerInfo.customer_name || "",
+    customer_email: ownerInfo.customer_email || "",
+    customer_phone: ownerInfo.customer_phone || "",
+    order_code: ownerInfo.order_code || "",
+    package_id: ownerInfo.package_id || "",
+    key_label: ownerInfo.key_label || "",
     model_requested: "",
     backend_id: "",
     backend_profile: "",
@@ -2355,6 +2406,16 @@ app.use((req, res, next) => {
       client_ip: host,
       forwarded_for: forwardedFor,
       api_key_masked: req.obs.api_key_masked || "none",
+      user_name: req.obs.user_name || "",
+      user_email: req.obs.user_email || "",
+      user_phone: req.obs.user_phone || "",
+      user_display: req.obs.user_display || "",
+      customer_name: req.obs.customer_name || "",
+      customer_email: req.obs.customer_email || "",
+      customer_phone: req.obs.customer_phone || "",
+      order_code: req.obs.order_code || "",
+      package_id: req.obs.package_id || "",
+      key_label: req.obs.key_label || "",
       model_requested: req.obs.model_requested || "",
       backend_id: req.obs.backend_id || "",
       backend_profile: req.obs.backend_profile || "",
@@ -3969,12 +4030,29 @@ app.get("/api/requests/recent", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const limit = Math.min(1000, Math.max(1, Number(req.query.limit || "200")));
-  const keyMap = new Map((credit.listKeys() || []).map((k) => [k.key, k.label || ""]));
+  const ownerMap = new Map();
+  for (const keyRow of credit.listKeys() || []) {
+    const fullKey = keyRow.key || "";
+    const owner = getRequestOwnerInfo(fullKey);
+    ownerMap.set(fullKey, owner);
+    ownerMap.set(maskSecret(fullKey), owner);
+  }
   const requests = recentRequests.slice(-limit).reverse().map((item) => {
     const rawKey = String(item.api_key_masked || item.api_key || "");
+    const owner = item.user_display ? item : (ownerMap.get(rawKey) || {});
+    const keyLabel = item.key_label || owner.key_label || "";
     return {
       ...item,
-      key_label: keyMap.get(rawKey) || "",
+      user_name: item.user_name || owner.user_name || owner.customer_name || "",
+      user_email: item.user_email || owner.user_email || owner.customer_email || "",
+      user_phone: item.user_phone || owner.user_phone || owner.customer_phone || "",
+      user_display: item.user_display || owner.user_display || requestUserDisplay({ ...owner, key_label: keyLabel }),
+      customer_name: item.customer_name || owner.customer_name || owner.user_name || "",
+      customer_email: item.customer_email || owner.customer_email || owner.user_email || "",
+      customer_phone: item.customer_phone || owner.customer_phone || owner.user_phone || "",
+      order_code: item.order_code || owner.order_code || "",
+      package_id: item.package_id || owner.package_id || "",
+      key_label: keyLabel,
     };
   });
   res.json({ count: Math.min(limit, recentRequests.length), requests });
