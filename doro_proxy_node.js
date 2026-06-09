@@ -4031,11 +4031,15 @@ app.get("/api/requests/recent", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const limit = Math.min(1000, Math.max(1, Number(req.query.limit || "200")));
   const ownerMap = new Map();
+  const fullKeyMap = new Map();
   for (const keyRow of credit.listKeys() || []) {
     const fullKey = keyRow.key || "";
+    const maskedKey = maskSecret(fullKey);
     const owner = getRequestOwnerInfo(fullKey);
     ownerMap.set(fullKey, owner);
-    ownerMap.set(maskSecret(fullKey), owner);
+    ownerMap.set(maskedKey, owner);
+    fullKeyMap.set(fullKey, fullKey);
+    fullKeyMap.set(maskedKey, fullKey);
   }
   const requests = recentRequests.slice(-limit).reverse().map((item) => {
     const rawKey = String(item.api_key_masked || item.api_key || "");
@@ -4053,6 +4057,7 @@ app.get("/api/requests/recent", (req, res) => {
       order_code: item.order_code || owner.order_code || "",
       package_id: item.package_id || owner.package_id || "",
       key_label: keyLabel,
+      api_key_full: fullKeyMap.get(rawKey) || "",
     };
   });
   res.json({ count: Math.min(limit, recentRequests.length), requests });

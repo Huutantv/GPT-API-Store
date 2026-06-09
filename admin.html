@@ -660,6 +660,14 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function escapeJsString(value) {
+  return String(value == null ? "" : value)
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n");
+}
+
 /* ===== COPY ===== */
 function copyText(text, btn) {
   navigator.clipboard.writeText(text).then(function() {
@@ -1078,7 +1086,8 @@ async function loadMonitor() {
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="13" class="text-center text-gray-500 py-6">Ch\u01b0a c\u00f3 request</td></tr>'; return; }
   tbody.innerHTML = rows.map(function(r) {
     var sCls = r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400";
-    var copyBtn = r.api_key_masked ? ' <button onclick="copyText(\'' + r.api_key_masked + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>' : "";
+    var copyKey = r.api_key_full || r.copy_api_key || r.api_key_masked || "";
+    var copyBtn = r.api_key_masked ? ' <button onclick="copyText(\'' + escapeJsString(copyKey) + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>' : "";
     var backend = r.backend_profile || r.backend || r.backend_id || "\u2014";
     var backendCls = backend === "direct" ? "bg-primary/15 text-primary" : backend !== "\u2014" ? "bg-blue-500/15 text-blue-300" : "bg-gray-500/10 text-gray-500";
     var backendModel = r.backend_model || "\u2014";
