@@ -57,6 +57,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
 <button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+<button onclick="showTab('keyhealth');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keyhealth">&#x1F48A; Key Health</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -100,6 +101,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
 <button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+<button onclick="showTab('keyhealth')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keyhealth">&#x1F48A; Key Health</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -752,6 +754,50 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+<!-- ===== KEY HEALTH TAB ===== -->
+<div id="tab-keyhealth" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h2 class="text-xl font-bold">&#x1F48A; Key Health</h2>
+      <p class="text-sm text-gray-400 mt-1">Theo d&#7887;i s&#7913;c kh&#7887;e t&#7915;ng backend API key, t&#7921; &#273;&#7897;ng skip key l&#7895;i, c&#226;n b&#7857;ng theo daily count.</p>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="loadKeyHealth()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+      <button onclick="resetAllKeyHealth()" class="px-3 py-1.5 bg-orange-600 hover:bg-orange-500 rounded-lg text-xs font-semibold transition">Reset daily count</button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">T&#7893;ng key</p>
+      <div class="text-2xl font-bold text-white" id="khTotal">&mdash;</div>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Healthy</p>
+      <div class="text-2xl font-bold text-green-400" id="khHealthy">&mdash;</div>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Cooldown</p>
+      <div class="text-2xl font-bold text-yellow-400" id="khCooldown">&mdash;</div>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Sick</p>
+      <div class="text-2xl font-bold text-red-400" id="khSick">&mdash;</div>
+    </div>
+  </div>
+
+  <div id="khBackends" class="space-y-4"></div>
+
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 text-sm text-gray-300 space-y-2">
+    <p class="font-semibold text-white">C&#225;ch ho&#7841;t &#273;&#7897;ng:</p>
+    <p>&bull; <span class="text-green-400 font-semibold">healthy</span>: key &#273;ang ho&#7841;t &#273;&#7897;ng b&#236;nh th&#432;&#7901;ng, tham gia load balance.</p>
+    <p>&bull; <span class="text-yellow-400 font-semibold">cooldown</span>: key g&#7863;p 429, t&#7841;m skip 60 gi&#226;y r&#7891;i quay l&#7841;i.</p>
+    <p>&bull; <span class="text-red-400 font-semibold">sick</span>: key g&#7863;p 401/403/quota, skip 10 ph&#250;t r&#7891;i th&#7917; l&#7841;i.</p>
+    <p>&bull; <span class="text-gray-200 font-semibold">Daily count</span>: ph&#226;n b&#7889; t&#7843;i &#432;u ti&#234;n key &#237;t request &#273;&#7875; tr&#225;nh ch&#7841;m quota VietAPI 2000 req/ng&#224;y.</p>
+  </div>
+</div>
+
+
     </div><!-- end content inner -->
   </div><!-- end content -->
 </div><!-- end main layout -->
@@ -916,6 +962,7 @@ function showTab(name) {
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
+  if (name === "keyhealth") loadKeyHealth();
   if (name !== "backend") stopModelUsageRefresh();
 }
 </script>
@@ -2209,6 +2256,130 @@ function escapeHtml(str) {
 }
 function escapeAttr(str) {
   return String(str == null ? "" : str).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+}
+
+
+/* ===== KEY HEALTH ===== */
+async function loadKeyHealth() {
+  try {
+    var r = await fetch(BASE + "/api/key-health", { headers: authHeaders() });
+    if (!r.ok) {
+      document.getElementById("khBackends").innerHTML = '<div class="text-sm text-red-400">L&#7895;i load key health</div>';
+      return;
+    }
+    var data = await r.json();
+    renderKeyHealth(data);
+  } catch (e) {
+    console.error("loadKeyHealth", e);
+  }
+}
+
+function statusBadge(status) {
+  if (status === "healthy") return '<span class="px-2 py-0.5 rounded text-xs bg-green-500/20 text-green-300 border border-green-500/30">healthy</span>';
+  if (status === "cooldown") return '<span class="px-2 py-0.5 rounded text-xs bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">cooldown</span>';
+  if (status === "sick") return '<span class="px-2 py-0.5 rounded text-xs bg-red-500/20 text-red-300 border border-red-500/30">sick</span>';
+  return '<span class="px-2 py-0.5 rounded text-xs bg-gray-500/20 text-gray-300">' + status + '</span>';
+}
+
+function fmtDateShort(iso) {
+  if (!iso) return "&mdash;";
+  try {
+    var d = new Date(iso);
+    var now = Date.now();
+    var diff = Math.round((d.getTime() - now) / 1000);
+    if (Math.abs(diff) < 60) return diff > 0 ? "in " + diff + "s" : Math.abs(diff) + "s ago";
+    if (Math.abs(diff) < 3600) return diff > 0 ? "in " + Math.round(diff / 60) + "m" : Math.round(Math.abs(diff) / 60) + "m ago";
+    return d.toLocaleString("vi-VN", { hour12: false });
+  } catch (e) {
+    return iso;
+  }
+}
+
+function renderKeyHealth(data) {
+  var totals = { total: 0, healthy: 0, cooldown: 0, sick: 0 };
+  var html = "";
+  Object.keys(data).forEach(function (bid) {
+    var b = data[bid];
+    var rows = (b.keys || []).map(function (k) {
+      totals.total += 1;
+      totals[k.status] = (totals[k.status] || 0) + 1;
+      var until = k.sick_until || k.cooldown_until;
+      var lastErr = k.last_error ? k.last_error : "&mdash;";
+      var lastErrAt = k.last_error_at ? '<span class="text-xs text-gray-500">' + fmtDateShort(k.last_error_at) + '</span>' : "";
+      return '<tr class="border-b border-white/5">' +
+        '<td class="py-2 px-3 font-mono text-xs">' + (k.key_masked || "&mdash;") + '</td>' +
+        '<td class="py-2 px-3">' + statusBadge(k.status) + '</td>' +
+        '<td class="py-2 px-3 text-right">' + (k.daily_count || 0) + '</td>' +
+        '<td class="py-2 px-3 text-right">' + (k.total_reqs || 0) + '</td>' +
+        '<td class="py-2 px-3 text-right">' + (k.total_errors || 0) + '</td>' +
+        '<td class="py-2 px-3 text-xs text-gray-400">' + lastErr + ' ' + lastErrAt + '</td>' +
+        '<td class="py-2 px-3 text-xs text-gray-500">' + (until ? fmtDateShort(until) : "&mdash;") + '</td>' +
+        '<td class="py-2 px-3 text-center">' +
+          '<button onclick="resetOneKey(\'' + (k.key_full || "").replace(/'/g, "&#39;") + '\')" class="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs">Reset</button>' +
+        '</td>' +
+      '</tr>';
+    }).join("");
+
+    html += '<div class="bg-dark-700 border border-white/10 rounded-xl p-5">' +
+      '<div class="flex items-center justify-between mb-3">' +
+        '<div>' +
+          '<h3 class="font-bold text-base">' + (b.label || bid) + '</h3>' +
+          '<p class="text-xs text-gray-500 font-mono">' + (b.base_url || "") + '</p>' +
+        '</div>' +
+        '<span class="text-xs text-gray-400">' + (b.keys ? b.keys.length : 0) + ' keys</span>' +
+      '</div>' +
+      '<div class="overflow-x-auto">' +
+        '<table class="w-full text-sm">' +
+          '<thead class="text-xs text-gray-400 uppercase border-b border-white/10">' +
+            '<tr>' +
+              '<th class="text-left py-2 px-3">Key</th>' +
+              '<th class="text-left py-2 px-3">Status</th>' +
+              '<th class="text-right py-2 px-3">Daily</th>' +
+              '<th class="text-right py-2 px-3">Total</th>' +
+              '<th class="text-right py-2 px-3">Err</th>' +
+              '<th class="text-left py-2 px-3">L&#7895;i g&#7847;n nh&#7845;t</th>' +
+              '<th class="text-left py-2 px-3">Skip until</th>' +
+              '<th class="text-center py-2 px-3">Action</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody>' + (rows || '<tr><td colspan="8" class="py-4 text-center text-gray-500">Ch&#432;a c&#243; key</td></tr>') + '</tbody>' +
+        '</table>' +
+      '</div>' +
+    '</div>';
+  });
+
+  document.getElementById("khTotal").textContent = totals.total;
+  document.getElementById("khHealthy").textContent = totals.healthy || 0;
+  document.getElementById("khCooldown").textContent = totals.cooldown || 0;
+  document.getElementById("khSick").textContent = totals.sick || 0;
+  document.getElementById("khBackends").innerHTML = html || '<div class="text-sm text-gray-400">Ch&#432;a c&#243; backend</div>';
+}
+
+async function resetOneKey(fullKey) {
+  if (!fullKey) { alert("Key kh\u00f4ng x\u00e1c \u0111\u1ecbnh"); return; }
+  if (!confirm("Reset trang thai key nay (xoa sick/cooldown va daily count)?")) return;
+  try {
+    var r = await fetch(BASE + "/api/key-health/reset", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ key: fullKey })
+    });
+    if (!r.ok) { alert("Reset failed"); return; }
+    loadKeyHealth();
+  } catch (e) { alert(e.message); }
+}
+
+async function resetAllKeyHealth() {
+  if (!confirm("Reset daily count cho TAT CA keys?")) return;
+  try {
+    var r = await fetch(BASE + "/api/key-health/reset", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ all: true })
+    });
+    if (!r.ok) { alert("Reset failed"); return; }
+    loadKeyHealth();
+  } catch (e) { alert(e.message); }
 }
 
 </script>

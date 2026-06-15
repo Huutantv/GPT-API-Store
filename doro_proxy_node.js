@@ -35,6 +35,7 @@ const credit = require("./credit");
 const orders = require("./orders");
 const mailer = require("./mailer");
 const ipGuard = require("./ip-guard");
+const keyHealth = require("./key-health");
 const {
   getPackageRequestQuota,
   getPackageTokenQuota,
@@ -722,16 +723,27 @@ function isValidProxyKeyFormat(value) {
 
 function orderedBackendKeys(apiKeys) {
   if (!apiKeys.length) return [];
-  const start = backendKeyCounter++ % apiKeys.length;
-  return apiKeys
-    .map((key, index) => ({
-      key,
-      index,
-      load: backendKeyInflight.get(key) || 0,
-      turn: (index - start + apiKeys.length) % apiKeys.length,
-    }))
-    .sort((a, b) => (a.load - b.load) || (a.turn - b.turn))
-    .map((entry) => entry.key);
+  // key-health: loai bo sick/cooldown, sort theo daily-count + inflight
+  const { available, skipped } = keyHealth.rankKeys(apiKeys, backendKeyInflight);
+  if (skipped.length) {
+    addLog(`key-health skip ${skipped.length}/${apiKeys.length} keys: ${skipped.map(x => x.reason).join(" | ")}`);
+  }
+  // fallback: neu tat ca bi sick/cooldown, dung lai toan bo (tranh zero-key)
+  if (!available.length) {
+    addLog("key-health: all keys unavailable, using full list as fallback");
+    const start = backendKeyCounter++ % apiKeys.length;
+    return apiKeys
+      .map((key, index) => ({
+        key,
+        index,
+        load: backendKeyInflight.get(key) || 0,
+        turn: (index - start + apiKeys.length) % apiKeys.length,
+      }))
+      .sort((a, b) => (a.load - b.load) || (a.turn - b.turn))
+      .map((entry) => entry.key);
+  }
+  backendKeyCounter++;
+  return available;
 }
 
 function backendHeaders(apiKey, extra = {}) {
@@ -1437,17 +1449,20 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
       addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
         uptimeTrackError(resp.status);
+        keyHealth.recordError(ordered[i], resp.status, text);
       await new Promise(r => setTimeout(r, retryDelayMs(i + 1))); // exponential backoff + jitter
         continue;
       }
       if (!resp.ok) {
         uptimeTrackError(resp.status);
+        keyHealth.recordError(ordered[i], resp.status, text);
         const err = new Error(`Backend HTTP ${resp.status}: ${logPreview(text)}`);
         err.status = resp.status;
         err.text = text;
         throw err;
       }
       uptimeTrackSuccess();
+      keyHealth.recordSuccess(ordered[i]);
       return { status: resp.status, text, apiKey: ordered[i] };
     } catch (err) {
       lastError = err;
@@ -3551,6 +3566,31 @@ app.get("/api/orders/lookup", (req, res) => {
 });
 
 // ── Webhook Sepay / Casso ─────────────────────────────────────────────────────
+// Telegram alert khi key bi mark sick / cooldown
+keyHealth.setSickListener((info) => {
+  try {
+    const profile = backendProfile(info.profileId || activeBackendId());
+    const label = profile && profile.label ? profile.label : "Backend";
+    const minutes = Math.round((info.sickUntilMs - Date.now()) / 60000);
+    notifyTelegram(
+      "\u26a0\ufe0f <b>Key bi tam khoa</b>\n" +
+      "\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n" +
+      "\ud83d\udd11 Key: <code>" + (info.key ? info.key.slice(0,8)+"..."+info.key.slice(-4) : "?") + "</code>\n" +
+      "\ud83c\udfe2 " + label + "\n" +
+      "\ud83d\udeab Ly do: " + info.lastError + " (" + (info.status || "?") + ")\n" +
+      "\u23f1 Sick " + minutes + " phut\n" +
+      "\ud83d\udd52 " + new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })
+    );
+    addLog("KEY-HEALTH sick " + (info.key ? info.key.slice(0,8)+"..."+info.key.slice(-4) : "?") + " reason=" + info.lastError);
+  } catch (_) {}
+});
+
+keyHealth.setCooldownListener((info) => {
+  try {
+    addLog("KEY-HEALTH cooldown " + (info.key ? info.key.slice(0,8)+"..."+info.key.slice(-4) : "?") + " " + info.cooldownSec + "s");
+  } catch (_) {}
+});
+
 async function notifyTelegram(message) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -4467,6 +4507,42 @@ app.post("/api/ipguard/toggle", (req, res) => {
   addLog(`IPGUARD enabled=${next}`);
   res.json({ ok: true, enabled: next === "true" });
 });
+// -- Key Health admin endpoints --
+app.get("/api/key-health", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const active = activeBackendId();
+  const ids = active === "both" ? ["1", "2"] : [active];
+  const result = {};
+  for (const id of ids) {
+    const profile = backendProfile(id);
+    result["backend_" + id] = {
+      label: profile.label,
+      base_url: profile.baseUrl,
+      keys: keyHealth.snapshot(profile.apiKeys),
+    };
+  }
+  res.json(result);
+});
+
+app.post("/api/key-health/reset", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  if (body.key) {
+    const ok = keyHealth.resetKey(body.key);
+    if (!ok) return res.status(404).json({ detail: "Key not tracked" });
+    addLog("key-health manual reset key=" + body.key.slice(0,8) + "...");
+    return res.json({ ok: true, key: body.key.slice(0, 8) + "..." });
+  }
+  if (body.all) {
+    keyHealth.resetDailyAll();
+    addLog("key-health reset-all daily counters");
+    return res.json({ ok: true, action: "reset_all" });
+  }
+  return res.status(400).json({ detail: "Provide key or all:true" });
+});
+
 app.get("/api/ipguard/stats", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });

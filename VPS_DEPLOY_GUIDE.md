@@ -2,13 +2,6 @@
 
 
 
-
-
-
-
-
-
-
 cd ~/gpt-api-store
 git pull --ff-only origin main
 npm install --omit=dev
