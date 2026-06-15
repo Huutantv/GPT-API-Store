@@ -56,6 +56,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
+<button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -98,6 +99,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('orders')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
+<button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -598,6 +600,158 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+
+<div id="tab-ipguard" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3">
+    <div>
+      <h2 class="text-xl font-bold">&#x1F6E1;&#xFE0F; IP Guard - Ch&#7889;ng DDoS</h2>
+      <p class="text-sm text-gray-400 mt-1">Ch&#7863;n IP/CIDR theo y&#234;u c&#7847;u, t&#7921; &#273;&#7897;ng ban khi spam, qu&#7843;n l&#253; whitelist.</p>
+    </div>
+    <div class="flex gap-2">
+      <button onclick="loadIpGuardAll()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+      <button onclick="toggleIpGuardEnabled()" id="ipguardToggleBtn" class="px-3 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">&#272;ang t&#7843;i...</button>
+    </div>
+  </div>
+
+  <!-- Stats cards -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">IP &#273;ang block</p>
+      <div class="text-2xl font-bold text-red-400" id="igBlockedIps">&mdash;</div>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">CIDR block</p>
+      <div class="text-2xl font-bold text-orange-400" id="igBlockedCidrs">&mdash;</div>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Auto-ban (l&#7847;n)</p>
+      <div class="text-2xl font-bold text-yellow-400" id="igAutoBans">&mdash;</div>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4">
+      <p class="text-xs text-gray-500 mb-1">Request b&#7883; ch&#7863;n</p>
+      <div class="text-2xl font-bold text-green-400" id="igBlockedReq">&mdash;</div>
+    </div>
+  </div>
+
+  <!-- Config -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+    <h3 class="font-bold text-base">Ng&#432;&#7905;ng auto-ban</h3>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">RPS limit</label>
+        <input id="igCfgRps" type="number" min="1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">RPM limit</label>
+        <input id="igCfgRpm" type="number" min="1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Unauth/ph&#250;t</label>
+        <input id="igCfgUnauth" type="number" min="1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Th&#7901;i gian ban (ph&#250;t)</label>
+        <input id="igCfgBanMin" type="number" min="1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="saveIpGuardConfig()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u c&#7845;u h&#236;nh</button>
+      <span id="igCfgMsg" class="text-sm text-gray-400"></span>
+    </div>
+  </div>
+
+  <!-- Top suspicious IPs -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base">Top IP nghi v&#7845;n (5 ph&#250;t g&#7847;n nh&#7845;t)</h3>
+      <button onclick="loadIpGuardTop()" class="text-xs text-primary hover:underline">L&#224;m m&#7899;i</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs text-gray-400 uppercase border-b border-white/10">
+          <tr>
+            <th class="text-left py-2 px-3">IP</th>
+            <th class="text-right py-2 px-3">RPS</th>
+            <th class="text-right py-2 px-3">Total req</th>
+            <th class="text-right py-2 px-3">Unauth</th>
+            <th class="text-right py-2 px-3">4xx</th>
+            <th class="text-center py-2 px-3">Action</th>
+          </tr>
+        </thead>
+        <tbody id="igTopBody" class="divide-y divide-white/5"><tr><td colspan="6" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Manual block -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+      <h3 class="font-bold text-base text-red-400">Th&#234;m IP/CIDR v&#224;o blocklist</h3>
+      <div class="space-y-2">
+        <input id="igBlockIp" placeholder="1.2.3.4 ho&#7863;c 1.2.3.0/24" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <input id="igBlockReason" placeholder="L&#253; do (v&#237; d&#7909;: spam)" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <input id="igBlockMin" type="number" min="0" placeholder="S&#7889; ph&#250;t (0 = v&#297;nh vi&#7877;n)" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <button onclick="addIpBlock()" class="w-full px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-semibold transition">Th&#234;m v&#224;o blocklist</button>
+        <span id="igBlockMsg" class="text-xs text-gray-400 block"></span>
+      </div>
+    </div>
+
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+      <h3 class="font-bold text-base text-green-400">Th&#234;m IP v&#224;o whitelist</h3>
+      <div class="space-y-2">
+        <input id="igWlIp" placeholder="IP ho&#7863;c CIDR" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <input id="igWlNote" placeholder="Ghi ch&#250; (v&#237; d&#7909;: VPS office)" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <button onclick="addIpWhitelist()" class="w-full px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">Th&#234;m v&#224;o whitelist</button>
+        <span id="igWlMsg" class="text-xs text-gray-400 block"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active blocks -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base">IP &#273;ang b&#7883; block</h3>
+      <button onclick="loadIpGuardBlocks()" class="text-xs text-primary hover:underline">L&#224;m m&#7899;i</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs text-gray-400 uppercase border-b border-white/10">
+          <tr>
+            <th class="text-left py-2 px-3">IP / CIDR</th>
+            <th class="text-left py-2 px-3">Reason</th>
+            <th class="text-left py-2 px-3">Source</th>
+            <th class="text-right py-2 px-3">Hits</th>
+            <th class="text-left py-2 px-3">H&#7871;t h&#7841;n</th>
+            <th class="text-center py-2 px-3">Action</th>
+          </tr>
+        </thead>
+        <tbody id="igBlocksBody" class="divide-y divide-white/5"><tr><td colspan="6" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Whitelist -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base">Whitelist</h3>
+      <button onclick="loadIpGuardWhitelist()" class="text-xs text-primary hover:underline">L&#224;m m&#7899;i</button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs text-gray-400 uppercase border-b border-white/10">
+          <tr>
+            <th class="text-left py-2 px-3">IP / CIDR</th>
+            <th class="text-left py-2 px-3">Ghi ch&#250;</th>
+            <th class="text-left py-2 px-3">T&#7841;o l&#250;c</th>
+            <th class="text-center py-2 px-3">Action</th>
+          </tr>
+        </thead>
+        <tbody id="igWhitelistBody" class="divide-y divide-white/5"><tr><td colspan="4" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
     </div><!-- end content inner -->
   </div><!-- end content -->
 </div><!-- end main layout -->
@@ -761,6 +915,7 @@ function showTab(name) {
   if (name === "orders") loadOrders();
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
+  if (name === "ipguard") loadIpGuardAll();
   if (name !== "backend") stopModelUsageRefresh();
 }
 </script>
@@ -1824,6 +1979,238 @@ setInterval(function() {
   var active = document.querySelector(".tab-content:not(.hidden)");
   if (active && active.id === "tab-monitor") loadMonitor();
 }, 5000);
+
+/* ===== IP GUARD ===== */
+async function loadIpGuardAll() {
+  await Promise.all([loadIpGuardStatus(), loadIpGuardBlocks(), loadIpGuardWhitelist(), loadIpGuardTop()]);
+}
+
+async function loadIpGuardStatus() {
+  try {
+    var r = await fetch(BASE + "/api/ipguard/stats", { headers: authHeaders() });
+    if (!r.ok) return;
+    var data = await r.json();
+    document.getElementById("igBlockedIps").textContent = data.blocked_ip_count || 0;
+    document.getElementById("igBlockedCidrs").textContent = data.blocked_cidr_count || 0;
+    document.getElementById("igAutoBans").textContent = data.auto_bans_total || 0;
+    document.getElementById("igBlockedReq").textContent = data.blocked_requests || 0;
+    var btn = document.getElementById("ipguardToggleBtn");
+    if (btn) {
+      if (data.enabled) {
+        btn.textContent = "✅ Dang bat";
+        btn.className = "px-3 py-1.5 bg-green-600 hover:bg-green-500 rounded-lg text-xs font-semibold transition";
+      } else {
+        btn.textContent = "⛔ Dang tat";
+        btn.className = "px-3 py-1.5 bg-gray-600 hover:bg-gray-500 rounded-lg text-xs font-semibold transition";
+      }
+    }
+    var c = data.config || {};
+    setIfEmpty("igCfgRps", c.rps_limit);
+    setIfEmpty("igCfgRpm", c.rpm_limit);
+    setIfEmpty("igCfgUnauth", c.unauth_limit);
+    setIfEmpty("igCfgBanMin", c.auto_ban_minutes);
+  } catch (e) { console.error(e); }
+}
+
+function setIfEmpty(id, value) {
+  var el = document.getElementById(id);
+  if (el && (!el.value || el.dataset.synced !== "1")) {
+    el.value = value || "";
+    el.dataset.synced = "1";
+  }
+}
+
+async function saveIpGuardConfig() {
+  var msg = document.getElementById("igCfgMsg");
+  msg.textContent = "Dang luu...";
+  msg.className = "text-sm text-gray-400";
+  try {
+    var body = {
+      rps_limit: Number(document.getElementById("igCfgRps").value) || 0,
+      rpm_limit: Number(document.getElementById("igCfgRpm").value) || 0,
+      unauth_limit: Number(document.getElementById("igCfgUnauth").value) || 0,
+      auto_ban_minutes: Number(document.getElementById("igCfgBanMin").value) || 0,
+    };
+    var r = await fetch(BASE + "/api/ipguard/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(body) });
+    var data = await r.json();
+    if (!r.ok) { msg.textContent = "Loi: " + (data.detail || r.status); msg.className = "text-sm text-red-400"; return; }
+    msg.textContent = "Da luu cau hinh.";
+    msg.className = "text-sm text-green-400";
+    await loadIpGuardStatus();
+  } catch (e) {
+    msg.textContent = "Loi: " + e.message;
+    msg.className = "text-sm text-red-400";
+  }
+}
+
+async function toggleIpGuardEnabled() {
+  try {
+    var r = await fetch(BASE + "/api/ipguard/toggle", { method: "POST", headers: authHeaders(), body: JSON.stringify({}) });
+    if (!r.ok) { alert("Loi: " + r.status); return; }
+    await loadIpGuardStatus();
+  } catch (e) { alert(e.message); }
+}
+
+async function loadIpGuardBlocks() {
+  var body = document.getElementById("igBlocksBody");
+  if (!body) return;
+  try {
+    var r = await fetch(BASE + "/api/ipguard/blocks", { headers: authHeaders() });
+    var data = await r.json();
+    var blocks = data.blocks || [];
+    if (!blocks.length) {
+      body.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-500">Chua co IP nao bi block</td></tr>';
+      return;
+    }
+    body.innerHTML = blocks.map(function(b) {
+      var expires = b.expires_at ? b.expires_at : '<span class="text-yellow-400">Vinh vien</span>';
+      return '<tr class="hover:bg-white/5">' +
+        '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(b.ip) + '</td>' +
+        '<td class="py-2 px-3 text-gray-300 text-xs">' + escapeHtml(b.reason || "") + '</td>' +
+        '<td class="py-2 px-3"><span class="text-xs px-2 py-0.5 rounded bg-dark-900 text-gray-400">' + escapeHtml(b.source) + '</span></td>' +
+        '<td class="py-2 px-3 text-right text-gray-300">' + (b.hits || 0) + '</td>' +
+        '<td class="py-2 px-3 text-xs text-gray-400">' + expires + '</td>' +
+        '<td class="py-2 px-3 text-center">' +
+          '<button onclick="removeIpBlock(\'' + escapeAttr(b.ip) + '\')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs">Unban</button>' +
+        '</td>' +
+      '</tr>';
+    }).join("");
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-red-400">Loi: ' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+async function loadIpGuardWhitelist() {
+  var body = document.getElementById("igWhitelistBody");
+  if (!body) return;
+  try {
+    var r = await fetch(BASE + "/api/ipguard/whitelist", { headers: authHeaders() });
+    var data = await r.json();
+    var items = data.whitelist || [];
+    if (!items.length) {
+      body.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-gray-500">Chua co IP whitelist</td></tr>';
+      return;
+    }
+    body.innerHTML = items.map(function(w) {
+      return '<tr class="hover:bg-white/5">' +
+        '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(w.ip) + '</td>' +
+        '<td class="py-2 px-3 text-gray-300 text-xs">' + escapeHtml(w.note || "") + '</td>' +
+        '<td class="py-2 px-3 text-xs text-gray-400">' + escapeHtml(w.created_at || "") + '</td>' +
+        '<td class="py-2 px-3 text-center">' +
+          '<button onclick="removeIpWhitelist(\'' + escapeAttr(w.ip) + '\')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs">Xoa</button>' +
+        '</td>' +
+      '</tr>';
+    }).join("");
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-red-400">Loi: ' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+async function loadIpGuardTop() {
+  var body = document.getElementById("igTopBody");
+  if (!body) return;
+  try {
+    var r = await fetch(BASE + "/api/ipguard/top-ips?limit=20", { headers: authHeaders() });
+    var data = await r.json();
+    var rows = data.items || data.top || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-500">Khong co IP nao trong 5 phut gan day</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(it) {
+      var rps = Number(it.rps || 0);
+      return '<tr class="hover:bg-white/5">' +
+        '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(it.ip) + (it.blocked ? ' <span class="ml-1 text-xs text-red-400">[blocked]</span>' : '') + (it.whitelisted ? ' <span class="ml-1 text-xs text-green-400">[whitelist]</span>' : '') + '</td>' +
+        '<td class="py-2 px-3 text-right text-gray-300">' + rps + '</td>' +
+        '<td class="py-2 px-3 text-right">' + (it.rpm || it.count || 0) + '</td>' +
+        '<td class="py-2 px-3 text-right text-yellow-400">' + (it.unauth_60s || it.unauth || 0) + '</td>' +
+        '<td class="py-2 px-3 text-right text-orange-400">' + (it.err4xx_60s || it.err4xx || 0) + '</td>' +
+        '<td class="py-2 px-3 text-center">' +
+          '<button onclick="quickBan(\'' + escapeAttr(it.ip) + '\', 60)" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs mr-1">Ban 1h</button>' +
+          '<button onclick="quickBan(\'' + escapeAttr(it.ip) + '\', 0)" class="px-2 py-1 bg-red-700/40 text-red-300 hover:bg-red-700/60 rounded text-xs">Ban vinh vien</button>' +
+        '</td>' +
+      '</tr>';
+    }).join("");
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-red-400">Loi: ' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+async function addIpBlock() {
+  var msg = document.getElementById("igBlockMsg");
+  var ip = document.getElementById("igBlockIp").value.trim();
+  var reason = document.getElementById("igBlockReason").value.trim();
+  var minutes = Number(document.getElementById("igBlockMin").value) || 0;
+  if (!ip) { msg.textContent = "Nhap IP"; msg.className = "text-xs text-red-400 block"; return; }
+  msg.textContent = "Dang ban...";
+  msg.className = "text-xs text-gray-400 block";
+  try {
+    var r = await fetch(BASE + "/api/ipguard/block", { method: "POST", headers: authHeaders(), body: JSON.stringify({ ip: ip, reason: reason, minutes: minutes }) });
+    var data = await r.json();
+    if (!r.ok) { msg.textContent = "Loi: " + (data.detail || r.status); msg.className = "text-xs text-red-400 block"; return; }
+    msg.textContent = "Da ban " + ip;
+    msg.className = "text-xs text-green-400 block";
+    document.getElementById("igBlockIp").value = "";
+    document.getElementById("igBlockReason").value = "";
+    document.getElementById("igBlockMin").value = "";
+    await Promise.all([loadIpGuardStatus(), loadIpGuardBlocks()]);
+  } catch (e) { msg.textContent = "Loi: " + e.message; msg.className = "text-xs text-red-400 block"; }
+}
+
+async function quickBan(ip, minutes) {
+  var label = minutes ? minutes + " phut" : "vinh vien";
+  if (!confirm("Ban " + ip + " " + label + "?")) return;
+  try {
+    var r = await fetch(BASE + "/api/ipguard/block", { method: "POST", headers: authHeaders(), body: JSON.stringify({ ip: ip, reason: "manual quick ban", minutes: minutes }) });
+    if (!r.ok) { var d = await r.json().catch(function() { return {}; }); alert("Loi: " + (d.detail || r.status)); return; }
+    await Promise.all([loadIpGuardStatus(), loadIpGuardBlocks(), loadIpGuardTop()]);
+  } catch (e) { alert("Loi: " + e.message); }
+}
+
+async function removeIpBlock(ip) {
+  if (!confirm("Unban " + ip + "?")) return;
+  try {
+    var r = await fetch(BASE + "/api/ipguard/block", { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ ip: ip }) });
+    if (!r.ok) { var d = await r.json().catch(function() { return {}; }); alert("Loi: " + (d.detail || r.status)); return; }
+    await Promise.all([loadIpGuardStatus(), loadIpGuardBlocks()]);
+  } catch (e) { alert("Loi: " + e.message); }
+}
+
+async function addIpWhitelist() {
+  var msg = document.getElementById("igWlMsg");
+  var ip = document.getElementById("igWlIp").value.trim();
+  var note = document.getElementById("igWlNote").value.trim();
+  if (!ip) { msg.textContent = "Nhap IP"; msg.className = "text-xs text-red-400 block"; return; }
+  try {
+    var r = await fetch(BASE + "/api/ipguard/whitelist", { method: "POST", headers: authHeaders(), body: JSON.stringify({ ip: ip, note: note }) });
+    var data = await r.json();
+    if (!r.ok) { msg.textContent = "Loi: " + (data.detail || r.status); msg.className = "text-xs text-red-400 block"; return; }
+    msg.textContent = "Da them " + ip;
+    msg.className = "text-xs text-green-400 block";
+    document.getElementById("igWlIp").value = "";
+    document.getElementById("igWlNote").value = "";
+    await loadIpGuardWhitelist();
+  } catch (e) { msg.textContent = "Loi: " + e.message; msg.className = "text-xs text-red-400 block"; }
+}
+
+async function removeIpWhitelist(ip) {
+  if (!confirm("Xoa " + ip + " khoi whitelist?")) return;
+  try {
+    var r = await fetch(BASE + "/api/ipguard/whitelist", { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ ip: ip }) });
+    if (!r.ok) { var d = await r.json().catch(function() { return {}; }); alert("Loi: " + (d.detail || r.status)); return; }
+    await loadIpGuardWhitelist();
+  } catch (e) { alert("Loi: " + e.message); }
+}
+
+function escapeHtml(str) {
+  return String(str == null ? "" : str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function escapeAttr(str) {
+  return String(str == null ? "" : str).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+}
+
 </script>
 </body>
 </html>

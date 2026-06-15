@@ -34,6 +34,7 @@ loadLocalEnv(false);
 const credit = require("./credit");
 const orders = require("./orders");
 const mailer = require("./mailer");
+const ipGuard = require("./ip-guard");
 const {
   getPackageRequestQuota,
   getPackageTokenQuota,
@@ -2306,6 +2307,26 @@ function saveEnvUpdates(updates) {
 
 app.disable("x-powered-by");
 app.set("trust proxy", true);
+// IP guard: ch?n DDoS / IP spam tr??c khi parse body
+app.use(ipGuard.middleware({
+  onAutoBan: (info) => {
+    try { addLog(`IPGUARD ban ip=${info.ip} reason=${info.reason} minutes=${info.minutes}`); } catch (_) {}
+    try {
+      if (typeof notifyTelegram === "function") {
+        notifyTelegram(
+          `\u26d4\ufe0f <b>IP Guard auto-ban</b>\n` +
+          `IP: <code>${info.ip}</code>\n` +
+          `Reason: ${info.reason}\n` +
+          `Time: ${info.minutes} phut`
+        );
+      }
+    } catch (_) {}
+  },
+  onBlocked: (info) => {
+    try { addLog(`IPGUARD reject ip=${info.ip} path=${info.path} reason=${info.reason}`); } catch (_) {}
+  },
+  whitelistPaths: ["/health", "/webhook/sepay", "/webhook/casso"],
+}));
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "*");
@@ -4431,6 +4452,129 @@ app.get("/api/test-telegram", async (req, res) => {
   } catch (err) {
     res.json({ ok: false, error: err.message });
   }
+});
+
+
+// ?? IP Guard admin endpoints ????????????????????????????????????????????????
+
+app.post("/api/ipguard/toggle", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const cur = String(process.env.DORO_IPGUARD_ENABLED ?? "true").toLowerCase();
+  const next = (cur === "true" || cur === "1" || cur === "yes") ? "false" : "true";
+  saveEnvUpdates({ DORO_IPGUARD_ENABLED: next });
+  ipGuard.refreshConfig();
+  addLog(`IPGUARD enabled=${next}`);
+  res.json({ ok: true, enabled: next === "true" });
+});
+app.get("/api/ipguard/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json(ipGuard.snapshotStats());
+});
+
+app.get("/api/ipguard/blocks", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ blocks: ipGuard.listBlocks() });
+});
+
+app.post("/api/ipguard/block", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const ip = String(body.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const reason = String(body.reason || "manual block").trim();
+  const minutes = body.minutes === undefined || body.minutes === null || body.minutes === ""
+    ? null
+    : Number(body.minutes);
+  const note = String(body.note || "").trim();
+  const result = ipGuard.banIp(ip, { reason, source: "manual", minutes, note });
+  if (!result.ok) return res.status(400).json({ detail: result.error || "ban failed" });
+  addLog(`ipguard manual-ban ip=${result.ip} minutes=${minutes ?? "permanent"} reason=${reason}`);
+  res.json(result);
+});
+
+app.delete("/api/ipguard/block", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const ip = String((req.body || {}).ip || req.query.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const result = ipGuard.unbanIp(ip);
+  if (!result.ok) return res.status(404).json({ detail: "ip not in blocklist" });
+  addLog(`ipguard manual-unban ip=${result.ip}`);
+  res.json(result);
+});
+
+app.get("/api/ipguard/whitelist", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ whitelist: ipGuard.listWhitelist() });
+});
+
+app.post("/api/ipguard/whitelist", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const ip = String(body.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const note = String(body.note || "").trim();
+  const result = ipGuard.addWhitelist(ip, note);
+  if (!result.ok) return res.status(400).json({ detail: result.error || "whitelist failed" });
+  addLog(`ipguard whitelist+ ip=${result.ip}`);
+  res.json(result);
+});
+
+app.delete("/api/ipguard/whitelist", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const ip = String((req.body || {}).ip || req.query.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const result = ipGuard.removeWhitelist(ip);
+  if (!result.ok) return res.status(404).json({ detail: "ip not whitelisted" });
+  addLog(`ipguard whitelist- ip=${result.ip}`);
+  res.json(result);
+});
+
+app.get("/api/ipguard/top-ips", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  res.json({ items: ipGuard.topIps(limit) });
+});
+
+app.post("/api/ipguard/reload", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  ipGuard.reloadCache();
+  res.json({ ok: true, ...ipGuard.snapshotStats() });
+});
+
+app.put("/api/ipguard/config", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const updates = {};
+  const fields = {
+    DORO_IPGUARD_ENABLED: body.enabled,
+    DORO_IPGUARD_RPS_LIMIT: body.rps_limit,
+    DORO_IPGUARD_RPM_LIMIT: body.rpm_limit,
+    DORO_IPGUARD_UNAUTH_LIMIT: body.unauth_limit,
+    DORO_IPGUARD_ERR4XX_LIMIT: body.err4xx_limit,
+    DORO_IPGUARD_AUTO_BAN_MINUTES: body.auto_ban_minutes,
+    DORO_IPGUARD_TRUST_CF: body.trust_cf_header,
+  };
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v === "boolean") updates[k] = v ? "true" : "false";
+    else updates[k] = String(v);
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ detail: "No fields to update" });
+  saveEnvUpdates(updates);
+  ipGuard.reloadCache();
+  addLog(`ipguard config updated: ${Object.keys(updates).join(",")}`);
+  res.json({ ok: true, updated: Object.keys(updates), config: ipGuard.snapshotStats() });
 });
 
 app.use((req, res) => res.status(404).json({ detail: "Not found" }));
