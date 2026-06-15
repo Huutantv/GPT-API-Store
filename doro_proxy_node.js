@@ -2637,10 +2637,37 @@ function responsesContentToChatContent(content) {
 function responsesInputToMessages(input) {
   const items = Array.isArray(input) ? input : [input];
   const messages = [];
+  let pendingToolCalls = [];
+  let autoIdSeq = 0;
+  let lastAssistantToolCallIds = [];
+
+  const sanitizeToolId = (raw, fallback) => {
+    const value = String(raw == null ? "" : raw).trim();
+    if (value) return value;
+    autoIdSeq += 1;
+    return `${fallback || "call"}_auto_${Date.now()}_${autoIdSeq}`;
+  };
+
+  const flushToolCalls = () => {
+    if (!pendingToolCalls.length) return;
+    messages.push({
+      role: "assistant",
+      content: null,
+      tool_calls: pendingToolCalls.map((tc) => ({
+        id: tc.id,
+        type: "function",
+        function: { name: tc.name, arguments: tc.arguments },
+      })),
+    });
+    pendingToolCalls = [];
+  };
 
   for (const item of items) {
     if (typeof item === "string") {
-      messages.push({ role: "user", content: item });
+      flushToolCalls();
+      lastAssistantToolCallIds = [];
+      const text = item.trim();
+      if (text) messages.push({ role: "user", content: item });
       continue;
     }
     if (!item || typeof item !== "object") continue;
@@ -2648,42 +2675,50 @@ function responsesInputToMessages(input) {
     if (item.type === "function_call") {
       const name = String(item.name || "").trim();
       if (!name) continue;
-      messages.push({
-        role: "assistant",
-        content: item.content || "",
-        tool_calls: [{
-          id: item.call_id || item.id || `call_${messages.length}`,
-          type: "function",
-          function: {
-            name,
-            arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
-          },
-        }],
+      const id = sanitizeToolId(item.call_id || item.id, "call");
+      lastAssistantToolCallIds.push(id);
+      pendingToolCalls.push({
+        id,
+        name,
+        arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
       });
       continue;
     }
 
     if (item.type === "function_call_output" || item.type === "local_shell_call_output" || item.type === "shell_call_output") {
+      flushToolCalls();
+      let toolId = item.call_id != null ? String(item.call_id).trim() : "";
+      if (toolId) {
+        // Remove from queue so subsequent outputs without explicit id don't reuse it
+        lastAssistantToolCallIds = lastAssistantToolCallIds.filter((id) => id !== toolId);
+      } else if (lastAssistantToolCallIds.length) {
+        toolId = lastAssistantToolCallIds.shift();
+      } else {
+        toolId = sanitizeToolId(null, "tool");
+      }
       messages.push({
         role: "tool",
-        tool_call_id: item.call_id,
+        tool_call_id: toolId,
         content: responsesContentToText(item.output || item.content || item.result),
       });
       continue;
     }
 
     if (item.type === "input_image") {
+      flushToolCalls();
       const content = responsesContentToChatContent(item);
       if (content) messages.push({ role: "user", content });
       continue;
     }
 
     if (item.type === "input_text") {
+      flushToolCalls();
       const content = responsesContentToText(item);
       if (content) messages.push({ role: "user", content });
       continue;
     }
 
+    flushToolCalls();
     if (item.type && item.type !== "message") continue;
     const role = item.role === "developer" ? "system" : (item.role || "user");
     const rawContent = item.content || item.text || item.input_text;
@@ -2691,6 +2726,7 @@ function responsesInputToMessages(input) {
     if (content) messages.push({ role, content });
   }
 
+  flushToolCalls();
   return messages.length ? messages : [{ role: "user", content: "" }];
 }
 
