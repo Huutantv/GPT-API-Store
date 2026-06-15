@@ -1305,6 +1305,28 @@ function parseToolArguments(raw) {
   }
 }
 
+// Chuẩn hoá arguments thành JSON string an toàn để gửi upstream (OpenAI Chat Completions).
+// - Nếu đã là string: dùng nguyên xi (tránh double-encode).
+// - Nếu là object: stringify, fallback "{}" nếu lỗi (BigInt, circular ref, ...).
+// - Mặc định: "{}".
+function stringifyToolArguments(value) {
+  if (value == null) return "{}";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    try {
+      const out = JSON.stringify(value);
+      return typeof out === "string" ? out : "{}";
+    } catch (_) {
+      return "{}";
+    }
+  }
+  try {
+    return JSON.stringify(String(value));
+  } catch (_) {
+    return "{}";
+  }
+}
+
 function publicOrderInfo(order) {
   if (!order) return null;
   let tokenRemaining = null;
@@ -1747,7 +1769,7 @@ function anthropicToOpenAI(body, backendModel = "") {
         toolCalls.push({
           id: block.id || `call_${toolCalls.length}`,
           type: "function",
-          function: { name: block.name || "tool", arguments: JSON.stringify(block.input || {}) },
+          function: { name: block.name || "tool", arguments: stringifyToolArguments(block.input) },
         });
       } else if (block.type === "tool_result" && role === "user") {
         flushBlocks();
@@ -2680,7 +2702,7 @@ function responsesInputToMessages(input) {
       pendingToolCalls.push({
         id,
         name,
-        arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+        arguments: stringifyToolArguments(item.arguments),
       });
       continue;
     }
@@ -2849,7 +2871,7 @@ function responsesOutputItemFromToolCall({ id, callId, name, args, status = "com
     status,
     call_id: callId || fallbackId,
     name: normalizedName,
-    arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
+    arguments: stringifyToolArguments(args),
   };
 }
 
