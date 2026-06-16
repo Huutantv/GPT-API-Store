@@ -1170,6 +1170,53 @@ function firstNonEmptyString(...values) {
   return "";
 }
 
+function normalizeToolArgumentsJson(raw) {
+  if (raw && typeof raw === "object") return JSON.stringify(raw);
+  const text = String(raw || "").trim();
+  if (!text) return "{}";
+
+  const candidates = [text];
+  const smartQuoteFixed = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  if (smartQuoteFixed !== text) candidates.push(smartQuoteFixed);
+
+  const objectStart = smartQuoteFixed.indexOf("{");
+  const objectEnd = smartQuoteFixed.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd > objectStart) {
+    candidates.push(smartQuoteFixed.slice(objectStart, objectEnd + 1));
+  }
+
+  for (const candidate of [...candidates]) {
+    const relaxed = candidate
+      .replace(/([{,]\s*)([A-Za-z_$][\w$-]*)(\s*:)/g, '$1"$2"$3')
+      .replace(/'/g, '"');
+    if (relaxed !== candidate) candidates.push(relaxed);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? JSON.stringify(parsed)
+        : "{}";
+    } catch (_) {}
+  }
+
+  return "{}";
+}
+
+function normalizeToolCallsInMessage(message) {
+  if (!message || typeof message !== "object" || !Array.isArray(message.tool_calls)) return message;
+  let changed = false;
+  const toolCalls = message.tool_calls.map((call) => {
+    if (!call || typeof call !== "object" || !call.function || typeof call.function !== "object") return call;
+    const normalizedArgs = normalizeToolArgumentsJson(call.function.arguments);
+    if (call.function.arguments === normalizedArgs) return call;
+    changed = true;
+    return { ...call, function: { ...call.function, arguments: normalizedArgs } };
+  });
+  return changed ? { ...message, tool_calls: toolCalls } : message;
+}
+
 function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
   if (!data || typeof data !== "object") return data;
   if (data.model && publicModel) data.model = publicModel;
@@ -1194,6 +1241,7 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
       if (typeof message.content === "string") {
         message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
       }
+      choice.message = normalizeToolCallsInMessage(message);
     }
   }
   return data;
@@ -1299,7 +1347,7 @@ function parseToolArguments(raw) {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
   try {
-    return JSON.parse(String(raw));
+    return JSON.parse(normalizeToolArgumentsJson(raw));
   } catch (_) {
     return {};
   }
@@ -1625,7 +1673,17 @@ function applyBackendMessageCompatibility(payload, settings) {
 }
 
 function applyBackendToolCompatibility(payload, settings) {
-  if (!payload || !settings || !settings.disableTools) return payload;
+  if (!payload || !settings) return payload;
+  if (Array.isArray(payload.messages)) {
+    let normalized = 0;
+    payload.messages = payload.messages.map((message) => {
+      const next = normalizeToolCallsInMessage(message);
+      if (next !== message) normalized += 1;
+      return next;
+    });
+    if (normalized) addLog(`tool arguments normalized for ${settings.profileLabel}: messages=${normalized}`);
+  }
+  if (!settings.disableTools) return payload;
   let removed = false;
   if (payload.tools) {
     delete payload.tools;
@@ -2656,7 +2714,7 @@ function responsesInputToMessages(input) {
           type: "function",
           function: {
             name,
-            arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+            arguments: normalizeToolArgumentsJson(item.arguments),
           },
         }],
       });
@@ -2760,7 +2818,7 @@ function parseToolArguments(raw) {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
   try {
-    const parsed = JSON.parse(String(raw));
+    const parsed = JSON.parse(normalizeToolArgumentsJson(raw));
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (_) {
     return {};
@@ -2813,7 +2871,7 @@ function responsesOutputItemFromToolCall({ id, callId, name, args, status = "com
     status,
     call_id: callId || fallbackId,
     name: normalizedName,
-    arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
+    arguments: normalizeToolArgumentsJson(args),
   };
 }
 
@@ -3094,7 +3152,7 @@ function createResponsesStreamBridge(res, publicModel) {
         writeEvent("response.function_call_arguments.done", eventPayload("response.function_call_arguments.done", {
           item_id: tracked.id,
           output_index: tracked.output_index,
-          arguments: tracked.arguments,
+          arguments: item.arguments,
         }));
       }
       writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
