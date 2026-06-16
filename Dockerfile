@@ -14,7 +14,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # Copy source code
-COPY doro_proxy_node.js credit.js orders.js mailer.js package_quotas.js ip-guard.js ./
+COPY doro_proxy_node.js credit.js orders.js mailer.js package_quotas.js ip-guard.js key-health.js ./
 COPY ecosystem.config.cjs ./
 COPY *.html ./
 

@@ -10,8 +10,10 @@
 
 let _onSickListener = null;
 let _onCooldownListener = null;
+let _onAutoBlockedListener = null;
 function setSickListener(fn) { _onSickListener = typeof fn === "function" ? fn : null; }
 function setCooldownListener(fn) { _onCooldownListener = typeof fn === "function" ? fn : null; }
+function setAutoBlockedListener(fn) { _onAutoBlockedListener = typeof fn === "function" ? fn : null; }
 
 const STATE = new Map(); // key -> { sickUntil, cooldownUntil, dailyCount, dailyDay, totalReqs, totalErrors, lastError, lastErrorAt }
 
@@ -191,17 +193,12 @@ function snapshot(keys) {
  * Reset sick/cooldown cho 1 key (admin manual reset).
  */
 function resetKey(key) {
-  const rec = records.get(key);
-  if (!rec) return false;
-  rec.sickUntilMs = 0;
-  rec.cooldownUntilMs = 0;
-  rec.lastError = null;
-  rec.lastErrorAt = null;
-  rec.lastStatus = null;
-  rec.autoBlocked = false;
-  rec.autoBlockedAt = null;
-  rec.autoBlockedReason = null;
-  rec.sickHistory = [];
+  const s = STATE.get(key);
+  if (!s) return false;
+  s.sickUntil = 0;
+  s.cooldownUntil = 0;
+  s.lastError = null;
+  s.lastErrorAt = null;
   return true;
 }
 
@@ -217,11 +214,9 @@ function resetDailyAll() {
 
 function getConfig() {
   return {
-    sick_minutes: SICK_MINUTES,
-    cooldown_seconds: COOLDOWN_SECONDS,
-    auto_rotate_enabled: AUTO_ROTATE_ENABLED,
-    auto_rotate_threshold: AUTO_ROTATE_THRESHOLD,
-    auto_rotate_window_hours: AUTO_ROTATE_WINDOW_HOURS,
+    sick_minutes: envInt("DORO_KEY_SICK_MINUTES", 10),
+    cooldown_seconds: envInt("DORO_KEY_COOLDOWN_SECONDS", 60),
+    auto_block_listener_enabled: !!_onAutoBlockedListener,
   };
 }
 
