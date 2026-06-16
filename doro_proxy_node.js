@@ -2756,7 +2756,12 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       payload.model = profileSettings.backendModel;
       payload.messages = prependIdentityGuard(payload.messages, publicModel);
       return payload;
-    }, "/chat/completions", req.obs, (response) => parseBackendJsonResponse(response.text, response.status, "chat.completions"));
+    }, "/chat/completions", req.obs, (response) => {
+      const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+      const payloadError = backendErrorFromPayload(parsed, response.status || 502);
+      if (payloadError) throw payloadError;
+      return parsed;
+    });
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
