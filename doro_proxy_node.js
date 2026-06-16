@@ -1321,6 +1321,52 @@ function normalizeToolCallsInMessage(message) {
   return changed ? { ...message, tool_calls: toolCalls } : message;
 }
 
+function flattenOrphanToolMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  const flattened = [];
+  let expectedToolCallIds = new Set();
+  let changed = false;
+
+  for (const message of messages) {
+    if (!message || typeof message !== "object") {
+      flattened.push(message);
+      expectedToolCallIds = new Set();
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      const toolCallIds = (Array.isArray(message.tool_calls) ? message.tool_calls : [])
+        .map((call) => String((call && call.id) || "").trim())
+        .filter(Boolean);
+      expectedToolCallIds = new Set(toolCallIds);
+      flattened.push(message);
+      continue;
+    }
+
+    if (message.role === "tool") {
+      const toolCallId = String(message.tool_call_id || "").trim();
+      if (toolCallId && expectedToolCallIds.has(toolCallId)) {
+        expectedToolCallIds.delete(toolCallId);
+        flattened.push(message);
+        continue;
+      }
+
+      changed = true;
+      const text = messageContentToText(message.content);
+      const label = toolCallId ? `Tool result for ${toolCallId}:` : "Tool result:";
+      flattened.push({ role: "user", content: `${label}\n${text}`.trim() });
+      addLog(`orphan tool result flattened tool_call_id=${toolCallId || "-"}`);
+      expectedToolCallIds = new Set();
+      continue;
+    }
+
+    flattened.push(message);
+    expectedToolCallIds = new Set();
+  }
+
+  return changed ? flattened : messages;
+}
+
 function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
   if (!data || typeof data !== "object") return data;
   if (data.model && publicModel) data.model = publicModel;
@@ -1786,6 +1832,7 @@ function applyBackendToolCompatibility(payload, settings) {
       return next;
     });
     if (normalized) addLog(`tool arguments normalized for ${settings.profileLabel}: messages=${normalized}`);
+    payload.messages = flattenOrphanToolMessages(payload.messages);
   }
   if (!settings.disableTools) return payload;
   let removed = false;

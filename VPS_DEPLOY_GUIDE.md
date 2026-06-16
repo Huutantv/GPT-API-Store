@@ -2,10 +2,10 @@
 
 
 
-cd ~/gpt-api-store
-git pull --ff-only origin main
-npm install --omit=dev
-pm2 restart gpt-api-store --update-env
+  cd ~/gpt-api-store
+  git pull --ff-only origin main
+  npm install --omit=dev
+  pm2 restart gpt-api-store --update-env
 
 Quy trinh moi:
 
