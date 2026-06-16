@@ -124,6 +124,13 @@ function defaultUserAssistantOnlyForModel(modelName) {
   return normalized.includes("deepseek") || normalized.includes("minimax");
 }
 
+function backendRequiresFlattenedToolHistory(settings) {
+  if (!settings) return false;
+  const model = normalizeModelName(settings.backendModel || settings.requestedModel);
+  const baseUrl = String(settings.baseUrl || "").toLowerCase();
+  return !!settings.userAssistantOnly || model.includes("minimax") || baseUrl.includes("tokenrouter");
+}
+
 function backendWeights() {
   const w1 = clampPercent(process.env.DORO_BACKEND1_WEIGHT, 50);
   const w2Raw = process.env.DORO_BACKEND2_WEIGHT;
@@ -1694,7 +1701,7 @@ function normalizeUserAssistantOnlyMessages(messages) {
 }
 
 function applyBackendMessageCompatibility(payload, settings) {
-  if (!payload || !Array.isArray(payload.messages) || !settings || !settings.userAssistantOnly) return payload;
+  if (!payload || !Array.isArray(payload.messages) || !settings || !backendRequiresFlattenedToolHistory(settings)) return payload;
   payload.messages = normalizeUserAssistantOnlyMessages(payload.messages);
   addLog(`message roles normalized for ${settings.profileLabel}: user/assistant only`);
   return payload;
