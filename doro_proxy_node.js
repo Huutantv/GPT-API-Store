@@ -494,6 +494,8 @@ const ACCESS_LOG_DIR = path.join(ROOT_DIR, "logs");
 const RECENT_REQUEST_LIMIT = Number(process.env.DORO_RECENT_REQUEST_LIMIT || "5000");
 const ACCESS_LOG_RETENTION_DAYS = Number(process.env.DORO_ACCESS_LOG_RETENTION_DAYS || "14");
 const recentRequests = [];
+const RESPONSES_STATE_LIMIT = Number(process.env.DORO_RESPONSES_STATE_LIMIT || "1000");
+const responsesState = new Map();
 const requestOwnerCache = new Map();
 const REQUEST_OWNER_CACHE_TTL_MS = Number(process.env.DORO_REQUEST_OWNER_CACHE_TTL_MS || "60000");
 let reqCounter = 0;
@@ -3009,6 +3011,86 @@ function shellCommandArray(value) {
   return text ? [text] : [];
 }
 
+function trimResponsesState() {
+  while (responsesState.size > RESPONSES_STATE_LIMIT) {
+    const oldestKey = responsesState.keys().next().value;
+    if (!oldestKey) break;
+    responsesState.delete(oldestKey);
+  }
+}
+
+function rememberResponsesState(response) {
+  if (!response || typeof response !== "object" || !response.id) return;
+  const toolCalls = new Map();
+  for (const item of Array.isArray(response.output) ? response.output : []) {
+    if (!item || typeof item !== "object") continue;
+    const type = String(item.type || "");
+    if (!["function_call", "local_shell_call", "shell_call"].includes(type)) continue;
+    const callId = String(item.call_id || item.id || "").trim();
+    if (!callId) continue;
+    toolCalls.set(callId, {
+      id: String(item.id || callId),
+      call_id: callId,
+      name: String(item.name || (type === "local_shell_call" ? "local_shell" : type === "shell_call" ? "shell" : "")).trim(),
+      arguments: typeof item.arguments === "string"
+        ? item.arguments
+        : JSON.stringify(item.arguments && typeof item.arguments === "object" ? item.arguments : {}),
+    });
+  }
+  responsesState.set(String(response.id), { toolCalls, ts: Date.now() });
+  trimResponsesState();
+}
+
+function hydrateResponsesContinuation(previousResponseId, messages) {
+  const responseId = String(previousResponseId || "").trim();
+  if (!responseId || !Array.isArray(messages) || !messages.length) return messages;
+  const state = responsesState.get(responseId);
+  if (!state || !(state.toolCalls instanceof Map) || !state.toolCalls.size) return messages;
+
+  const hydrated = [];
+  const seenToolCalls = new Set();
+  let changed = false;
+
+  for (const message of messages) {
+    if (message && message.role === "assistant") {
+      for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
+        const callId = String((call && call.id) || "").trim();
+        if (callId) seenToolCalls.add(callId);
+      }
+      hydrated.push(message);
+      continue;
+    }
+
+    if (message && message.role === "tool") {
+      const toolCallId = String(message.tool_call_id || "").trim();
+      if (toolCallId && !seenToolCalls.has(toolCallId)) {
+        const previousCall = state.toolCalls.get(toolCallId);
+        if (previousCall && previousCall.name) {
+          hydrated.push({
+            role: "assistant",
+            content: "",
+            tool_calls: [{
+              id: previousCall.call_id,
+              type: "function",
+              function: {
+                name: previousCall.name,
+                arguments: normalizeToolArgumentsJson(previousCall.arguments),
+              },
+            }],
+          });
+          seenToolCalls.add(toolCallId);
+          changed = true;
+          addLog(`responses continuation hydrated previous_response_id=${responseId} tool_call_id=${toolCallId}`);
+        }
+      }
+    }
+
+    hydrated.push(message);
+  }
+
+  return changed ? hydrated : messages;
+}
+
 function responsesOutputItemFromToolCall({ id, callId, name, args, status = "completed" }) {
   const normalizedName = String(name || "").trim();
   const parsed = parseToolArguments(args);
@@ -3357,15 +3439,17 @@ function createResponsesStreamBridge(res, publicModel) {
       output.push(item);
     }
 
+    const completedResponse = withResponsesCompatFields({
+      ...responseBase(),
+      status: "completed",
+      output,
+      output_text: outputText,
+      usage: normalizedUsage,
+    });
+    rememberResponsesState(completedResponse);
     writeEvent("response.completed", {
       type: "response.completed",
-      response: withResponsesCompatFields({
-        ...responseBase(),
-        status: "completed",
-        output,
-        output_text: outputText,
-        usage: normalizedUsage,
-      }),
+      response: completedResponse,
     });
     writeDone();
     stopBridgeHeartbeat();
@@ -3437,6 +3521,7 @@ function createResponsesStreamBridge(res, publicModel) {
 
 function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
   const response = chatCompletionToResponses(data, publicModel);
+  rememberResponsesState(response);
   const inProgressResponse = { ...response, status: "in_progress", output: [] };
   responseSseWrite(res, "response.created", { type: "response.created", response: inProgressResponse });
   responseSseWrite(res, "response.in_progress", { type: "response.in_progress", response: inProgressResponse });
@@ -3514,7 +3599,8 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   }
   const imageCount = countResponsesImages(original.messages || original.input);
   if (imageCount) addLog(`responses images count=${imageCount}`);
-  const responseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
+  const rawResponseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
+  const responseMessages = hydrateResponsesContinuation(original.previous_response_id, rawResponseMessages);
   req.body = {
     model: original.model || "opus",
     messages: prependAgentToolGuard(responseMessages, chatTools),
@@ -3540,7 +3626,9 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     }
     if (data && data.choices) {
       if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel);
-      return oldJson(chatCompletionToResponses(data, publicModel));
+      const response = chatCompletionToResponses(data, publicModel);
+      rememberResponsesState(response);
+      return oldJson(response);
     }
     if (wantsStream) {
       streamBridge.fail({ message: "Unexpected upstream response format", type: "api_error" });
