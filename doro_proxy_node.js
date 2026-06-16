@@ -29,11 +29,12 @@ function loadLocalEnv(force = true) {
   }
 }
 
-loadLocalEnv(false);
+loadLocalEnv(true);
 
 const credit = require("./credit");
 const orders = require("./orders");
 const mailer = require("./mailer");
+const ipGuard = require("./ip-guard");
 const {
   getPackageRequestQuota,
   getPackageTokenQuota,
@@ -55,6 +56,17 @@ function firstEnv(...names) {
 
 function splitEnvList(value) {
   return (value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeOpenAIBaseUrl(value, fallback = DEFAULT_BASE_URL) {
+  const raw = String(value || fallback || DEFAULT_BASE_URL).trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(raw);
+    if (!url.pathname || url.pathname === "/") url.pathname = "/v1";
+    return url.toString().replace(/\/+$/, "");
+  } catch (_) {
+    return raw || DEFAULT_BASE_URL;
+  }
 }
 
 function normalizeModelName(modelName) {
@@ -105,6 +117,18 @@ function envFlag(value, fallback = false) {
   if (["1", "true", "yes", "on"].includes(raw)) return true;
   if (["0", "false", "no", "off"].includes(raw)) return false;
   return fallback;
+}
+
+function defaultUserAssistantOnlyForModel(modelName) {
+  const normalized = normalizeModelName(modelName);
+  return normalized.includes("deepseek") || normalized.includes("minimax");
+}
+
+function backendRequiresFlattenedToolHistory(settings) {
+  if (!settings) return false;
+  const model = normalizeModelName(settings.backendModel || settings.requestedModel);
+  const baseUrl = String(settings.baseUrl || "").toLowerCase();
+  return !!settings.userAssistantOnly || model.includes("minimax") || baseUrl.includes("tokenrouter");
 }
 
 function backendWeights() {
@@ -158,10 +182,10 @@ function backendProfile(id = activeBackendId()) {
       label: process.env.DORO_BACKEND2_NAME || "Backend 2",
       apiKeyRaw,
       apiKeys: splitEnvList(apiKeyRaw),
-      baseUrl: String(process.env.DORO_BACKEND2_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ""),
+      baseUrl: normalizeOpenAIBaseUrl(process.env.DORO_BACKEND2_BASE_URL),
       backendModel: process.env.DORO_BACKEND2_MODEL || DEFAULT_BACKEND_MODEL,
       maxTokens: optionalPositiveInt(process.env.DORO_BACKEND2_MAX_TOKENS),
-      userAssistantOnly: envFlag(process.env.DORO_BACKEND2_USER_ASSISTANT_ONLY, String(process.env.DORO_BACKEND2_MODEL || "").toLowerCase().includes("deepseek")),
+      userAssistantOnly: envFlag(process.env.DORO_BACKEND2_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND2_MODEL)),
       disableTools: envFlag(process.env.DORO_BACKEND2_DISABLE_TOOLS, String(process.env.DORO_BACKEND2_MODEL || "").toLowerCase().includes("deepseek")),
     };
   }
@@ -172,10 +196,10 @@ function backendProfile(id = activeBackendId()) {
     label: process.env.DORO_BACKEND1_NAME || "Backend 1",
     apiKeyRaw,
     apiKeys: splitEnvList(apiKeyRaw),
-    baseUrl: firstEnv("DORO_API_BASE", "ANTHROPIC_BASE_URL", { default: DEFAULT_BASE_URL }).replace(/\/+$/, ""),
+    baseUrl: normalizeOpenAIBaseUrl(firstEnv("DORO_API_BASE", "ANTHROPIC_BASE_URL", { default: DEFAULT_BASE_URL })),
     backendModel: process.env.DORO_BACKEND_MODEL || DEFAULT_BACKEND_MODEL,
     maxTokens: optionalPositiveInt(process.env.DORO_BACKEND1_MAX_TOKENS || process.env.DORO_BACKEND_MAX_TOKENS),
-    userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
+    userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND_MODEL)),
     disableTools: envFlag(process.env.DORO_BACKEND1_DISABLE_TOOLS, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
   };
 }
@@ -302,7 +326,7 @@ function isQuotaExceededError(status, text) {
 }
 
 function getSettings(requestedModel) {
-  loadLocalEnv(false);
+  loadLocalEnv(true);
   const profile = backendProfile();
   const requested = requestedModel || firstEnv("DORO_MODEL", "MODEL", "CLAUDE_CODE_SUBAGENT_MODEL", { default: "opus" });
   const backendModel = resolveBackendModel(requested, profile);
@@ -322,7 +346,7 @@ function getSettings(requestedModel) {
 }
 
 function getSettingsChain(requestedModel) {
-  loadLocalEnv(false);
+  loadLocalEnv(true);
   const active = activeBackendId();
   const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
   let ids = active === "both" ? ["1", "2"] : [active];
@@ -768,6 +792,11 @@ function publicBackendFallbackMessage(status) {
   return "The AI service returned an error. Please try again.";
 }
 
+function clientBackendStatus(status) {
+  const code = Number(status) || 502;
+  return code === 401 || code === 403 ? 502 : code;
+}
+
 function knownBackendHostnames() {
   const values = [
     process.env.DORO_API_BASE,
@@ -809,6 +838,13 @@ function containsBackendLeak(text, backendModel) {
 function publicBackendError(status, text, backendModel, publicModel, code) {
   const parsed = parseBackendError(status, text || "");
   const raw = `${text || ""}\n${parsed.message || ""}`;
+  if (Number(status) === 401 || Number(status) === 403) {
+    return {
+      message: publicBackendFallbackMessage(Number(status)),
+      type: "api_error",
+      code: code || parsed.code,
+    };
+  }
   if (containsBackendLeak(raw, backendModel)) {
     return {
       message: publicBackendFallbackMessage(Number(status) || 502),
@@ -824,12 +860,52 @@ function publicBackendError(status, text, backendModel, publicModel, code) {
   };
 }
 
+function stripHiddenReasoningText(text) {
+  let value = String(text || "");
+  if (!value) return "";
+  value = value.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "");
+  value = value.replace(/<think\b[^>]*>[\s\S]*$/gi, "");
+  value = value.replace(/^[\s\S]*?<\/think>/gi, "");
+  value = value.replace(/<\/?think\b[^>]*>/gi, "");
+  value = value.replace(/<\/?tool_call\b[^>]*>/gi, "");
+  return value.trimStart();
+}
+
+function filterHiddenReasoningDelta(text, state = {}) {
+  let value = String(text || "");
+  let output = "";
+  while (value) {
+    const lower = value.toLowerCase();
+    if (state.inThink) {
+      const end = lower.indexOf("</think>");
+      if (end === -1) return "";
+      value = value.slice(end + "</think>".length);
+      state.inThink = false;
+      continue;
+    }
+    const start = lower.indexOf("<think");
+    if (start === -1) {
+      output += value;
+      break;
+    }
+    output += value.slice(0, start);
+    const afterStart = lower.indexOf(">", start);
+    const end = lower.indexOf("</think>", afterStart === -1 ? start : afterStart);
+    if (end === -1) {
+      state.inThink = true;
+      break;
+    }
+    value = value.slice(end + "</think>".length);
+  }
+  return output.replace(/<\/?tool_call\b[^>]*>/gi, "");
+}
+
 function modelIdentityAnswer(publicModel) {
   return `I'm ${publicModel}, a large language model created by OpenAI. How can I help you today?`;
 }
 
 function sanitizeAssistantIdentityText(text, publicModel, backendModel) {
-  let cleaned = sanitizeBackendText(text, backendModel, publicModel);
+  let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel));
   const identityAnswer = modelIdentityAnswer(publicModel);
   const lower = cleaned.toLowerCase();
   const hasIdentityLeak = [
@@ -886,6 +962,35 @@ function prependIdentityGuard(messages, publicModel) {
   return [
     ...original.slice(0, firstNonSystem),
     identitySystemMessage(publicModel),
+    ...original.slice(firstNonSystem),
+  ];
+}
+
+function agentToolContinuationMessage() {
+  return {
+    role: "system",
+    content: [
+      "Agent tool workflow policy:",
+      "- When tools are available and the task is not complete, continue working autonomously by calling the appropriate tool in the same turn.",
+      "- Do not stop with a promise such as \"I'll continue\", \"OK, continuing\", \"tiếp tục\", or \"I'll check next\".",
+      "- After tool results, inspect the result and either call the next needed tool or provide a final answer only when the requested work is actually complete.",
+      "- Ask the user for input only when you are genuinely blocked and cannot make useful progress with the available tools.",
+    ].join("\n"),
+  };
+}
+
+function prependAgentToolGuard(messages, tools) {
+  const original = Array.isArray(messages) ? messages : [];
+  if (!Array.isArray(tools) || !tools.length) return original;
+  const alreadyPresent = original.some((message) =>
+    message && message.role === "system" && String(message.content || "").includes("Agent tool workflow policy:")
+  );
+  if (alreadyPresent) return original;
+  const firstNonSystem = original.findIndex((message) => message && message.role !== "system");
+  if (firstNonSystem === -1) return [...original, agentToolContinuationMessage()];
+  return [
+    ...original.slice(0, firstNonSystem),
+    agentToolContinuationMessage(),
     ...original.slice(firstNonSystem),
   ];
 }
@@ -1169,6 +1274,53 @@ function firstNonEmptyString(...values) {
   return "";
 }
 
+function normalizeToolArgumentsJson(raw) {
+  if (raw && typeof raw === "object") return JSON.stringify(raw);
+  const text = String(raw || "").trim();
+  if (!text) return "{}";
+
+  const candidates = [text];
+  const smartQuoteFixed = text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+  if (smartQuoteFixed !== text) candidates.push(smartQuoteFixed);
+
+  const objectStart = smartQuoteFixed.indexOf("{");
+  const objectEnd = smartQuoteFixed.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd > objectStart) {
+    candidates.push(smartQuoteFixed.slice(objectStart, objectEnd + 1));
+  }
+
+  for (const candidate of [...candidates]) {
+    const relaxed = candidate
+      .replace(/([{,]\s*)([A-Za-z_$][\w$-]*)(\s*:)/g, '$1"$2"$3')
+      .replace(/'/g, '"');
+    if (relaxed !== candidate) candidates.push(relaxed);
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? JSON.stringify(parsed)
+        : "{}";
+    } catch (_) {}
+  }
+
+  return "{}";
+}
+
+function normalizeToolCallsInMessage(message) {
+  if (!message || typeof message !== "object" || !Array.isArray(message.tool_calls)) return message;
+  let changed = false;
+  const toolCalls = message.tool_calls.map((call) => {
+    if (!call || typeof call !== "object" || !call.function || typeof call.function !== "object") return call;
+    const normalizedArgs = normalizeToolArgumentsJson(call.function.arguments);
+    if (call.function.arguments === normalizedArgs) return call;
+    changed = true;
+    return { ...call, function: { ...call.function, arguments: normalizedArgs } };
+  });
+  return changed ? { ...message, tool_calls: toolCalls } : message;
+}
+
 function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
   if (!data || typeof data !== "object") return data;
   if (data.model && publicModel) data.model = publicModel;
@@ -1177,7 +1329,7 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
     if (choice.delta && typeof choice.delta === "object") {
       const delta = choice.delta;
       if (typeof delta.content !== "string" || !delta.content) {
-        const fallback = firstNonEmptyString(delta.reasoning_content, delta.reasoning, delta.text, delta.refusal);
+        const fallback = firstNonEmptyString(delta.text, delta.refusal);
         if (fallback) delta.content = fallback;
       }
       if (typeof delta.content === "string") {
@@ -1187,12 +1339,13 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
     if (choice.message && typeof choice.message === "object") {
       const message = choice.message;
       if (typeof message.content !== "string" || !message.content) {
-        const fallback = firstNonEmptyString(message.reasoning_content, message.reasoning, message.text, message.refusal, choice.text);
+        const fallback = firstNonEmptyString(message.text, message.refusal, choice.text);
         if (fallback) message.content = fallback;
       }
       if (typeof message.content === "string") {
         message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
       }
+      choice.message = normalizeToolCallsInMessage(message);
     }
   }
   return data;
@@ -1298,7 +1451,7 @@ function parseToolArguments(raw) {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
   try {
-    return JSON.parse(String(raw));
+    return JSON.parse(normalizeToolArgumentsJson(raw));
   } catch (_) {
     return {};
   }
@@ -1617,14 +1770,24 @@ function normalizeUserAssistantOnlyMessages(messages) {
 }
 
 function applyBackendMessageCompatibility(payload, settings) {
-  if (!payload || !Array.isArray(payload.messages) || !settings || !settings.userAssistantOnly) return payload;
+  if (!payload || !Array.isArray(payload.messages) || !settings || !backendRequiresFlattenedToolHistory(settings)) return payload;
   payload.messages = normalizeUserAssistantOnlyMessages(payload.messages);
   addLog(`message roles normalized for ${settings.profileLabel}: user/assistant only`);
   return payload;
 }
 
 function applyBackendToolCompatibility(payload, settings) {
-  if (!payload || !settings || !settings.disableTools) return payload;
+  if (!payload || !settings) return payload;
+  if (Array.isArray(payload.messages)) {
+    let normalized = 0;
+    payload.messages = payload.messages.map((message) => {
+      const next = normalizeToolCallsInMessage(message);
+      if (next !== message) normalized += 1;
+      return next;
+    });
+    if (normalized) addLog(`tool arguments normalized for ${settings.profileLabel}: messages=${normalized}`);
+  }
+  if (!settings.disableTools) return payload;
   let removed = false;
   if (payload.tools) {
     delete payload.tools;
@@ -1867,6 +2030,7 @@ function sseWrite(res, event, data) {
 }
 
 function setSseHeaders(res) {
+  if (res.headersSent) return;
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("X-Accel-Buffering", "no");
@@ -2099,7 +2263,8 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
           return res.end();
         }
-        return res.status(err.status).json(anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+        const clientStatus = clientBackendStatus(err.status);
+        return res.status(clientStatus).json(anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) {
@@ -2153,15 +2318,17 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         const pendingChunks = [];
         let hasAssistantOutput = false;
         let streamOpened = false;
+        const hiddenReasoningState = { inThink: false };
         const openStream = () => {
           if (streamOpened) return;
-          wroteResponse = true;
+          if (!res.__responsesBridge) wroteResponse = true;
           setSseHeaders(res);
           stopHeartbeat = startSseHeartbeat(res);
           for (const pending of pendingChunks) res.write(pending);
           pendingChunks.length = 0;
           streamOpened = true;
         };
+        openStream();
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -2189,13 +2356,20 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
               outbound += `${sanitizeBackendText(line, backendModel, publicModel)}\n`;
               continue;
             }
+            const parsedChoice = (parsed.choices || [])[0] || {};
+            if (parsedChoice.delta && typeof parsedChoice.delta.content === "string") {
+              parsedChoice.delta.content = filterHiddenReasoningDelta(parsedChoice.delta.content, hiddenReasoningState);
+            }
             const payloadError = backendErrorFromPayload(parsed, resp.status || 502);
             if (payloadError && !hasAssistantOutput) throw payloadError;
             normalizeOpenAIAssistantPayload(parsed, publicModel, backendModel);
             if (parsed.usage && parsed.usage.total_tokens) {
               totalTokens = parsed.usage.total_tokens;
             }
-            if (hasOpenAIAssistantOutput(parsed)) hasAssistantOutput = true;
+            if (hasOpenAIAssistantOutput(parsed)) {
+              hasAssistantOutput = true;
+              if (res.__responsesBridge) wroteResponse = true;
+            }
             outbound += `data: ${JSON.stringify(parsed)}\n`;
           }
           if (wasPending && outbound) pendingChunks.push(outbound);
@@ -2240,9 +2414,11 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         if (obs) { obs.error_type = "backend"; obs.error_message = logPreview(err.text || err.message, 180); }
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
-          return res.status(err.status).json(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+          const clientStatus = clientBackendStatus(err.status);
+          return res.status(clientStatus).json(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
         }
-        res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code))}\n\n`);
+        const clientStatus = clientBackendStatus(err.status);
+        res.write(`data: ${JSON.stringify(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code))}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
       }
@@ -2306,6 +2482,26 @@ function saveEnvUpdates(updates) {
 
 app.disable("x-powered-by");
 app.set("trust proxy", true);
+// IP guard: ch?n DDoS / IP spam tr??c khi parse body
+app.use(ipGuard.middleware({
+  onAutoBan: (info) => {
+    try { addLog(`IPGUARD ban ip=${info.ip} reason=${info.reason} minutes=${info.minutes}`); } catch (_) {}
+    try {
+      if (typeof notifyTelegram === "function") {
+        notifyTelegram(
+          `\u26d4\ufe0f <b>IP Guard auto-ban</b>\n` +
+          `IP: <code>${info.ip}</code>\n` +
+          `Reason: ${info.reason}\n` +
+          `Time: ${info.minutes} phut`
+        );
+      }
+    } catch (_) {}
+  },
+  onBlocked: (info) => {
+    try { addLog(`IPGUARD reject ip=${info.ip} path=${info.path} reason=${info.reason}`); } catch (_) {}
+  },
+  whitelistPaths: ["/health", "/webhook/sepay", "/webhook/casso"],
+}));
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "*");
@@ -2528,7 +2724,8 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
-      return res.status(err.status).json(anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+      const clientStatus = clientBackendStatus(err.status);
+      return res.status(clientStatus).json(anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
@@ -2635,7 +2832,7 @@ function responsesInputToMessages(input) {
           type: "function",
           function: {
             name,
-            arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+            arguments: normalizeToolArgumentsJson(item.arguments),
           },
         }],
       });
@@ -2739,7 +2936,7 @@ function parseToolArguments(raw) {
   if (!raw) return {};
   if (typeof raw === "object") return raw;
   try {
-    const parsed = JSON.parse(String(raw));
+    const parsed = JSON.parse(normalizeToolArgumentsJson(raw));
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (_) {
     return {};
@@ -2792,7 +2989,7 @@ function responsesOutputItemFromToolCall({ id, callId, name, args, status = "com
     status,
     call_id: callId || fallbackId,
     name: normalizedName,
-    arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
+    arguments: normalizeToolArgumentsJson(args),
   };
 }
 
@@ -2917,7 +3114,9 @@ function createResponsesStreamBridge(res, publicModel) {
   let buffer = "";
   let outputText = "";
   let usage = null;
+  const hiddenReasoningState = { inThink: false };
   const toolCalls = new Map();
+  let bridgeHeartbeat = null;
 
   const writeEvent = (event, data) => {
     rawWrite(`event: ${event}\n`);
@@ -2925,6 +3124,17 @@ function createResponsesStreamBridge(res, publicModel) {
   };
   const writeDone = () => rawWrite("event: done\ndata: [DONE]\n\n");
   const eventPayload = (type, data = {}) => ({ type, response_id: responseId, ...data });
+  const stopBridgeHeartbeat = () => {
+    if (bridgeHeartbeat) clearInterval(bridgeHeartbeat);
+    bridgeHeartbeat = null;
+  };
+  const startBridgeHeartbeat = () => {
+    if (bridgeHeartbeat) return;
+    bridgeHeartbeat = setInterval(() => {
+      try { rawWrite(": ping\n\n"); } catch (_) {}
+    }, 15000);
+    res.once("close", stopBridgeHeartbeat);
+  };
     const responseBase = () => withResponsesCompatFields({
     id: responseId,
     object: "response",
@@ -2937,6 +3147,7 @@ function createResponsesStreamBridge(res, publicModel) {
     const response = { ...responseBase(), status: "in_progress", output: [] };
     writeEvent("response.created", { type: "response.created", response });
     writeEvent("response.in_progress", { type: "response.in_progress", response });
+    startBridgeHeartbeat();
     responseStarted = true;
   };
 
@@ -2968,7 +3179,6 @@ function createResponsesStreamBridge(res, publicModel) {
         arguments: "",
         output_index: -1,
         started: false,
-        pendingDeltas: [],
       });
     }
 
@@ -2996,27 +3206,32 @@ function createResponsesStreamBridge(res, publicModel) {
         status: "in_progress",
       }),
     }));
-    for (const partial of tracked.pendingDeltas) {
-      if (tracked.name !== "local_shell" && tracked.name !== "shell") {
-        writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
-          item_id: tracked.id,
-          output_index: tracked.output_index,
-          delta: partial,
-        }));
-      }
-    }
-    tracked.pendingDeltas.length = 0;
   };
 
   const fail = (error) => {
     if (completed) return;
     const message = error && typeof error === "object" ? error : { message: String(error || publicBackendFallbackMessage(502)), type: "api_error" };
+    if (responseStarted) {
+      const status = Number(message.status_code || message.status || 502);
+      const text = publicBackendFallbackMessage(status) || "The AI service interrupted the stream. Please try again.";
+      if (!textStarted) startText();
+      outputText += text;
+      writeEvent("response.output_text.delta", eventPayload("response.output_text.delta", {
+        item_id: textOutputId,
+        output_index: textOutputIndex,
+        content_index: 0,
+        delta: text,
+      }));
+      complete();
+      return;
+    }
     writeEvent("response.created", {
       type: "response.created",
       response: { ...responseBase(), status: "failed", output: [] },
     });
     writeEvent("response.failed", eventPayload("response.failed", { error: message }));
     writeDone();
+    stopBridgeHeartbeat();
     completed = true;
   };
 
@@ -3073,7 +3288,7 @@ function createResponsesStreamBridge(res, publicModel) {
         writeEvent("response.function_call_arguments.done", eventPayload("response.function_call_arguments.done", {
           item_id: tracked.id,
           output_index: tracked.output_index,
-          arguments: tracked.arguments,
+          arguments: item.arguments,
         }));
       }
       writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
@@ -3094,6 +3309,7 @@ function createResponsesStreamBridge(res, publicModel) {
       }),
     });
     writeDone();
+    stopBridgeHeartbeat();
     completed = true;
   };
 
@@ -3118,7 +3334,9 @@ function createResponsesStreamBridge(res, publicModel) {
     if (parsed.usage) usage = parsed.usage;
     const choice = (parsed.choices || [])[0] || {};
     const delta = choice.delta || {};
-    const text = typeof delta.content === "string" ? delta.content : "";
+    const text = typeof delta.content === "string"
+      ? sanitizeAssistantIdentityText(filterHiddenReasoningDelta(delta.content, hiddenReasoningState), publicModel, publicModel)
+      : "";
     if (text) {
       startText();
       outputText += text;
@@ -3135,17 +3353,6 @@ function createResponsesStreamBridge(res, publicModel) {
       const partial = call.function && call.function.arguments ? call.function.arguments : "";
       if (!partial) continue;
       tracked.arguments += partial;
-      if (tracked.started) {
-        if (tracked.name !== "local_shell" && tracked.name !== "shell") {
-          writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
-            item_id: tracked.id,
-            output_index: tracked.output_index,
-            delta: partial,
-          }));
-        }
-      } else {
-        tracked.pendingDeltas.push(partial);
-      }
     }
   };
 
@@ -3166,7 +3373,7 @@ function createResponsesStreamBridge(res, publicModel) {
     return rawEnd("", encoding, cb);
   };
 
-  return { fail, complete, rawWrite, rawEnd };
+  return { fail, complete, rawWrite, rawEnd, start: startResponse };
 }
 
 function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
@@ -3248,9 +3455,10 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   }
   const imageCount = countResponsesImages(original.messages || original.input);
   if (imageCount) addLog(`responses images count=${imageCount}`);
+  const responseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
   req.body = {
     model: original.model || "opus",
-    messages: Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input),
+    messages: prependAgentToolGuard(responseMessages, chatTools),
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: responseMaxTokens,
@@ -3261,7 +3469,9 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   };
   if (wantsStream) {
     res.statusCode = 200;
-    res.setHeader("X-Accel-Buffering", "no");
+    setSseHeaders(res);
+    res.__responsesBridge = true;
+    streamBridge.start();
   }
   const oldJson = res.json.bind(res);
   res.json = (data) => {
@@ -3324,6 +3534,7 @@ async function openAIChatCompletionsHandler(req, res) {
   addLog(`proxy openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
   if (body.stream) {
     const payload = { ...body, model: settings.backendModel };
+    if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
     if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
     applyBackendPayloadLimits(payload, settings);
     applyBackendMessageCompatibility(payload, settings);
@@ -3345,7 +3556,11 @@ async function openAIChatCompletionsHandler(req, res) {
       if (mergedTools) roundBody.tools = mergedTools;
       const result = await postWithBackendChain(settingsChain, (profileSettings) => {
         const payload = { ...roundBody, model: profileSettings.backendModel };
+        if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
         if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+        applyBackendPayloadLimits(payload, profileSettings);
+        applyBackendMessageCompatibility(payload, profileSettings);
+        applyBackendToolCompatibility(payload, profileSettings);
         return payload;
       }, "/chat/completions", req.obs);
 
@@ -3428,7 +3643,8 @@ async function openAIChatCompletionsHandler(req, res) {
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
-      return res.status(err.status).json(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+      const clientStatus = clientBackendStatus(err.status);
+      return res.status(clientStatus).json(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
@@ -4431,6 +4647,129 @@ app.get("/api/test-telegram", async (req, res) => {
   } catch (err) {
     res.json({ ok: false, error: err.message });
   }
+});
+
+
+// ?? IP Guard admin endpoints ????????????????????????????????????????????????
+
+app.post("/api/ipguard/toggle", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const cur = String(process.env.DORO_IPGUARD_ENABLED ?? "true").toLowerCase();
+  const next = (cur === "true" || cur === "1" || cur === "yes") ? "false" : "true";
+  saveEnvUpdates({ DORO_IPGUARD_ENABLED: next });
+  ipGuard.refreshConfig();
+  addLog(`IPGUARD enabled=${next}`);
+  res.json({ ok: true, enabled: next === "true" });
+});
+app.get("/api/ipguard/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json(ipGuard.snapshotStats());
+});
+
+app.get("/api/ipguard/blocks", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ blocks: ipGuard.listBlocks() });
+});
+
+app.post("/api/ipguard/block", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const ip = String(body.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const reason = String(body.reason || "manual block").trim();
+  const minutes = body.minutes === undefined || body.minutes === null || body.minutes === ""
+    ? null
+    : Number(body.minutes);
+  const note = String(body.note || "").trim();
+  const result = ipGuard.banIp(ip, { reason, source: "manual", minutes, note });
+  if (!result.ok) return res.status(400).json({ detail: result.error || "ban failed" });
+  addLog(`ipguard manual-ban ip=${result.ip} minutes=${minutes ?? "permanent"} reason=${reason}`);
+  res.json(result);
+});
+
+app.delete("/api/ipguard/block", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const ip = String((req.body || {}).ip || req.query.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const result = ipGuard.unbanIp(ip);
+  if (!result.ok) return res.status(404).json({ detail: "ip not in blocklist" });
+  addLog(`ipguard manual-unban ip=${result.ip}`);
+  res.json(result);
+});
+
+app.get("/api/ipguard/whitelist", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ whitelist: ipGuard.listWhitelist() });
+});
+
+app.post("/api/ipguard/whitelist", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const ip = String(body.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const note = String(body.note || "").trim();
+  const result = ipGuard.addWhitelist(ip, note);
+  if (!result.ok) return res.status(400).json({ detail: result.error || "whitelist failed" });
+  addLog(`ipguard whitelist+ ip=${result.ip}`);
+  res.json(result);
+});
+
+app.delete("/api/ipguard/whitelist", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const ip = String((req.body || {}).ip || req.query.ip || "").trim();
+  if (!ip) return res.status(400).json({ detail: "Missing ip" });
+  const result = ipGuard.removeWhitelist(ip);
+  if (!result.ok) return res.status(404).json({ detail: "ip not whitelisted" });
+  addLog(`ipguard whitelist- ip=${result.ip}`);
+  res.json(result);
+});
+
+app.get("/api/ipguard/top-ips", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  res.json({ items: ipGuard.topIps(limit) });
+});
+
+app.post("/api/ipguard/reload", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  ipGuard.reloadCache();
+  res.json({ ok: true, ...ipGuard.snapshotStats() });
+});
+
+app.put("/api/ipguard/config", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const updates = {};
+  const fields = {
+    DORO_IPGUARD_ENABLED: body.enabled,
+    DORO_IPGUARD_RPS_LIMIT: body.rps_limit,
+    DORO_IPGUARD_RPM_LIMIT: body.rpm_limit,
+    DORO_IPGUARD_UNAUTH_LIMIT: body.unauth_limit,
+    DORO_IPGUARD_ERR4XX_LIMIT: body.err4xx_limit,
+    DORO_IPGUARD_AUTO_BAN_MINUTES: body.auto_ban_minutes,
+    DORO_IPGUARD_TRUST_CF: body.trust_cf_header,
+  };
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (typeof v === "boolean") updates[k] = v ? "true" : "false";
+    else updates[k] = String(v);
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ detail: "No fields to update" });
+  saveEnvUpdates(updates);
+  ipGuard.reloadCache();
+  addLog(`ipguard config updated: ${Object.keys(updates).join(",")}`);
+  res.json({ ok: true, updated: Object.keys(updates), config: ipGuard.snapshotStats() });
 });
 
 app.use((req, res) => res.status(404).json({ detail: "Not found" }));
