@@ -1667,7 +1667,7 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
   throw lastError || new Error("Backend request failed without response");
 }
 
-async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = "/chat/completions", obs) {
+async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = "/chat/completions", obs, responseHandler = null) {
   let lastError;
   for (let i = 0; i < settingsChain.length; i += 1) {
     const settings = settingsChain[i];
@@ -1691,10 +1691,11 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         applyBackendToolCompatibility(payload, settings);
         const url = `${settings.baseUrl}${pathSuffix}`;
         const response = await postWithKeyFailover(url, payload, settings.apiKeys, {}, obs);
+        const data = responseHandler ? responseHandler(response, settings, payload) : undefined;
         // Track thành công
         trackModelRequest(payload.model);
         trackBackendSuccess(settings.profileId);
-        return { response, settings, payload };
+        return { response, settings, payload, data };
       } catch (err) {
         lastError = err;
         // Detect quota exceeded → block model + retry với model khác
@@ -1713,9 +1714,10 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
               applyBackendToolCompatibility(retryPayload, settings);
               const url = `${settings.baseUrl}${pathSuffix}`;
               const response = await postWithKeyFailover(url, retryPayload, settings.apiKeys, {}, obs);
+              const data = responseHandler ? responseHandler(response, settings, retryPayload) : undefined;
               trackModelRequest(nextModel);
               trackBackendSuccess(settings.profileId);
-              return { response, settings, payload: retryPayload };
+              return { response, settings, payload: retryPayload, data };
             } catch (retryErr) {
               lastError = retryErr;
               err = retryErr;
@@ -2749,13 +2751,12 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
   }
   try {
-    const { response, settings: finalSettings } = await postWithBackendChain(settingsChain, (profileSettings) => {
+    const { response, settings: finalSettings, data } = await postWithBackendChain(settingsChain, (profileSettings) => {
       const payload = anthropicToOpenAI(body, profileSettings.backendModel);
       payload.model = profileSettings.backendModel;
       payload.messages = prependIdentityGuard(payload.messages, publicModel);
       return payload;
-    }, "/chat/completions", req.obs);
-    const data = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+    }, "/chat/completions", req.obs, (response) => parseBackendJsonResponse(response.text, response.status, "chat.completions"));
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
@@ -3615,12 +3616,15 @@ async function openAIChatCompletionsHandler(req, res) {
         applyBackendMessageCompatibility(payload, profileSettings);
         applyBackendToolCompatibility(payload, profileSettings);
         return payload;
-      }, "/chat/completions", req.obs);
+      }, "/chat/completions", req.obs, (response) => {
+        const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+        const payloadError = backendErrorFromPayload(parsed, response.status || 502);
+        if (payloadError) throw payloadError;
+        return parsed;
+      });
 
       finalSettings = result.settings;
-      data = parseBackendJsonResponse(result.response.text, result.response.status, "chat.completions");
-      const payloadError = backendErrorFromPayload(data, result.response.status || 502);
-      if (payloadError) throw payloadError;
+      data = result.data;
       normalizeOpenAIAssistantPayload(data, publicModel, finalSettings.backendModel);
 
       const usage = data.usage || {};
