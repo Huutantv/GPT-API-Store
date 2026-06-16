@@ -68,7 +68,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .monitor-table{width:100%;border-collapse:collapse;font-size:12px;min-width:980px}
 .monitor-table th,.monitor-table td{padding:9px 10px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}
 .monitor-table th{position:sticky;top:0;background:var(--surface);color:var(--dim);font-weight:600;z-index:1}
-.monitor-table td.err-cell{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+.monitor-table td.err-cell{max-width:280px}
+.err-wrap{display:flex;align-items:center;gap:4px;max-width:280px}
+.err-text{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:transparent;border:0;color:var(--text);font:inherit;text-align:left;cursor:pointer;padding:0}
+.err-copy{border:0;border-radius:6px;background:#25283a;color:var(--dim);font-size:10px;padding:2px 6px;cursor:pointer}
+.err-copy:hover{color:var(--text)}
+.debug-copy{color:var(--accent)}
+.modal{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;padding:18px}
+.modal.show{display:flex}
+.modal-box{width:min(760px,100%);background:var(--surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border)}
+.modal-body{padding:16px;display:flex;flex-direction:column;gap:12px}
+.modal-pre{max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:12px;line-height:1.5}
 .status-pill{display:inline-block;padding:2px 8px;border-radius:999px;font-weight:700}
 .status-2xx{background:rgba(34,197,94,.15);color:var(--green)}
 .status-4xx{background:rgba(245,158,11,.15);color:var(--yellow)}
@@ -313,11 +324,29 @@ html{-webkit-text-size-adjust:100%}
   </div>
 </div>
 
+<div class="modal" id="monitorErrorModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <strong>Request error detail</strong>
+      <button class="btn btn-ghost btn-sm" onclick="closeMonitorErrorModal()">Close</button>
+    </div>
+    <div class="modal-body">
+      <pre class="modal-pre" id="monitorErrorText"></pre>
+      <pre class="modal-pre" id="monitorDebugText"></pre>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="copyMonitorModalText('error',this)">copy error</button>
+        <button class="btn btn-primary btn-sm" onclick="copyMonitorModalText('debug',this)">copy debug</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 var API='',selectedModel='claude-sonnet-4-6';
 var ADMIN_KEY=sessionStorage.getItem('doro_admin_key')||'';
 var _fetch=window.fetch.bind(window);
 var monitorRequests=[];
+var monitorDisplayRows=[];
 var currentProxyKeys=[];
 function setAuthMessage(text,type){
   var msg=document.getElementById('authMsg');
@@ -460,8 +489,14 @@ function renderMonitorTable(){
     if(key&&String(r.api_key_masked||'').toLowerCase().indexOf(key)===-1)return false;
     return true;
   });
-  if(!rows.length){tbody.innerHTML='<tr><td colspan="10" class="empty-state">No matching requests.</td></tr>';return;}
-  tbody.innerHTML=rows.slice(0,200).map(function(r){
+  monitorDisplayRows=rows.slice(0,200);
+  if(!monitorDisplayRows.length){tbody.innerHTML='<tr><td colspan="10" class="empty-state">No matching requests.</td></tr>';return;}
+  tbody.innerHTML=monitorDisplayRows.map(function(r,idx){
+    var err=monitorErrorText(r);
+    var errShort=err?String(err).slice(0,56):'';
+    var errHtml=err
+      ? '<div class="err-wrap"><button class="err-text" onclick="openMonitorErrorModal('+idx+')" title="'+escapeHtml(err)+'">'+escapeHtml(errShort)+'</button><button class="err-copy" onclick="copyMonitorText('+idx+',\'error\',this)">copy</button><button class="err-copy debug-copy" onclick="copyMonitorText('+idx+',\'debug\',this)">debug</button></div>'
+      : '—';
     return '<tr>'+
       '<td>'+escapeHtml(fmtTime(r.ts))+'</td>'+
       '<td title="'+escapeHtml(r.req_id||'')+'">'+escapeHtml(String(r.req_id||'').slice(0,12))+'</td>'+
@@ -472,7 +507,7 @@ function renderMonitorTable(){
       '<td>'+(r.stream?'yes':'no')+'</td>'+
       '<td><span class="status-pill '+statusClass(r.status)+'">'+escapeHtml(String(r.status||''))+'</span></td>'+
       '<td>'+escapeHtml(String(r.latency_ms||0))+'ms</td>'+
-      '<td class="err-cell" title="'+escapeHtml(r.error_message||'')+'">'+escapeHtml(r.error_message||r.error_type||'')+'</td>'+
+      '<td class="err-cell">'+errHtml+'</td>'+
     '</tr>';
   }).join('');
 }
@@ -535,6 +570,34 @@ loadMonitor();setInterval(loadMonitor,2000);
 document.getElementById('chatModel').addEventListener('change',function(e){selectedModel=e.target.value});
 function handleChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
 function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+var monitorModalRow=null;
+function monitorErrorText(row){return row&&(row.error_copy_text||row.error_message||row.error_type)||'';}
+function monitorDebugText(row){
+  if(!row)return '';
+  if(row.debug_copy_text)return row.debug_copy_text;
+  return [
+    'Time: '+(row.ts||''),
+    'Req ID: '+(row.req_id||''),
+    'IP: '+(row.client_ip||''),
+    'User: '+(row.user_display||row.user_name||row.customer_name||row.user_email||row.customer_email||row.key_label||''),
+    'Key: '+(row.api_key_masked||''),
+    'Path: '+(row.path||''),
+    'Model: '+(row.model_requested||''),
+    'Backend: '+(row.backend_profile||row.backend||row.backend_id||''),
+    'Backend model: '+(row.backend_model||''),
+    'Status: '+(row.status||''),
+    'Upstream: '+(row.final_backend_status||''),
+    'Retry: '+(row.retry_count||0),
+    'Latency: '+(row.latency_ms||0)+'ms',
+    'Error type: '+(row.error_type||''),
+    'Error: '+monitorErrorText(row)
+  ].join('\n');
+}
+function copyText(text,btn){navigator.clipboard.writeText(text||'').then(function(){if(btn){var old=btn.textContent;btn.textContent='✓';setTimeout(function(){btn.textContent=old;},1200);}});}
+function copyMonitorText(index,kind,btn){var row=monitorDisplayRows[index];if(!row)return;copyText(kind==='debug'?monitorDebugText(row):monitorErrorText(row),btn);}
+function openMonitorErrorModal(index){var row=monitorDisplayRows[index];if(!row)return;monitorModalRow=row;document.getElementById('monitorErrorText').textContent=monitorErrorText(row)||'—';document.getElementById('monitorDebugText').textContent=monitorDebugText(row);document.getElementById('monitorErrorModal').classList.add('show');}
+function closeMonitorErrorModal(){document.getElementById('monitorErrorModal').classList.remove('show');}
+function copyMonitorModalText(kind,btn){if(!monitorModalRow)return;copyText(kind==='debug'?monitorDebugText(monitorModalRow):monitorErrorText(monitorModalRow),btn);}
 function addMessage(role,text){
   var d=document.createElement('div');d.className='msg '+role;
   d.innerHTML='<div class="msg-bubble"><div class="msg-label">'+(role==='user'?'You':'Assistant')+'</div>'+escapeHtml(text)+'</div>';

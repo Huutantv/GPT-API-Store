@@ -4303,6 +4303,27 @@ app.get("/api/metrics/top-keys", (req, res) => {
   res.json({ window: windowSec, items: countBy(windowRequests(windowSec), (item) => item.api_key_masked, limit) });
 });
 
+function monitorDebugCopyText(item) {
+  const errorText = item.error_message || item.error_type || "";
+  return [
+    `Time: ${item.ts || ""}`,
+    `Req ID: ${item.req_id || ""}`,
+    `IP: ${item.client_ip || ""}`,
+    `User: ${item.user_display || item.user_name || item.customer_name || item.user_email || item.customer_email || item.key_label || ""}`,
+    `Key: ${item.api_key_masked || ""}`,
+    `Path: ${item.path || ""}`,
+    `Model: ${item.model_requested || ""}`,
+    `Backend: ${item.backend_profile || item.backend || item.backend_id || ""}`,
+    `Backend model: ${item.backend_model || ""}`,
+    `Status: ${item.status || ""}`,
+    `Upstream: ${item.final_backend_status || ""}`,
+    `Retry: ${item.retry_count || 0}`,
+    `Latency: ${item.latency_ms || 0}ms`,
+    `Error type: ${item.error_type || ""}`,
+    `Error: ${errorText}`,
+  ].join("\n");
+}
+
 app.get("/api/requests/recent", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
@@ -4322,7 +4343,7 @@ app.get("/api/requests/recent", (req, res) => {
     const rawKey = String(item.api_key_masked || item.api_key || "");
     const owner = item.user_display ? item : (ownerMap.get(rawKey) || {});
     const keyLabel = item.key_label || owner.key_label || "";
-    return {
+    const enriched = {
       ...item,
       user_name: item.user_name || owner.user_name || owner.customer_name || "",
       user_email: item.user_email || owner.user_email || owner.customer_email || "",
@@ -4336,6 +4357,9 @@ app.get("/api/requests/recent", (req, res) => {
       key_label: keyLabel,
       api_key_full: fullKeyMap.get(rawKey) || "",
     };
+    enriched.error_copy_text = enriched.error_message || enriched.error_type || "";
+    enriched.debug_copy_text = monitorDebugCopyText(enriched);
+    return enriched;
   });
   res.json({ count: Math.min(limit, recentRequests.length), requests });
 });
