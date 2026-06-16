@@ -2291,7 +2291,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         const hiddenReasoningState = { inThink: false };
         const openStream = () => {
           if (streamOpened) return;
-          wroteResponse = true;
+          if (!res.__responsesBridge) wroteResponse = true;
           setSseHeaders(res);
           stopHeartbeat = startSseHeartbeat(res);
           for (const pending of pendingChunks) res.write(pending);
@@ -2336,7 +2336,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
             if (parsed.usage && parsed.usage.total_tokens) {
               totalTokens = parsed.usage.total_tokens;
             }
-            if (hasOpenAIAssistantOutput(parsed)) hasAssistantOutput = true;
+            if (hasOpenAIAssistantOutput(parsed)) {
+              hasAssistantOutput = true;
+              if (res.__responsesBridge) wroteResponse = true;
+            }
             outbound += `data: ${JSON.stringify(parsed)}\n`;
           }
           if (wasPending && outbound) pendingChunks.push(outbound);
@@ -3178,6 +3181,20 @@ function createResponsesStreamBridge(res, publicModel) {
   const fail = (error) => {
     if (completed) return;
     const message = error && typeof error === "object" ? error : { message: String(error || publicBackendFallbackMessage(502)), type: "api_error" };
+    if (responseStarted) {
+      const status = Number(message.status_code || message.status || 502);
+      const text = publicBackendFallbackMessage(status) || "The AI service interrupted the stream. Please try again.";
+      if (!textStarted) startText();
+      outputText += text;
+      writeEvent("response.output_text.delta", eventPayload("response.output_text.delta", {
+        item_id: textOutputId,
+        output_index: textOutputIndex,
+        content_index: 0,
+        delta: text,
+      }));
+      complete();
+      return;
+    }
     writeEvent("response.created", {
       type: "response.created",
       response: { ...responseBase(), status: "failed", output: [] },
@@ -3422,6 +3439,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (wantsStream) {
     res.statusCode = 200;
     res.setHeader("X-Accel-Buffering", "no");
+    res.__responsesBridge = true;
     streamBridge.start();
   }
   const oldJson = res.json.bind(res);
