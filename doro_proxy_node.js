@@ -1163,30 +1163,6 @@ function backendErrorFromPayload(data, fallbackStatus = 502) {
   return err;
 }
 
-// === [FIX <think> leak] Helper functions ===
-// stripThinkTags: bo cac block <think>...</think>, [think]...[/think]
-// scrubReasoningFields: xoa cac field reasoning de khong lot ra response
-function stripThinkTags(text) {
-  if (typeof text !== "string" || !text) return "";
-  return text
-    .replace(/<\s*think\b[^>]*>[\s\S]*?<\s*\/\s*think\s*>/gi, "")
-    .replace(/<\s*think\b[^>]*\/?>/gi, "")
-    .replace(/<\s*\/\s*think\s*>/gi, "")
-    .replace(/\[\s*think\s*\][\s\S]*?\[\s*\/\s*think\s*\]/gi, "")
-    .replace(/```\s*think[\s\S]*?```/gi, "")
-    .replace(/^\s+/, "");
-}
-function scrubReasoningFields(obj) {
-  if (!obj || typeof obj !== "object") return obj;
-  delete obj.reasoning_content;
-  delete obj.reasoning;
-  delete obj.reasoning_text;
-  delete obj.reasoning_summary;
-  delete obj.thinking;
-  return obj;
-}
-// === [/FIX <think> leak] ===
-
 function firstNonEmptyString(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.length > 0) return value;
@@ -1201,26 +1177,22 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
     if (!choice || typeof choice !== "object") continue;
     if (choice.delta && typeof choice.delta === "object") {
       const delta = choice.delta;
-      // [FIX <think> leak] Loai bo reasoning_content, KHONG fallback vao content nua
-      scrubReasoningFields(delta);
+      if (typeof delta.content !== "string" || !delta.content) {
+        const fallback = firstNonEmptyString(delta.reasoning_content, delta.reasoning, delta.text, delta.refusal);
+        if (fallback) delta.content = fallback;
+      }
       if (typeof delta.content === "string") {
-        // [FIX <think> leak] Strip <think>...</think> roi moi sanitize identity
-        delta.content = stripThinkTags(delta.content);
-        if (delta.content) {
-          delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel);
-        }
+        delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel);
       }
     }
     if (choice.message && typeof choice.message === "object") {
       const message = choice.message;
-      // [FIX <think> leak] Loai bo reasoning_content, KHONG fallback vao content nua
-      scrubReasoningFields(message);
+      if (typeof message.content !== "string" || !message.content) {
+        const fallback = firstNonEmptyString(message.reasoning_content, message.reasoning, message.text, message.refusal, choice.text);
+        if (fallback) message.content = fallback;
+      }
       if (typeof message.content === "string") {
-        // [FIX <think> leak] Strip <think>...</think> roi moi sanitize identity
-        message.content = stripThinkTags(message.content);
-        if (message.content) {
-          message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
-        }
+        message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
       }
     }
   }
@@ -1330,28 +1302,6 @@ function parseToolArguments(raw) {
     return JSON.parse(String(raw));
   } catch (_) {
     return {};
-  }
-}
-
-// Chuẩn hoá arguments thành JSON string an toàn để gửi upstream (OpenAI Chat Completions).
-// - Nếu đã là string: dùng nguyên xi (tránh double-encode).
-// - Nếu là object: stringify, fallback "{}" nếu lỗi (BigInt, circular ref, ...).
-// - Mặc định: "{}".
-function stringifyToolArguments(value) {
-  if (value == null) return "{}";
-  if (typeof value === "string") return value;
-  if (typeof value === "object") {
-    try {
-      const out = JSON.stringify(value);
-      return typeof out === "string" ? out : "{}";
-    } catch (_) {
-      return "{}";
-    }
-  }
-  try {
-    return JSON.stringify(String(value));
-  } catch (_) {
-    return "{}";
   }
 }
 
@@ -1797,7 +1747,7 @@ function anthropicToOpenAI(body, backendModel = "") {
         toolCalls.push({
           id: block.id || `call_${toolCalls.length}`,
           type: "function",
-          function: { name: block.name || "tool", arguments: stringifyToolArguments(block.input) },
+          function: { name: block.name || "tool", arguments: JSON.stringify(block.input || {}) },
         });
       } else if (block.type === "tool_result" && role === "user") {
         flushBlocks();
@@ -1942,8 +1892,6 @@ function emitAnthropicBufferedStream(res, data, model, backendModel) {
   });
   response.content.forEach((block, index) => {
     if (block.type === "text") {
-      // [FIX think leak] strip think truoc khi emit text block
-      block.text = stripThinkTags(block.text || "");
       sseWrite(res, "content_block_start", { type: "content_block_start", index, content_block: { type: "text", text: "" } });
       if (block.text) sseWrite(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } });
       sseWrite(res, "content_block_stop", { type: "content_block_stop", index });
@@ -2025,14 +1973,9 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel) {
       const choice = (chunk.choices || [])[0] || {};
       finishReason = choice.finish_reason || finishReason;
       const delta = choice.delta || {};
-      // [FIX think leak] xoa reasoning fields + strip think tags
-      scrubReasoningFields(delta);
       if (delta.content) {
-        const cleanedContent = stripThinkTags(delta.content);
-        if (cleanedContent) {
-          ensureTextBlock();
-          sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(cleanedContent, model, backendModel) } });
-        }
+        ensureTextBlock();
+        sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(delta.content, model, backendModel) } });
       }
       for (const call of delta.tool_calls || []) {
         hasToolCalls = true;
@@ -2080,12 +2023,7 @@ async function collectOpenAIStream(resp) {
         const choice = (chunk.choices || [])[0] || {};
         finishReason = choice.finish_reason || finishReason;
         const delta = choice.delta || {};
-        // [FIX think leak] xoa reasoning + strip think khi tich luy
-        scrubReasoningFields(delta);
-        if (delta.content) {
-          const cleaned = stripThinkTags(delta.content);
-          if (cleaned) content += cleaned;
-        }
+        if (delta.content) content += delta.content;
         for (const call of delta.tool_calls || []) {
           const idx = call.index ?? 0;
           if (!toolCalls[idx]) toolCalls[idx] = { id: call.id || `call_${idx}`, type: "function", function: { name: "", arguments: "" } };
@@ -2699,37 +2637,10 @@ function responsesContentToChatContent(content) {
 function responsesInputToMessages(input) {
   const items = Array.isArray(input) ? input : [input];
   const messages = [];
-  let pendingToolCalls = [];
-  let autoIdSeq = 0;
-  let lastAssistantToolCallIds = [];
-
-  const sanitizeToolId = (raw, fallback) => {
-    const value = String(raw == null ? "" : raw).trim();
-    if (value) return value;
-    autoIdSeq += 1;
-    return `${fallback || "call"}_auto_${Date.now()}_${autoIdSeq}`;
-  };
-
-  const flushToolCalls = () => {
-    if (!pendingToolCalls.length) return;
-    messages.push({
-      role: "assistant",
-      content: null,
-      tool_calls: pendingToolCalls.map((tc) => ({
-        id: tc.id,
-        type: "function",
-        function: { name: tc.name, arguments: tc.arguments },
-      })),
-    });
-    pendingToolCalls = [];
-  };
 
   for (const item of items) {
     if (typeof item === "string") {
-      flushToolCalls();
-      lastAssistantToolCallIds = [];
-      const text = item.trim();
-      if (text) messages.push({ role: "user", content: item });
+      messages.push({ role: "user", content: item });
       continue;
     }
     if (!item || typeof item !== "object") continue;
@@ -2737,50 +2648,42 @@ function responsesInputToMessages(input) {
     if (item.type === "function_call") {
       const name = String(item.name || "").trim();
       if (!name) continue;
-      const id = sanitizeToolId(item.call_id || item.id, "call");
-      lastAssistantToolCallIds.push(id);
-      pendingToolCalls.push({
-        id,
-        name,
-        arguments: stringifyToolArguments(item.arguments),
+      messages.push({
+        role: "assistant",
+        content: item.content || "",
+        tool_calls: [{
+          id: item.call_id || item.id || `call_${messages.length}`,
+          type: "function",
+          function: {
+            name,
+            arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+          },
+        }],
       });
       continue;
     }
 
     if (item.type === "function_call_output" || item.type === "local_shell_call_output" || item.type === "shell_call_output") {
-      flushToolCalls();
-      let toolId = item.call_id != null ? String(item.call_id).trim() : "";
-      if (toolId) {
-        // Remove from queue so subsequent outputs without explicit id don't reuse it
-        lastAssistantToolCallIds = lastAssistantToolCallIds.filter((id) => id !== toolId);
-      } else if (lastAssistantToolCallIds.length) {
-        toolId = lastAssistantToolCallIds.shift();
-      } else {
-        toolId = sanitizeToolId(null, "tool");
-      }
       messages.push({
         role: "tool",
-        tool_call_id: toolId,
+        tool_call_id: item.call_id,
         content: responsesContentToText(item.output || item.content || item.result),
       });
       continue;
     }
 
     if (item.type === "input_image") {
-      flushToolCalls();
       const content = responsesContentToChatContent(item);
       if (content) messages.push({ role: "user", content });
       continue;
     }
 
     if (item.type === "input_text") {
-      flushToolCalls();
       const content = responsesContentToText(item);
       if (content) messages.push({ role: "user", content });
       continue;
     }
 
-    flushToolCalls();
     if (item.type && item.type !== "message") continue;
     const role = item.role === "developer" ? "system" : (item.role || "user");
     const rawContent = item.content || item.text || item.input_text;
@@ -2788,7 +2691,6 @@ function responsesInputToMessages(input) {
     if (content) messages.push({ role, content });
   }
 
-  flushToolCalls();
   return messages.length ? messages : [{ role: "user", content: "" }];
 }
 
@@ -2911,7 +2813,7 @@ function responsesOutputItemFromToolCall({ id, callId, name, args, status = "com
     status,
     call_id: callId || fallbackId,
     name: normalizedName,
-    arguments: stringifyToolArguments(args),
+    arguments: typeof args === "string" ? args : JSON.stringify(args || {}),
   };
 }
 
@@ -3237,9 +3139,7 @@ function createResponsesStreamBridge(res, publicModel) {
     if (parsed.usage) usage = parsed.usage;
     const choice = (parsed.choices || [])[0] || {};
     const delta = choice.delta || {};
-    // [FIX think leak] xoa reasoning + strip think
-    scrubReasoningFields(delta);
-    const text = typeof delta.content === "string" ? stripThinkTags(delta.content) : "";
+    const text = typeof delta.content === "string" ? delta.content : "";
     if (text) {
       startText();
       outputText += text;
@@ -3321,8 +3221,6 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
     const content = output.content[0];
     responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: outputIndex, item: { ...output, content: [] } }));
     responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: outputIndex, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
-    // [FIX think leak] strip think truoc khi emit
-    content.text = stripThinkTags(content.text || "");
     if (content.text) {
       responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: outputIndex, content_index: 0, delta: content.text }));
     }
@@ -3532,13 +3430,8 @@ async function openAIChatCompletionsHandler(req, res) {
       err.code = "empty_assistant_response";
       throw err;
     }
-    // [FIX think leak] scrub reasoning + strip think truoc khi sanitize identity
-    if (choice.message) scrubReasoningFields(choice.message);
     if (choice.message && choice.message.content) {
-      choice.message.content = stripThinkTags(choice.message.content);
-      if (choice.message.content) {
-        choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, finalSettings.backendModel);
-      }
+      choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, finalSettings.backendModel);
     }
     if (data.error && data.error.message) data.error.message = sanitizeBackendText(data.error.message, finalSettings.backendModel, publicModel);
     const tokens = Number((data.usage || {}).total_tokens || 0);

@@ -1,0 +1,153 @@
+﻿commit 359fbe34601f4f0803baa27295e470ea0abb88d3
+Author: Huutantv <huutantv.ng@gmail.com>
+Date:   Tue Jun 16 10:44:33 2026 +0700
+
+    fix
+
+diff --git a/doro_proxy_node.js b/doro_proxy_node.js
+index 289717d..74586cc 100644
+--- a/doro_proxy_node.js
++++ b/doro_proxy_node.js
+@@ -1163,6 +1163,30 @@ function backendErrorFromPayload(data, fallbackStatus = 502) {
+   return err;
+ }
+ 
++// === [FIX <think> leak] Helper functions ===
++// stripThinkTags: bo cac block <think>...</think>, [think]...[/think]
++// scrubReasoningFields: xoa cac field reasoning de khong lot ra response
++function stripThinkTags(text) {
++  if (typeof text !== "string" || !text) return "";
++  return text
++    .replace(/<\s*think\b[^>]*>[\s\S]*?<\s*\/\s*think\s*>/gi, "")
++    .replace(/<\s*think\b[^>]*\/?>/gi, "")
++    .replace(/<\s*\/\s*think\s*>/gi, "")
++    .replace(/\[\s*think\s*\][\s\S]*?\[\s*\/\s*think\s*\]/gi, "")
++    .replace(/```\s*think[\s\S]*?```/gi, "")
++    .replace(/^\s+/, "");
++}
++function scrubReasoningFields(obj) {
++  if (!obj || typeof obj !== "object") return obj;
++  delete obj.reasoning_content;
++  delete obj.reasoning;
++  delete obj.reasoning_text;
++  delete obj.reasoning_summary;
++  delete obj.thinking;
++  return obj;
++}
++// === [/FIX <think> leak] ===
++
+ function firstNonEmptyString(...values) {
+   for (const value of values) {
+     if (typeof value === "string" && value.length > 0) return value;
+@@ -1177,22 +1201,26 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
+     if (!choice || typeof choice !== "object") continue;
+     if (choice.delta && typeof choice.delta === "object") {
+       const delta = choice.delta;
+-      if (typeof delta.content !== "string" || !delta.content) {
+-        const fallback = firstNonEmptyString(delta.reasoning_content, delta.reasoning, delta.text, delta.refusal);
+-        if (fallback) delta.content = fallback;
+-      }
++      // [FIX <think> leak] Loai bo reasoning_content, KHONG fallback vao content nua
++      scrubReasoningFields(delta);
+       if (typeof delta.content === "string") {
+-        delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel);
++        // [FIX <think> leak] Strip <think>...</think> roi moi sanitize identity
++        delta.content = stripThinkTags(delta.content);
++        if (delta.content) {
++          delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel);
++        }
+       }
+     }
+     if (choice.message && typeof choice.message === "object") {
+       const message = choice.message;
+-      if (typeof message.content !== "string" || !message.content) {
+-        const fallback = firstNonEmptyString(message.reasoning_content, message.reasoning, message.text, message.refusal, choice.text);
+-        if (fallback) message.content = fallback;
+-      }
++      // [FIX <think> leak] Loai bo reasoning_content, KHONG fallback vao content nua
++      scrubReasoningFields(message);
+       if (typeof message.content === "string") {
+-        message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
++        // [FIX <think> leak] Strip <think>...</think> roi moi sanitize identity
++        message.content = stripThinkTags(message.content);
++        if (message.content) {
++          message.content = sanitizeAssistantIdentityText(message.content, publicModel, backendModel);
++        }
+       }
+     }
+   }
+@@ -1914,6 +1942,8 @@ function emitAnthropicBufferedStream(res, data, model, backendModel) {
+   });
+   response.content.forEach((block, index) => {
+     if (block.type === "text") {
++      // [FIX think leak] strip think truoc khi emit text block
++      block.text = stripThinkTags(block.text || "");
+       sseWrite(res, "content_block_start", { type: "content_block_start", index, content_block: { type: "text", text: "" } });
+       if (block.text) sseWrite(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } });
+       sseWrite(res, "content_block_stop", { type: "content_block_stop", index });
+@@ -1995,9 +2025,14 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel) {
+       const choice = (chunk.choices || [])[0] || {};
+       finishReason = choice.finish_reason || finishReason;
+       const delta = choice.delta || {};
++      // [FIX think leak] xoa reasoning fields + strip think tags
++      scrubReasoningFields(delta);
+       if (delta.content) {
+-        ensureTextBlock();
+-        sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(delta.content, model, backendModel) } });
++        const cleanedContent = stripThinkTags(delta.content);
++        if (cleanedContent) {
++          ensureTextBlock();
++          sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(cleanedContent, model, backendModel) } });
++        }
+       }
+       for (const call of delta.tool_calls || []) {
+         hasToolCalls = true;
+@@ -2045,7 +2080,12 @@ async function collectOpenAIStream(resp) {
+         const choice = (chunk.choices || [])[0] || {};
+         finishReason = choice.finish_reason || finishReason;
+         const delta = choice.delta || {};
+-        if (delta.content) content += delta.content;
++        // [FIX think leak] xoa reasoning + strip think khi tich luy
++        scrubReasoningFields(delta);
++        if (delta.content) {
++          const cleaned = stripThinkTags(delta.content);
++          if (cleaned) content += cleaned;
++        }
+         for (const call of delta.tool_calls || []) {
+           const idx = call.index ?? 0;
+           if (!toolCalls[idx]) toolCalls[idx] = { id: call.id || `call_${idx}`, type: "function", function: { name: "", arguments: "" } };
+@@ -3197,7 +3237,9 @@ function createResponsesStreamBridge(res, publicModel) {
+     if (parsed.usage) usage = parsed.usage;
+     const choice = (parsed.choices || [])[0] || {};
+     const delta = choice.delta || {};
+-    const text = typeof delta.content === "string" ? delta.content : "";
++    // [FIX think leak] xoa reasoning + strip think
++    scrubReasoningFields(delta);
++    const text = typeof delta.content === "string" ? stripThinkTags(delta.content) : "";
+     if (text) {
+       startText();
+       outputText += text;
+@@ -3279,6 +3321,8 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
+     const content = output.content[0];
+     responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", { output_index: outputIndex, item: { ...output, content: [] } }));
+     responseSseWrite(res, "response.content_part.added", responseStreamEvent(response, "response.content_part.added", { item_id: output.id, output_index: outputIndex, content_index: 0, part: { type: "output_text", text: "", annotations: [] } }));
++    // [FIX think leak] strip think truoc khi emit
++    content.text = stripThinkTags(content.text || "");
+     if (content.text) {
+       responseSseWrite(res, "response.output_text.delta", responseStreamEvent(response, "response.output_text.delta", { item_id: output.id, output_index: outputIndex, content_index: 0, delta: content.text }));
+     }
+@@ -3488,8 +3532,13 @@ async function openAIChatCompletionsHandler(req, res) {
+       err.code = "empty_assistant_response";
+       throw err;
+     }
++    // [FIX think leak] scrub reasoning + strip think truoc khi sanitize identity
++    if (choice.message) scrubReasoningFields(choice.message);
+     if (choice.message && choice.message.content) {
+-      choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, finalSettings.backendModel);
++      choice.message.content = stripThinkTags(choice.message.content);
++      if (choice.message.content) {
++        choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, finalSettings.backendModel);
++      }
+     }
+     if (data.error && data.error.message) data.error.message = sanitizeBackendText(data.error.message, finalSettings.backendModel, publicModel);
+     const tokens = Number((data.usage || {}).total_tokens || 0);
