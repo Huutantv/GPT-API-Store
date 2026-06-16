@@ -2001,6 +2001,7 @@ function sseWrite(res, event, data) {
 }
 
 function setSseHeaders(res) {
+  if (res.headersSent) return;
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("X-Accel-Buffering", "no");
@@ -3438,7 +3439,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   };
   if (wantsStream) {
     res.statusCode = 200;
-    res.setHeader("X-Accel-Buffering", "no");
+    setSseHeaders(res);
     res.__responsesBridge = true;
     streamBridge.start();
   }
