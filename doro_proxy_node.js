@@ -966,6 +966,35 @@ function prependIdentityGuard(messages, publicModel) {
   ];
 }
 
+function agentToolContinuationMessage() {
+  return {
+    role: "system",
+    content: [
+      "Agent tool workflow policy:",
+      "- When tools are available and the task is not complete, continue working autonomously by calling the appropriate tool in the same turn.",
+      "- Do not stop with a promise such as \"I'll continue\", \"OK, continuing\", \"tiếp tục\", or \"I'll check next\".",
+      "- After tool results, inspect the result and either call the next needed tool or provide a final answer only when the requested work is actually complete.",
+      "- Ask the user for input only when you are genuinely blocked and cannot make useful progress with the available tools.",
+    ].join("\n"),
+  };
+}
+
+function prependAgentToolGuard(messages, tools) {
+  const original = Array.isArray(messages) ? messages : [];
+  if (!Array.isArray(tools) || !tools.length) return original;
+  const alreadyPresent = original.some((message) =>
+    message && message.role === "system" && String(message.content || "").includes("Agent tool workflow policy:")
+  );
+  if (alreadyPresent) return original;
+  const firstNonSystem = original.findIndex((message) => message && message.role !== "system");
+  if (firstNonSystem === -1) return [...original, agentToolContinuationMessage()];
+  return [
+    ...original.slice(0, firstNonSystem),
+    agentToolContinuationMessage(),
+    ...original.slice(firstNonSystem),
+  ];
+}
+
 function extractToken(req) {
   const auth = req.get("authorization") || "";
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7);
@@ -3426,9 +3455,10 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   }
   const imageCount = countResponsesImages(original.messages || original.input);
   if (imageCount) addLog(`responses images count=${imageCount}`);
+  const responseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
   req.body = {
     model: original.model || "opus",
-    messages: Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input),
+    messages: prependAgentToolGuard(responseMessages, chatTools),
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: responseMaxTokens,
@@ -3504,6 +3534,7 @@ async function openAIChatCompletionsHandler(req, res) {
   addLog(`proxy openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
   if (body.stream) {
     const payload = { ...body, model: settings.backendModel };
+    if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
     if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
     applyBackendPayloadLimits(payload, settings);
     applyBackendMessageCompatibility(payload, settings);
@@ -3525,6 +3556,7 @@ async function openAIChatCompletionsHandler(req, res) {
       if (mergedTools) roundBody.tools = mergedTools;
       const result = await postWithBackendChain(settingsChain, (profileSettings) => {
         const payload = { ...roundBody, model: profileSettings.backendModel };
+        if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
         if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
         applyBackendPayloadLimits(payload, profileSettings);
         applyBackendMessageCompatibility(payload, profileSettings);
