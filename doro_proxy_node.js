@@ -119,6 +119,11 @@ function envFlag(value, fallback = false) {
   return fallback;
 }
 
+function defaultUserAssistantOnlyForModel(modelName) {
+  const normalized = normalizeModelName(modelName);
+  return normalized.includes("deepseek") || normalized.includes("minimax");
+}
+
 function backendWeights() {
   const w1 = clampPercent(process.env.DORO_BACKEND1_WEIGHT, 50);
   const w2Raw = process.env.DORO_BACKEND2_WEIGHT;
@@ -173,7 +178,7 @@ function backendProfile(id = activeBackendId()) {
       baseUrl: normalizeOpenAIBaseUrl(process.env.DORO_BACKEND2_BASE_URL),
       backendModel: process.env.DORO_BACKEND2_MODEL || DEFAULT_BACKEND_MODEL,
       maxTokens: optionalPositiveInt(process.env.DORO_BACKEND2_MAX_TOKENS),
-      userAssistantOnly: envFlag(process.env.DORO_BACKEND2_USER_ASSISTANT_ONLY, String(process.env.DORO_BACKEND2_MODEL || "").toLowerCase().includes("deepseek")),
+      userAssistantOnly: envFlag(process.env.DORO_BACKEND2_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND2_MODEL)),
       disableTools: envFlag(process.env.DORO_BACKEND2_DISABLE_TOOLS, String(process.env.DORO_BACKEND2_MODEL || "").toLowerCase().includes("deepseek")),
     };
   }
@@ -187,7 +192,7 @@ function backendProfile(id = activeBackendId()) {
     baseUrl: normalizeOpenAIBaseUrl(firstEnv("DORO_API_BASE", "ANTHROPIC_BASE_URL", { default: DEFAULT_BASE_URL })),
     backendModel: process.env.DORO_BACKEND_MODEL || DEFAULT_BACKEND_MODEL,
     maxTokens: optionalPositiveInt(process.env.DORO_BACKEND1_MAX_TOKENS || process.env.DORO_BACKEND_MAX_TOKENS),
-    userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
+    userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND_MODEL)),
     disableTools: envFlag(process.env.DORO_BACKEND1_DISABLE_TOOLS, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
   };
 }
@@ -3074,7 +3079,6 @@ function createResponsesStreamBridge(res, publicModel) {
         arguments: "",
         output_index: -1,
         started: false,
-        pendingDeltas: [],
       });
     }
 
@@ -3102,16 +3106,6 @@ function createResponsesStreamBridge(res, publicModel) {
         status: "in_progress",
       }),
     }));
-    for (const partial of tracked.pendingDeltas) {
-      if (tracked.name !== "local_shell" && tracked.name !== "shell") {
-        writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
-          item_id: tracked.id,
-          output_index: tracked.output_index,
-          delta: partial,
-        }));
-      }
-    }
-    tracked.pendingDeltas.length = 0;
   };
 
   const fail = (error) => {
@@ -3241,17 +3235,6 @@ function createResponsesStreamBridge(res, publicModel) {
       const partial = call.function && call.function.arguments ? call.function.arguments : "";
       if (!partial) continue;
       tracked.arguments += partial;
-      if (tracked.started) {
-        if (tracked.name !== "local_shell" && tracked.name !== "shell") {
-          writeEvent("response.function_call_arguments.delta", eventPayload("response.function_call_arguments.delta", {
-            item_id: tracked.id,
-            output_index: tracked.output_index,
-            delta: partial,
-          }));
-        }
-      } else {
-        tracked.pendingDeltas.push(partial);
-      }
     }
   };
 
@@ -3452,6 +3435,9 @@ async function openAIChatCompletionsHandler(req, res) {
       const result = await postWithBackendChain(settingsChain, (profileSettings) => {
         const payload = { ...roundBody, model: profileSettings.backendModel };
         if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+        applyBackendPayloadLimits(payload, profileSettings);
+        applyBackendMessageCompatibility(payload, profileSettings);
+        applyBackendToolCompatibility(payload, profileSettings);
         return payload;
       }, "/chat/completions", req.obs);
 
