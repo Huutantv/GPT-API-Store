@@ -860,12 +860,52 @@ function publicBackendError(status, text, backendModel, publicModel, code) {
   };
 }
 
+function stripHiddenReasoningText(text) {
+  let value = String(text || "");
+  if (!value) return "";
+  value = value.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "");
+  value = value.replace(/<think\b[^>]*>[\s\S]*$/gi, "");
+  value = value.replace(/^[\s\S]*?<\/think>/gi, "");
+  value = value.replace(/<\/?think\b[^>]*>/gi, "");
+  value = value.replace(/<\/?tool_call\b[^>]*>/gi, "");
+  return value.trimStart();
+}
+
+function filterHiddenReasoningDelta(text, state = {}) {
+  let value = String(text || "");
+  let output = "";
+  while (value) {
+    const lower = value.toLowerCase();
+    if (state.inThink) {
+      const end = lower.indexOf("</think>");
+      if (end === -1) return "";
+      value = value.slice(end + "</think>".length);
+      state.inThink = false;
+      continue;
+    }
+    const start = lower.indexOf("<think");
+    if (start === -1) {
+      output += value;
+      break;
+    }
+    output += value.slice(0, start);
+    const afterStart = lower.indexOf(">", start);
+    const end = lower.indexOf("</think>", afterStart === -1 ? start : afterStart);
+    if (end === -1) {
+      state.inThink = true;
+      break;
+    }
+    value = value.slice(end + "</think>".length);
+  }
+  return output.replace(/<\/?tool_call\b[^>]*>/gi, "");
+}
+
 function modelIdentityAnswer(publicModel) {
   return `I'm ${publicModel}, a large language model created by OpenAI. How can I help you today?`;
 }
 
 function sanitizeAssistantIdentityText(text, publicModel, backendModel) {
-  let cleaned = sanitizeBackendText(text, backendModel, publicModel);
+  let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel));
   const identityAnswer = modelIdentityAnswer(publicModel);
   const lower = cleaned.toLowerCase();
   const hasIdentityLeak = [
@@ -1260,7 +1300,7 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
     if (choice.delta && typeof choice.delta === "object") {
       const delta = choice.delta;
       if (typeof delta.content !== "string" || !delta.content) {
-        const fallback = firstNonEmptyString(delta.reasoning_content, delta.reasoning, delta.text, delta.refusal);
+        const fallback = firstNonEmptyString(delta.text, delta.refusal);
         if (fallback) delta.content = fallback;
       }
       if (typeof delta.content === "string") {
@@ -1270,7 +1310,7 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
     if (choice.message && typeof choice.message === "object") {
       const message = choice.message;
       if (typeof message.content !== "string" || !message.content) {
-        const fallback = firstNonEmptyString(message.reasoning_content, message.reasoning, message.text, message.refusal, choice.text);
+        const fallback = firstNonEmptyString(message.text, message.refusal, choice.text);
         if (fallback) message.content = fallback;
       }
       if (typeof message.content === "string") {
@@ -2248,6 +2288,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         const pendingChunks = [];
         let hasAssistantOutput = false;
         let streamOpened = false;
+        const hiddenReasoningState = { inThink: false };
         const openStream = () => {
           if (streamOpened) return;
           wroteResponse = true;
@@ -2283,6 +2324,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
             } catch (_) {
               outbound += `${sanitizeBackendText(line, backendModel, publicModel)}\n`;
               continue;
+            }
+            const parsedChoice = (parsed.choices || [])[0] || {};
+            if (parsedChoice.delta && typeof parsedChoice.delta.content === "string") {
+              parsedChoice.delta.content = filterHiddenReasoningDelta(parsedChoice.delta.content, hiddenReasoningState);
             }
             const payloadError = backendErrorFromPayload(parsed, resp.status || 502);
             if (payloadError && !hasAssistantOutput) throw payloadError;
@@ -3035,6 +3080,7 @@ function createResponsesStreamBridge(res, publicModel) {
   let buffer = "";
   let outputText = "";
   let usage = null;
+  const hiddenReasoningState = { inThink: false };
   const toolCalls = new Map();
 
   const writeEvent = (event, data) => {
@@ -3225,7 +3271,9 @@ function createResponsesStreamBridge(res, publicModel) {
     if (parsed.usage) usage = parsed.usage;
     const choice = (parsed.choices || [])[0] || {};
     const delta = choice.delta || {};
-    const text = typeof delta.content === "string" ? delta.content : "";
+    const text = typeof delta.content === "string"
+      ? sanitizeAssistantIdentityText(filterHiddenReasoningDelta(delta.content, hiddenReasoningState), publicModel, publicModel)
+      : "";
     if (text) {
       startText();
       outputText += text;
