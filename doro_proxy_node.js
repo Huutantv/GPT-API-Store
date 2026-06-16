@@ -2619,6 +2619,7 @@ app.use((req, res, next) => {
     package_id: ownerInfo.package_id || "",
     key_label: ownerInfo.key_label || "",
     model_requested: "",
+    previous_response_id: "",
     backend_id: "",
     backend_profile: "",
     backend_model: "",
@@ -2670,6 +2671,7 @@ app.use((req, res, next) => {
       package_id: req.obs.package_id || "",
       key_label: req.obs.key_label || "",
       model_requested: req.obs.model_requested || "",
+      previous_response_id: req.obs.previous_response_id || "",
       backend_id: req.obs.backend_id || "",
       backend_profile: req.obs.backend_profile || "",
       backend_model: req.obs.backend_model || "",
@@ -3045,7 +3047,12 @@ function hydrateResponsesContinuation(previousResponseId, messages) {
   const responseId = String(previousResponseId || "").trim();
   if (!responseId || !Array.isArray(messages) || !messages.length) return messages;
   const state = responsesState.get(responseId);
-  if (!state || !(state.toolCalls instanceof Map) || !state.toolCalls.size) return messages;
+  if (!state || !(state.toolCalls instanceof Map) || !state.toolCalls.size) {
+    if (messages.some((message) => message && message.role === "tool")) {
+      addLog(`responses continuation state miss previous_response_id=${responseId}`);
+    }
+    return messages;
+  }
 
   const hydrated = [];
   const seenToolCalls = new Set();
@@ -3584,6 +3591,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const original = req.body || {};
   const wantsStream = !!original.stream;
   const publicModel = publicModelName(original.model || "opus");
+  req.obs.previous_response_id = String(original.previous_response_id || "").trim();
   const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel) : null;
   const chatTools = responsesToolsToChatTools(original.tools);
   if (Array.isArray(original.tools)) {
@@ -4410,6 +4418,7 @@ function monitorDebugCopyText(item) {
     `Key: ${item.api_key_masked || ""}`,
     `Path: ${item.path || ""}`,
     `Model: ${item.model_requested || ""}`,
+    `Previous response ID: ${item.previous_response_id || ""}`,
     `Backend: ${item.backend_profile || item.backend || item.backend_id || ""}`,
     `Backend model: ${item.backend_model || ""}`,
     `Status: ${item.status || ""}`,
