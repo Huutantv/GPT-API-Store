@@ -2298,6 +2298,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           pendingChunks.length = 0;
           streamOpened = true;
         };
+        openStream();
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -3082,6 +3083,7 @@ function createResponsesStreamBridge(res, publicModel) {
   let usage = null;
   const hiddenReasoningState = { inThink: false };
   const toolCalls = new Map();
+  let bridgeHeartbeat = null;
 
   const writeEvent = (event, data) => {
     rawWrite(`event: ${event}\n`);
@@ -3089,6 +3091,17 @@ function createResponsesStreamBridge(res, publicModel) {
   };
   const writeDone = () => rawWrite("event: done\ndata: [DONE]\n\n");
   const eventPayload = (type, data = {}) => ({ type, response_id: responseId, ...data });
+  const stopBridgeHeartbeat = () => {
+    if (bridgeHeartbeat) clearInterval(bridgeHeartbeat);
+    bridgeHeartbeat = null;
+  };
+  const startBridgeHeartbeat = () => {
+    if (bridgeHeartbeat) return;
+    bridgeHeartbeat = setInterval(() => {
+      try { rawWrite(": ping\n\n"); } catch (_) {}
+    }, 15000);
+    res.once("close", stopBridgeHeartbeat);
+  };
     const responseBase = () => withResponsesCompatFields({
     id: responseId,
     object: "response",
@@ -3101,6 +3114,7 @@ function createResponsesStreamBridge(res, publicModel) {
     const response = { ...responseBase(), status: "in_progress", output: [] };
     writeEvent("response.created", { type: "response.created", response });
     writeEvent("response.in_progress", { type: "response.in_progress", response });
+    startBridgeHeartbeat();
     responseStarted = true;
   };
 
@@ -3170,6 +3184,7 @@ function createResponsesStreamBridge(res, publicModel) {
     });
     writeEvent("response.failed", eventPayload("response.failed", { error: message }));
     writeDone();
+    stopBridgeHeartbeat();
     completed = true;
   };
 
@@ -3247,6 +3262,7 @@ function createResponsesStreamBridge(res, publicModel) {
       }),
     });
     writeDone();
+    stopBridgeHeartbeat();
     completed = true;
   };
 
@@ -3310,7 +3326,7 @@ function createResponsesStreamBridge(res, publicModel) {
     return rawEnd("", encoding, cb);
   };
 
-  return { fail, complete, rawWrite, rawEnd };
+  return { fail, complete, rawWrite, rawEnd, start: startResponse };
 }
 
 function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
@@ -3406,6 +3422,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (wantsStream) {
     res.statusCode = 200;
     res.setHeader("X-Accel-Buffering", "no");
+    streamBridge.start();
   }
   const oldJson = res.json.bind(res);
   res.json = (data) => {
