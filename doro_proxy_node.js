@@ -29,7 +29,7 @@ function loadLocalEnv(force = true) {
   }
 }
 
-loadLocalEnv(false);
+loadLocalEnv(true);
 
 const credit = require("./credit");
 const orders = require("./orders");
@@ -56,6 +56,17 @@ function firstEnv(...names) {
 
 function splitEnvList(value) {
   return (value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeOpenAIBaseUrl(value, fallback = DEFAULT_BASE_URL) {
+  const raw = String(value || fallback || DEFAULT_BASE_URL).trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(raw);
+    if (!url.pathname || url.pathname === "/") url.pathname = "/v1";
+    return url.toString().replace(/\/+$/, "");
+  } catch (_) {
+    return raw || DEFAULT_BASE_URL;
+  }
 }
 
 function normalizeModelName(modelName) {
@@ -159,7 +170,7 @@ function backendProfile(id = activeBackendId()) {
       label: process.env.DORO_BACKEND2_NAME || "Backend 2",
       apiKeyRaw,
       apiKeys: splitEnvList(apiKeyRaw),
-      baseUrl: String(process.env.DORO_BACKEND2_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, ""),
+      baseUrl: normalizeOpenAIBaseUrl(process.env.DORO_BACKEND2_BASE_URL),
       backendModel: process.env.DORO_BACKEND2_MODEL || DEFAULT_BACKEND_MODEL,
       maxTokens: optionalPositiveInt(process.env.DORO_BACKEND2_MAX_TOKENS),
       userAssistantOnly: envFlag(process.env.DORO_BACKEND2_USER_ASSISTANT_ONLY, String(process.env.DORO_BACKEND2_MODEL || "").toLowerCase().includes("deepseek")),
@@ -173,7 +184,7 @@ function backendProfile(id = activeBackendId()) {
     label: process.env.DORO_BACKEND1_NAME || "Backend 1",
     apiKeyRaw,
     apiKeys: splitEnvList(apiKeyRaw),
-    baseUrl: firstEnv("DORO_API_BASE", "ANTHROPIC_BASE_URL", { default: DEFAULT_BASE_URL }).replace(/\/+$/, ""),
+    baseUrl: normalizeOpenAIBaseUrl(firstEnv("DORO_API_BASE", "ANTHROPIC_BASE_URL", { default: DEFAULT_BASE_URL })),
     backendModel: process.env.DORO_BACKEND_MODEL || DEFAULT_BACKEND_MODEL,
     maxTokens: optionalPositiveInt(process.env.DORO_BACKEND1_MAX_TOKENS || process.env.DORO_BACKEND_MAX_TOKENS),
     userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
@@ -303,7 +314,7 @@ function isQuotaExceededError(status, text) {
 }
 
 function getSettings(requestedModel) {
-  loadLocalEnv(false);
+  loadLocalEnv(true);
   const profile = backendProfile();
   const requested = requestedModel || firstEnv("DORO_MODEL", "MODEL", "CLAUDE_CODE_SUBAGENT_MODEL", { default: "opus" });
   const backendModel = resolveBackendModel(requested, profile);
@@ -323,7 +334,7 @@ function getSettings(requestedModel) {
 }
 
 function getSettingsChain(requestedModel) {
-  loadLocalEnv(false);
+  loadLocalEnv(true);
   const active = activeBackendId();
   const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
   let ids = active === "both" ? ["1", "2"] : [active];
@@ -769,6 +780,11 @@ function publicBackendFallbackMessage(status) {
   return "The AI service returned an error. Please try again.";
 }
 
+function clientBackendStatus(status) {
+  const code = Number(status) || 502;
+  return code === 401 || code === 403 ? 502 : code;
+}
+
 function knownBackendHostnames() {
   const values = [
     process.env.DORO_API_BASE,
@@ -810,6 +826,13 @@ function containsBackendLeak(text, backendModel) {
 function publicBackendError(status, text, backendModel, publicModel, code) {
   const parsed = parseBackendError(status, text || "");
   const raw = `${text || ""}\n${parsed.message || ""}`;
+  if (Number(status) === 401 || Number(status) === 403) {
+    return {
+      message: publicBackendFallbackMessage(Number(status)),
+      type: "api_error",
+      code: code || parsed.code,
+    };
+  }
   if (containsBackendLeak(raw, backendModel)) {
     return {
       message: publicBackendFallbackMessage(Number(status) || 502),
@@ -2158,7 +2181,8 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
           return res.end();
         }
-        return res.status(err.status).json(anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+        const clientStatus = clientBackendStatus(err.status);
+        return res.status(clientStatus).json(anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) {
@@ -2299,9 +2323,11 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         if (obs) { obs.error_type = "backend"; obs.error_message = logPreview(err.text || err.message, 180); }
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
-          return res.status(err.status).json(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+          const clientStatus = clientBackendStatus(err.status);
+          return res.status(clientStatus).json(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
         }
-        res.write(`data: ${JSON.stringify(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code))}\n\n`);
+        const clientStatus = clientBackendStatus(err.status);
+        res.write(`data: ${JSON.stringify(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code))}\n\n`);
         res.write("data: [DONE]\n\n");
         return res.end();
       }
@@ -2607,7 +2633,8 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
-      return res.status(err.status).json(anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+      const clientStatus = clientBackendStatus(err.status);
+      return res.status(clientStatus).json(anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
@@ -3507,7 +3534,8 @@ async function openAIChatCompletionsHandler(req, res) {
       req.obs.error_message = logPreview(err.text || err.message, 180);
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
-      return res.status(err.status).json(openaiErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+      const clientStatus = clientBackendStatus(err.status);
+      return res.status(clientStatus).json(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
     req.obs.error_type = "network";
