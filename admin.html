@@ -1552,9 +1552,12 @@ async function loadBackendConfig() {
 
   // Active backend → checkbox state
   var active = data.active_backend || "1";
+  var activeIds = active === "all"
+    ? ["1", "2", "3", "4"]
+    : (active === "both" ? ["1", "2"] : String(active).split(",").map(function(s){ return s.trim(); }));
   [1, 2, 3, 4].forEach(function(id) {
     var el = document.getElementById("chkBackend" + id);
-    if (el) el.checked = (active === String(id) || active === "all" || active === "both");
+    if (el) el.checked = activeIds.indexOf(String(id)) !== -1;
   });
   document.getElementById("cfgRouter").value = data.backend_router_mode || "failover";
   syncBackendWeightsFromConfig(data.backend_weights);
@@ -2117,14 +2120,14 @@ async function saveActiveBackend() {
     return el && el.checked;
   });
   if (!selected.length) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backend"); return; }
-  var active = selected.length > 1 ? "all" : String(selected[0]);
+  var active = selected.join(",");
   var autoMode = document.getElementById("chkAutoMode").checked;
   var updates = {
     DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
     DORO_AUTO_MODE: autoMode ? "1" : "0",
   };
-  if (active === "all" && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
+  if (selected.length > 1 && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
     [1, 2, 3, 4].forEach(function(id) {
       var input = document.getElementById("cfgBackend" + id + "WeightInput");
       updates["DORO_BACKEND" + id + "_WEIGHT"] = String(normalizeWeight(input ? input.value : 0));

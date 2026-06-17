@@ -75,11 +75,17 @@ function normalizeModelName(modelName) {
 
 const BACKEND_IDS = ["1", "2", "3", "4"];
 
-function activeBackendId() {
+function activeBackendIds() {
   const value = String(process.env.DORO_ACTIVE_BACKEND || "1").trim().toLowerCase();
-  if (BACKEND_IDS.includes(value)) return value;
-  if (value === "both" || value === "1,2" || value === "all" || value === "1,2,3,4") return "all";
-  return "1";
+  if (value === "both") return ["1", "2"];
+  if (value === "all") return [...BACKEND_IDS];
+  const ids = value.split(",").map((item) => item.trim()).filter((item, index, list) => BACKEND_IDS.includes(item) && list.indexOf(item) === index);
+  return ids.length ? ids : ["1"];
+}
+
+function activeBackendId() {
+  const ids = activeBackendIds();
+  return ids.length === BACKEND_IDS.length ? "all" : ids.join(",");
 }
 
 function backendRouterMode() {
@@ -216,7 +222,7 @@ function backendAuthEnvField(id) {
   return backendId === "1" ? "ANTHROPIC_AUTH_TOKEN" : `DORO_BACKEND${backendId}_AUTH_TOKEN`;
 }
 
-function resolveBackendModel(requestedModel, profile = backendProfile()) {
+function resolveBackendModel(requestedModel, profile = backendProfile(activeBackendIds()[0] || "1")) {
   const backendModel = profile.backendModel || DEFAULT_BACKEND_MODEL;
   const normalized = normalizeModelName(requestedModel);
   // Tất cả model GPT và alias cũ đều remap sang backend model
@@ -339,10 +345,8 @@ function isQuotaExceededError(status, text) {
 
 function getSettings(requestedModel) {
   loadLocalEnv(true);
-  const active = activeBackendId();
-  const profile = active === "all"
-    ? (BACKEND_IDS.map((id) => backendProfile(id)).find((item) => item.apiKeys.length) || backendProfile("1"))
-    : backendProfile(active);
+  const activeIds = activeBackendIds();
+  const profile = activeIds.map((id) => backendProfile(id)).find((item) => item.apiKeys.length) || backendProfile(activeIds[0] || "1");
   const requested = requestedModel || firstEnv("DORO_MODEL", "MODEL", "CLAUDE_CODE_SUBAGENT_MODEL", { default: "opus" });
   const backendModel = resolveBackendModel(requested, profile);
   if (!profile.apiKeys.length) throw new Error(`Missing backend API key for ${profile.label}`);
@@ -362,12 +366,12 @@ function getSettings(requestedModel) {
 
 function getSettingsChain(requestedModel) {
   loadLocalEnv(true);
-  const active = activeBackendId();
+  const activeIds = activeBackendIds();
   const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
-  let ids = active === "all" ? [...BACKEND_IDS] : [active];
+  let ids = [...activeIds];
 
   // Auto mode: lọc backend đang trong trạng thái "down"
-  if (autoMode && active === "all") {
+  if (autoMode && ids.length > 1) {
     const healthy = ids.filter(id => isBackendHealthy(id));
     if (healthy.length > 0) ids = healthy;
     // Nếu tất cả đều down, vẫn thử cả 2
@@ -376,7 +380,7 @@ function getSettingsChain(requestedModel) {
   const configuredIds = ids.filter((id) => backendProfile(id).apiKeys.length);
   if (configuredIds.length > 0) ids = configuredIds;
 
-  if (active === "all" && ids.length > 1) {
+  if (ids.length > 1) {
     const mode = backendRouterMode();
     if (mode === "round_robin") {
       const offset = backendRouterCounter++ % ids.length;
@@ -4284,7 +4288,7 @@ app.get("/api/config", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const settings = getSettings();
   const active = activeBackendId();
-  const activeLabel = active === "all" ? BACKEND_IDS.map((id) => backendProfile(id).label).join(" + ") : settings.profileLabel;
+  const activeLabel = activeBackendIds().map((id) => backendProfile(id).label).join(" + ");
   const weights = backendWeights();
   const profiles = BACKEND_IDS.map((id) => {
     const profile = backendProfile(id);
@@ -4401,7 +4405,12 @@ app.put("/api/config", (req, res) => {
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") {
       const normalized = value.toLowerCase();
-      value = BACKEND_IDS.includes(normalized) ? normalized : (["both", "all"].includes(normalized) ? "all" : "");
+      if (["both", "all"].includes(normalized)) {
+        value = normalized === "both" ? "1,2" : "all";
+      } else {
+        const ids = normalized.split(",").map((item) => item.trim()).filter((item, index, list) => BACKEND_IDS.includes(item) && list.indexOf(item) === index);
+        value = ids.length ? ids.join(",") : "";
+      }
     }
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
@@ -5066,7 +5075,7 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Health    : http://${ip}:${port}/health`);
   printLog(`  Backend   : ${settings.baseUrl}`);
   printLog(`  Remap     : gpt-5.5 -> ${settings.backendModel}`);
-  printLog(`  Active    : ${activeBackendId() === "all" ? BACKEND_IDS.map((id) => backendProfile(id).label).join(" + ") : settings.profileLabel} (${activeBackendId()})`);
+  printLog(`  Active    : ${activeBackendIds().map((id) => backendProfile(id).label).join(" + ")} (${activeBackendId()})`);
   printLog(`  Router    : ${backendRouterMode()} | ${BACKEND_IDS.map((id) => `${backendProfile(id).label} ${backendWeights()[`backend${id}`]}%`).join(" / ")}`);
   printLog(`  Timeout   : ${backendTimeoutMs / 1000}s | Max concurrent: ${maxConcurrent}`);
   printLog(`  Retries   : request=${backendRequestRetryCount} | base=${retryBaseDelayMs}ms | max=${retryMaxDelayMs}ms`);
