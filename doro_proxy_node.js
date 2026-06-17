@@ -73,10 +73,12 @@ function normalizeModelName(modelName) {
   return String(modelName || "").trim().toLowerCase();
 }
 
+const BACKEND_IDS = ["1", "2", "3", "4"];
+
 function activeBackendId() {
-  const value = String(process.env.DORO_ACTIVE_BACKEND || "1").trim();
-  if (value === "2") return "2";
-  if (value === "both" || value === "1,2" || value === "all") return "both";
+  const value = String(process.env.DORO_ACTIVE_BACKEND || "1").trim().toLowerCase();
+  if (BACKEND_IDS.includes(value)) return value;
+  if (value === "both" || value === "1,2" || value === "all" || value === "1,2,3,4") return "all";
   return "1";
 }
 
@@ -132,61 +134,66 @@ function backendRequiresFlattenedToolHistory(settings) {
 }
 
 function backendWeights() {
-  const w1 = clampPercent(process.env.DORO_BACKEND1_WEIGHT, 50);
-  const w2Raw = process.env.DORO_BACKEND2_WEIGHT;
-  const w2 = w2Raw == null || w2Raw === "" ? 100 - w1 : clampPercent(w2Raw, 100 - w1);
-  const total = w1 + w2;
-  if (total <= 0) return { backend1: 50, backend2: 50 };
-  return {
-    backend1: Math.round((w1 / total) * 100),
-    backend2: 100 - Math.round((w1 / total) * 100),
-  };
+  const raw = BACKEND_IDS.map((id) => clampPercent(process.env[`DORO_BACKEND${id}_WEIGHT`], 0));
+  const total = raw.reduce((sum, value) => sum + value, 0);
+  const source = total > 0 ? raw : [25, 25, 25, 25];
+  const sourceTotal = source.reduce((sum, value) => sum + value, 0) || 100;
+  let used = 0;
+  const weights = {};
+  BACKEND_IDS.forEach((id, index) => {
+    const key = `backend${id}`;
+    if (index === BACKEND_IDS.length - 1) {
+      weights[key] = 100 - used;
+      return;
+    }
+    const value = Math.round((source[index] / sourceTotal) * 100);
+    weights[key] = value;
+    used += value;
+  });
+  return weights;
 }
 
-function normalizeBackendWeightsPair(backend1Value, backend2Value, fallback = backendWeights()) {
-  const hasW1 = backend1Value != null && String(backend1Value).trim() !== "";
-  const hasW2 = backend2Value != null && String(backend2Value).trim() !== "";
-
-  if (!hasW1 && !hasW2) {
-    return {
-      backend1: clampPercent(fallback.backend1, 50),
-      backend2: clampPercent(fallback.backend2, 50),
-    };
-  }
-
-  if (hasW1 && !hasW2) {
-    const backend1 = clampPercent(backend1Value, fallback.backend1);
-    return { backend1, backend2: 100 - backend1 };
-  }
-
-  if (!hasW1 && hasW2) {
-    const backend2 = clampPercent(backend2Value, fallback.backend2);
-    return { backend1: 100 - backend2, backend2 };
-  }
-
-  const backend1 = clampPercent(backend1Value, fallback.backend1);
-  const backend2 = clampPercent(backend2Value, fallback.backend2);
-  const total = backend1 + backend2;
-  if (total <= 0) return { backend1: 50, backend2: 50 };
-  return {
-    backend1: Math.round((backend1 / total) * 100),
-    backend2: 100 - Math.round((backend1 / total) * 100),
-  };
+function normalizeBackendWeights(values = {}, fallback = backendWeights()) {
+  const raw = BACKEND_IDS.map((id) => {
+    const field = `DORO_BACKEND${id}_WEIGHT`;
+    const key = `backend${id}`;
+    const value = values[field] != null && String(values[field]).trim() !== "" ? values[field] : fallback[key];
+    return clampPercent(value, fallback[key] || 0);
+  });
+  const total = raw.reduce((sum, value) => sum + value, 0);
+  const source = total > 0 ? raw : [25, 25, 25, 25];
+  const sourceTotal = source.reduce((sum, value) => sum + value, 0) || 100;
+  const weights = {};
+  let used = 0;
+  BACKEND_IDS.forEach((id, index) => {
+    const field = `DORO_BACKEND${id}_WEIGHT`;
+    if (index === BACKEND_IDS.length - 1) {
+      weights[field] = 100 - used;
+      return;
+    }
+    const value = Math.round((source[index] / sourceTotal) * 100);
+    weights[field] = value;
+    used += value;
+  });
+  return weights;
 }
 
 function backendProfile(id = activeBackendId()) {
-  if (String(id) === "2") {
-    const apiKeyRaw = process.env.DORO_BACKEND2_AUTH_TOKEN || "";
+  const backendId = BACKEND_IDS.includes(String(id)) ? String(id) : "1";
+  if (backendId !== "1") {
+    const prefix = `DORO_BACKEND${backendId}`;
+    const model = process.env[`${prefix}_MODEL`] || DEFAULT_BACKEND_MODEL;
+    const apiKeyRaw = process.env[`${prefix}_AUTH_TOKEN`] || "";
     return {
-      id: "2",
-      label: process.env.DORO_BACKEND2_NAME || "Backend 2",
+      id: backendId,
+      label: process.env[`${prefix}_NAME`] || `Backend ${backendId}`,
       apiKeyRaw,
       apiKeys: splitEnvList(apiKeyRaw),
-      baseUrl: normalizeOpenAIBaseUrl(process.env.DORO_BACKEND2_BASE_URL),
-      backendModel: process.env.DORO_BACKEND2_MODEL || DEFAULT_BACKEND_MODEL,
-      maxTokens: optionalPositiveInt(process.env.DORO_BACKEND2_MAX_TOKENS),
-      userAssistantOnly: envFlag(process.env.DORO_BACKEND2_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND2_MODEL)),
-      disableTools: envFlag(process.env.DORO_BACKEND2_DISABLE_TOOLS, String(process.env.DORO_BACKEND2_MODEL || "").toLowerCase().includes("deepseek")),
+      baseUrl: normalizeOpenAIBaseUrl(process.env[`${prefix}_BASE_URL`]),
+      backendModel: model,
+      maxTokens: optionalPositiveInt(process.env[`${prefix}_MAX_TOKENS`]),
+      userAssistantOnly: envFlag(process.env[`${prefix}_USER_ASSISTANT_ONLY`], defaultUserAssistantOnlyForModel(model)),
+      disableTools: envFlag(process.env[`${prefix}_DISABLE_TOOLS`], String(model || "").toLowerCase().includes("deepseek")),
     };
   }
 
@@ -202,6 +209,11 @@ function backendProfile(id = activeBackendId()) {
     userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND_MODEL)),
     disableTools: envFlag(process.env.DORO_BACKEND1_DISABLE_TOOLS, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
   };
+}
+
+function backendAuthEnvField(id) {
+  const backendId = BACKEND_IDS.includes(String(id)) ? String(id) : "1";
+  return backendId === "1" ? "ANTHROPIC_AUTH_TOKEN" : `DORO_BACKEND${backendId}_AUTH_TOKEN`;
 }
 
 function resolveBackendModel(requestedModel, profile = backendProfile()) {
@@ -327,7 +339,10 @@ function isQuotaExceededError(status, text) {
 
 function getSettings(requestedModel) {
   loadLocalEnv(true);
-  const profile = backendProfile();
+  const active = activeBackendId();
+  const profile = active === "all"
+    ? (BACKEND_IDS.map((id) => backendProfile(id)).find((item) => item.apiKeys.length) || backendProfile("1"))
+    : backendProfile(active);
   const requested = requestedModel || firstEnv("DORO_MODEL", "MODEL", "CLAUDE_CODE_SUBAGENT_MODEL", { default: "opus" });
   const backendModel = resolveBackendModel(requested, profile);
   if (!profile.apiKeys.length) throw new Error(`Missing backend API key for ${profile.label}`);
@@ -349,24 +364,36 @@ function getSettingsChain(requestedModel) {
   loadLocalEnv(true);
   const active = activeBackendId();
   const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
-  let ids = active === "both" ? ["1", "2"] : [active];
+  let ids = active === "all" ? [...BACKEND_IDS] : [active];
 
   // Auto mode: lọc backend đang trong trạng thái "down"
-  if (autoMode && active === "both") {
+  if (autoMode && active === "all") {
     const healthy = ids.filter(id => isBackendHealthy(id));
     if (healthy.length > 0) ids = healthy;
     // Nếu tất cả đều down, vẫn thử cả 2
   }
 
-  if (active === "both" && ids.length > 1) {
+  const configuredIds = ids.filter((id) => backendProfile(id).apiKeys.length);
+  if (configuredIds.length > 0) ids = configuredIds;
+
+  if (active === "all" && ids.length > 1) {
     const mode = backendRouterMode();
     if (mode === "round_robin") {
-      const first = backendRouterCounter++ % 2 === 0 ? "1" : "2";
-      ids = first === "1" ? ["1", "2"] : ["2", "1"];
+      const offset = backendRouterCounter++ % ids.length;
+      ids = [...ids.slice(offset), ...ids.slice(0, offset)];
     } else if (mode === "weighted") {
       const weights = backendWeights();
-      const first = Math.random() * 100 < weights.backend1 ? "1" : "2";
-      ids = first === "1" ? ["1", "2"] : ["2", "1"];
+      const total = ids.reduce((sum, id) => sum + Math.max(0, Number(weights[`backend${id}`] || 0)), 0);
+      let pick = Math.random() * (total || ids.length);
+      let first = ids[0];
+      for (const id of ids) {
+        pick -= total ? Math.max(0, Number(weights[`backend${id}`] || 0)) : 1;
+        if (pick <= 0) {
+          first = id;
+          break;
+        }
+      }
+      ids = [first, ...ids.filter((id) => id !== first)];
     }
   }
   return ids.map((id) => {
@@ -389,10 +416,7 @@ function getSettingsChain(requestedModel) {
 }
 
 // ── Auto Mode — Backend Health Tracking ──────────────────────────────────────
-const _backendHealth = {
-  "1": { errors: 0, windowStart: Date.now(), downSince: null, downCount: 0 },
-  "2": { errors: 0, windowStart: Date.now(), downSince: null, downCount: 0 },
-};
+const _backendHealth = Object.fromEntries(BACKEND_IDS.map((id) => [id, { errors: 0, windowStart: Date.now(), downSince: null, downCount: 0 }]));
 const AUTO_ERROR_THRESHOLD = Number(process.env.DORO_AUTO_ERROR_THRESHOLD || "3");  // 3 lỗi/phút → mark down
 const AUTO_ERROR_WINDOW_MS = 60 * 1000;
 const AUTO_RECOVERY_MS = Number(process.env.DORO_AUTO_RECOVERY_MS || "120000");    // 2 phút mới thử lại
@@ -804,6 +828,8 @@ function knownBackendHostnames() {
     process.env.DORO_API_BASE,
     process.env.ANTHROPIC_BASE_URL,
     process.env.DORO_BACKEND2_BASE_URL,
+    process.env.DORO_BACKEND3_BASE_URL,
+    process.env.DORO_BACKEND4_BASE_URL,
   ];
   const hosts = [];
   for (const value of values) {
@@ -4258,9 +4284,9 @@ app.get("/api/config", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const settings = getSettings();
   const active = activeBackendId();
-  const activeLabel = active === "both" ? "Backend 1 + Backend 2" : settings.profileLabel;
+  const activeLabel = active === "all" ? BACKEND_IDS.map((id) => backendProfile(id).label).join(" + ") : settings.profileLabel;
   const weights = backendWeights();
-  const profiles = ["1", "2"].map((id) => {
+  const profiles = BACKEND_IDS.map((id) => {
     const profile = backendProfile(id);
     return {
       id: profile.id,
@@ -4276,6 +4302,10 @@ app.get("/api/config", (req, res) => {
       api_key_masked: maskSecret(profile.apiKeys[0]),
     };
   });
+  const backendHealth = Object.fromEntries(BACKEND_IDS.map((id) => {
+    const state = _backendHealth[id] || { errors: 0, downCount: 0, downSince: null };
+    return [id, { healthy: isBackendHealthy(id), errors: state.errors, down_count: state.downCount, down_since: state.downSince }];
+  }));
   res.json({
     active_backend: active,
     active_backend_label: activeLabel,
@@ -4289,10 +4319,7 @@ app.get("/api/config", (req, res) => {
     telegram_bot_token_masked: maskSecret(process.env.TELEGRAM_BOT_TOKEN || ""),
     telegram_chat_id: String(process.env.TELEGRAM_CHAT_ID || "").trim(),
     telegram_alerts_enabled: true,
-    backend_health: {
-      "1": { healthy: isBackendHealthy("1"), errors: _backendHealth["1"].errors, down_count: _backendHealth["1"].downCount, down_since: _backendHealth["1"].downSince },
-      "2": { healthy: isBackendHealthy("2"), errors: _backendHealth["2"].errors, down_count: _backendHealth["2"].downCount, down_since: _backendHealth["2"].downSince },
-    },
+    backend_health: backendHealth,
     backend_router_mode: backendRouterMode(),
     backend_weights: weights,
     backend_profiles: profiles,
@@ -4310,6 +4337,8 @@ app.get("/api/config", (req, res) => {
       DORO_API_BASE: !!String(process.env.DORO_API_BASE || "").trim(),
       ANTHROPIC_BASE_URL: !!String(process.env.ANTHROPIC_BASE_URL || "").trim(),
       DORO_BACKEND2_BASE_URL: !!String(process.env.DORO_BACKEND2_BASE_URL || "").trim(),
+      DORO_BACKEND3_BASE_URL: !!String(process.env.DORO_BACKEND3_BASE_URL || "").trim(),
+      DORO_BACKEND4_BASE_URL: !!String(process.env.DORO_BACKEND4_BASE_URL || "").trim(),
     },
     port,
     virtual_keys: validProxyKeys.length,
@@ -4329,6 +4358,8 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND_ROUTER_MODE",
     "DORO_BACKEND1_WEIGHT",
     "DORO_BACKEND2_WEIGHT",
+    "DORO_BACKEND3_WEIGHT",
+    "DORO_BACKEND4_WEIGHT",
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN",
     "DORO_BACKEND_MODEL",
@@ -4342,6 +4373,20 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND2_MAX_TOKENS",
     "DORO_BACKEND2_USER_ASSISTANT_ONLY",
     "DORO_BACKEND2_DISABLE_TOOLS",
+    "DORO_BACKEND3_NAME",
+    "DORO_BACKEND3_BASE_URL",
+    "DORO_BACKEND3_AUTH_TOKEN",
+    "DORO_BACKEND3_MODEL",
+    "DORO_BACKEND3_MAX_TOKENS",
+    "DORO_BACKEND3_USER_ASSISTANT_ONLY",
+    "DORO_BACKEND3_DISABLE_TOOLS",
+    "DORO_BACKEND4_NAME",
+    "DORO_BACKEND4_BASE_URL",
+    "DORO_BACKEND4_AUTH_TOKEN",
+    "DORO_BACKEND4_MODEL",
+    "DORO_BACKEND4_MAX_TOKENS",
+    "DORO_BACKEND4_USER_ASSISTANT_ONLY",
+    "DORO_BACKEND4_DISABLE_TOOLS",
     "DORO_BACKEND_TIMEOUT",
     "DORO_AUTO_MODE",
     "DORO_AUTO_RECOVERY_MS",
@@ -4354,31 +4399,32 @@ app.put("/api/config", (req, res) => {
     "TELEGRAM_ALERTS_ENABLED",
   ]) {
     let value = String(body[field] || "").trim();
-    if (field === "DORO_ACTIVE_BACKEND") value = ["1", "2", "both"].includes(value) ? value : "";
+    if (field === "DORO_ACTIVE_BACKEND") {
+      const normalized = value.toLowerCase();
+      value = BACKEND_IDS.includes(normalized) ? normalized : (["both", "all"].includes(normalized) ? "all" : "");
+    }
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
-    if (field === "DORO_BACKEND1_WEIGHT" || field === "DORO_BACKEND2_WEIGHT") {
+    if (/^DORO_BACKEND[1-4]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
       continue;
     }
-    if (field === "DORO_BACKEND1_MAX_TOKENS" || field === "DORO_BACKEND2_MAX_TOKENS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (/^DORO_BACKEND[1-4]_MAX_TOKENS$/.test(field)) value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_TOKEN_PER_REQUEST") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "TELEGRAM_ALERTS_ENABLED") continue;
-    if (field === "DORO_BACKEND1_USER_ASSISTANT_ONLY" || field === "DORO_BACKEND2_USER_ASSISTANT_ONLY") value = envFlag(value) ? "1" : "0";
-    if (field === "DORO_BACKEND1_DISABLE_TOOLS" || field === "DORO_BACKEND2_DISABLE_TOOLS") value = envFlag(value) ? "1" : "0";
-    if (field === "ANTHROPIC_AUTH_TOKEN" || field === "DORO_BACKEND2_AUTH_TOKEN") {
+    if (/^DORO_BACKEND[1-4]_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
+    if (/^DORO_BACKEND[1-4]_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
+    if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND[2-4]_AUTH_TOKEN$/.test(field)) {
       value = value.replace(/\n/g, ",").split(",").map((k) => k.trim()).filter(Boolean).join(",");
     }
     if (value) updates[field] = value;
   }
   if (Object.keys(pendingWeights).length) {
-    const normalizedWeights = normalizeBackendWeightsPair(
-      pendingWeights.DORO_BACKEND1_WEIGHT,
-      pendingWeights.DORO_BACKEND2_WEIGHT,
-    );
-    updates.DORO_BACKEND1_WEIGHT = String(normalizedWeights.backend1);
-    updates.DORO_BACKEND2_WEIGHT = String(normalizedWeights.backend2);
+    const normalizedWeights = normalizeBackendWeights(pendingWeights);
+    for (const [field, value] of Object.entries(normalizedWeights)) {
+      updates[field] = String(value);
+    }
   }
   if (!Object.keys(updates).length) return res.status(400).json({ detail: "No valid fields to update" });
   saveEnvUpdates(updates);
@@ -4393,8 +4439,9 @@ app.post("/api/backend-keys", (req, res) => {
   const backend = String(body.backend || "1").trim();
   const key = String(body.key || "").trim();
   if (!key) return res.status(400).json({ detail: "Missing key" });
+  if (!BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
 
-  const envField = backend === "2" ? "DORO_BACKEND2_AUTH_TOKEN" : "ANTHROPIC_AUTH_TOKEN";
+  const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");
   if (current.includes(key)) return res.status(409).json({ detail: "Key already exists" });
   current.push(key);
@@ -4409,8 +4456,9 @@ app.delete("/api/backend-keys", (req, res) => {
   const body = req.body || {};
   const backend = String(body.backend || "1").trim();
   const key = String(body.key || "").trim();
+  if (!BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
 
-  const envField = backend === "2" ? "DORO_BACKEND2_AUTH_TOKEN" : "ANTHROPIC_AUTH_TOKEN";
+  const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");
   const idx = current.indexOf(key);
   if (idx === -1) return res.status(404).json({ detail: "Key not found" });
@@ -5018,8 +5066,8 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Health    : http://${ip}:${port}/health`);
   printLog(`  Backend   : ${settings.baseUrl}`);
   printLog(`  Remap     : gpt-5.5 -> ${settings.backendModel}`);
-  printLog(`  Active    : ${activeBackendId() === "both" ? "Backend 1 + Backend 2" : settings.profileLabel} (${activeBackendId()})`);
-  printLog(`  Router    : ${backendRouterMode()} | ${backendWeights().backend1}% / ${backendWeights().backend2}%`);
+  printLog(`  Active    : ${activeBackendId() === "all" ? BACKEND_IDS.map((id) => backendProfile(id).label).join(" + ") : settings.profileLabel} (${activeBackendId()})`);
+  printLog(`  Router    : ${backendRouterMode()} | ${BACKEND_IDS.map((id) => `${backendProfile(id).label} ${backendWeights()[`backend${id}`]}%`).join(" / ")}`);
   printLog(`  Timeout   : ${backendTimeoutMs / 1000}s | Max concurrent: ${maxConcurrent}`);
   printLog(`  Retries   : request=${backendRequestRetryCount} | base=${retryBaseDelayMs}ms | max=${retryMaxDelayMs}ms`);
   printLog(`  Keys      : ${validProxyKeys.length} virtual keys | ${settings.apiKeys.length} backend keys`);

@@ -348,7 +348,7 @@ body{font-family:'Inter',sans-serif}
 <!-- Tab: Backend Keys -->
 <div id="tab-backend" class="tab-content hidden space-y-6">
   <h2 class="text-xl font-bold">Backend API Keys</h2>
-  <p class="text-sm text-gray-400">Qu&#7843;n l&#253; backend upstream. Proxy t&#7921; &#273;&#7897;ng rotate keys v&#224; failover gi&#7919;a Backend 1 &amp; Backend 2 khi c&#243; l&#7895;i.</p>
+  <p class="text-sm text-gray-400">Qu&#7843;n l&#253; backend upstream. Proxy t&#7921; &#273;&#7897;ng rotate keys v&#224; failover gi&#7919;a Backend 1-4 khi c&#243; l&#7895;i.</p>
 
   <!-- Active backend selector -->
   <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
@@ -371,40 +371,53 @@ body{font-family:'Inter',sans-serif}
           <p class="text-xs text-gray-500" id="b2Summary">&mdash;</p>
         </div>
       </label>
+      <label class="flex items-center gap-3 bg-dark-900 hover:bg-dark-600 border border-white/10 rounded-lg px-4 py-3 cursor-pointer transition">
+        <input type="checkbox" id="chkBackend3" class="w-5 h-5 accent-green-500">
+        <div class="flex-1">
+          <p class="font-semibold text-sm flex items-center gap-2"><span class="w-2 h-2 bg-green-400 rounded-full"></span> Backend 3</p>
+          <p class="text-xs text-gray-500" id="b3Summary">&mdash;</p>
+        </div>
+      </label>
+      <label class="flex items-center gap-3 bg-dark-900 hover:bg-dark-600 border border-white/10 rounded-lg px-4 py-3 cursor-pointer transition">
+        <input type="checkbox" id="chkBackend4" class="w-5 h-5 accent-yellow-500">
+        <div class="flex-1">
+          <p class="font-semibold text-sm flex items-center gap-2"><span class="w-2 h-2 bg-yellow-400 rounded-full"></span> Backend 4</p>
+          <p class="text-xs text-gray-500" id="b4Summary">&mdash;</p>
+        </div>
+      </label>
     </div>
     <div id="routerModeBox" class="hidden space-y-3">
-      <label class="text-xs text-gray-400 block mb-1">Khi ch&#7841;y c&#7843; 2 backend</label>
+      <label class="text-xs text-gray-400 block mb-1">Khi ch&#7841;y nhi&#7873;u backend</label>
       <select id="cfgRouter" onchange="toggleRouterBox()" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
-        <option value="failover">Failover (Backend 1 tr&#432;&#7899;c, Backend 2 d&#7921; ph&#242;ng khi l&#7895;i)</option>
-        <option value="round_robin">Round-robin (lu&#226;n phi&#234;n 50/50)</option>
+        <option value="failover">Failover (th&#7917; theo th&#7913; t&#7921; backend &#273;&#432;&#7907;c ch&#7885;n)</option>
+        <option value="round_robin">Round-robin (lu&#226;n phi&#234;n backend)</option>
         <option value="weighted">Weighted (chia theo tr&#7885;ng s&#7889;)</option>
       </select>
       <div id="weightedConfigBox" class="hidden mt-4 bg-dark-900 border border-white/10 rounded-xl p-4 space-y-4">
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-sm font-semibold text-white">Chia t&#7843;i theo %</p>
-            <p class="text-xs text-gray-500 mt-1">T&#7893;ng 2 backend lu&#244;n b&#7857;ng 100%. Backend 2 t&#7921; &#273;&#7897;ng l&#224; ph&#7847;n c&#242;n l&#7841;i.</p>
+            <p class="text-xs text-gray-500 mt-1">Nh&#7853;p tr&#7885;ng s&#7889; cho Backend 1-4. Proxy s&#7869; t&#7921; chu&#7849;n h&#243;a t&#7893;ng v&#7873; 100%.</p>
           </div>
-          <span class="text-xs text-gray-500 font-mono shrink-0"><span id="weightB1Label">50</span>% / <span id="weightB2Label">50</span>%</span>
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-[1fr_110px] gap-3 items-end">
-          <div>
-            <label class="text-xs text-gray-400 block mb-2">Backend 1 (%)</label>
-            <input id="cfgBackend1WeightSlider" type="range" min="0" max="100" step="1" value="50" oninput="syncBackendWeights('slider')" class="w-full accent-blue-500">
-          </div>
-          <div>
-            <label class="text-xs text-gray-400 block mb-1">Backend 1</label>
-            <input id="cfgBackend1WeightInput" type="number" min="0" max="100" step="1" value="50" oninput="syncBackendWeights('input')" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
-          </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 1</label><input id="cfgBackend1WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 2</label><input id="cfgBackend2WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 3</label><input id="cfgBackend3WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 4</label><input id="cfgBackend4WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
         </div>
         <div class="space-y-2">
           <div class="h-3 bg-dark-600 rounded-full overflow-hidden flex">
-            <div id="weightB1Bar" class="h-full bg-blue-500 transition-all" style="width:50%"></div>
-            <div id="weightB2Bar" class="h-full bg-purple-500 transition-all" style="width:50%"></div>
+            <div id="weightB1Bar" class="h-full bg-blue-500 transition-all" style="width:25%"></div>
+            <div id="weightB2Bar" class="h-full bg-purple-500 transition-all" style="width:25%"></div>
+            <div id="weightB3Bar" class="h-full bg-green-500 transition-all" style="width:25%"></div>
+            <div id="weightB4Bar" class="h-full bg-yellow-500 transition-all" style="width:25%"></div>
           </div>
-          <div class="flex justify-between text-xs text-gray-400">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-400">
             <span><span class="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>Backend 1: <b id="weightB1Text" class="text-blue-300">50%</b></span>
             <span><span class="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1"></span>Backend 2: <b id="weightB2Text" class="text-purple-300">50%</b></span>
+            <span><span class="inline-block w-2 h-2 bg-green-400 rounded-full mr-1"></span>Backend 3: <b id="weightB3Text" class="text-green-300">25%</b></span>
+            <span><span class="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1"></span>Backend 4: <b id="weightB4Text" class="text-yellow-300">25%</b></span>
           </div>
         </div>
       </div>
@@ -480,6 +493,62 @@ body{font-family:'Inter',sans-serif}
         <p id="backend2Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
       <button onclick="saveBackend2Config()" class="w-full md:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 2</button>
+    </div>
+  </div>
+
+  <!-- Backend 3 -->
+  <div class="bg-dark-700 border border-green-500/20 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-green-400 rounded-full"></span> Backend 3</h3>
+      <span class="text-xs text-gray-500" id="backend3Status">&mdash;</span>
+    </div>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+        <input id="cfg3BaseUrl" placeholder="https://backend3.example/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+        <input id="cfg3Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+        <div id="backend3KeysList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="newBackend3Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <button onclick="addBackendKey('3')" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+        </div>
+        <p id="backend3Msg" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+      <button onclick="saveBackendConfig('3')" class="w-full md:w-auto px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 3</button>
+    </div>
+  </div>
+
+  <!-- Backend 4 -->
+  <div class="bg-dark-700 border border-yellow-500/20 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-yellow-400 rounded-full"></span> Backend 4</h3>
+      <span class="text-xs text-gray-500" id="backend4Status">&mdash;</span>
+    </div>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+        <input id="cfg4BaseUrl" placeholder="https://backend4.example/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+        <input id="cfg4Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+        <div id="backend4KeysList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="newBackend4Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <button onclick="addBackendKey('4')" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+        </div>
+        <p id="backend4Msg" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+      <button onclick="saveBackendConfig('4')" class="w-full md:w-auto px-5 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 4</button>
     </div>
   </div>
 
@@ -1432,28 +1501,31 @@ function normalizeWeight(value) {
   return Math.max(0, Math.min(100, n));
 }
 
-function syncBackendWeights(source) {
-  var slider = document.getElementById("cfgBackend1WeightSlider");
-  var input = document.getElementById("cfgBackend1WeightInput");
-  if (!slider || !input) return;
-
-  var b1 = normalizeWeight(source === "input" ? input.value : slider.value);
-  var b2 = 100 - b1;
-  slider.value = b1;
-  input.value = b1;
-
-  ["weightB1Label", "weightB1Text"].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = b1 + (id === "weightB1Text" ? "%" : "");
+function currentBackendWeights() {
+  var values = [1, 2, 3, 4].map(function(id) {
+    var input = document.getElementById("cfgBackend" + id + "WeightInput");
+    return normalizeWeight(input ? input.value : 0);
   });
-  ["weightB2Label", "weightB2Text"].forEach(function(id) {
-    var el = document.getElementById(id);
-    if (el) el.textContent = b2 + (id === "weightB2Text" ? "%" : "");
+  var total = values.reduce(function(sum, value) { return sum + value; }, 0);
+  if (total <= 0) values = [25, 25, 25, 25], total = 100;
+  var used = 0;
+  return values.map(function(value, index) {
+    if (index === values.length - 1) return 100 - used;
+    var pct = Math.round(value / total * 100);
+    used += pct;
+    return pct;
   });
-  var b1Bar = document.getElementById("weightB1Bar");
-  var b2Bar = document.getElementById("weightB2Bar");
-  if (b1Bar) b1Bar.style.width = b1 + "%";
-  if (b2Bar) b2Bar.style.width = b2 + "%";
+}
+
+function syncBackendWeights() {
+  var weights = currentBackendWeights();
+  [1, 2, 3, 4].forEach(function(id, index) {
+    var pct = weights[index];
+    var text = document.getElementById("weightB" + id + "Text");
+    var bar = document.getElementById("weightB" + id + "Bar");
+    if (text) text.textContent = pct + "%";
+    if (bar) bar.style.width = pct + "%";
+  });
   updateBackendRouterStatus();
 }
 
@@ -1467,12 +1539,11 @@ function updateBackendRouterStatus(data) {
   var el = document.getElementById("activeStatus");
   if (!el) return;
 
-  var c1El = document.getElementById("chkBackend1");
-  var c2El = document.getElementById("chkBackend2");
-
-  var c1 = c1El && c1El.checked;
-  var c2 = c2El && c2El.checked;
-  var activeLabel = data && data.active_backend_label ? data.active_backend_label : (c1 && c2 ? "Backend 1 + Backend 2" : (c1 ? "Backend 1" : (c2 ? "Backend 2" : "—")));
+  var selected = [1, 2, 3, 4].filter(function(id) {
+    var el = document.getElementById("chkBackend" + id);
+    return el && el.checked;
+  });
+  var activeLabel = data && data.active_backend_label ? data.active_backend_label : (selected.length ? selected.map(function(id) { return "Backend " + id; }).join(" + ") : "—");
   el.textContent = "Hiện tại: " + activeLabel;
 }
 
@@ -1481,8 +1552,10 @@ async function loadBackendConfig() {
 
   // Active backend → checkbox state
   var active = data.active_backend || "1";
-  document.getElementById("chkBackend1").checked = (active === "1" || active === "both");
-  document.getElementById("chkBackend2").checked = (active === "2" || active === "both");
+  [1, 2, 3, 4].forEach(function(id) {
+    var el = document.getElementById("chkBackend" + id);
+    if (el) el.checked = (active === String(id) || active === "all" || active === "both");
+  });
   document.getElementById("cfgRouter").value = data.backend_router_mode || "failover";
   syncBackendWeightsFromConfig(data.backend_weights);
 
@@ -1491,9 +1564,10 @@ async function loadBackendConfig() {
   document.getElementById("chkAutoMode").checked = autoMode;
   document.getElementById("autoModeInfo").classList.toggle("hidden", !autoMode);
   if (autoMode && data.backend_health) {
-    var h1 = data.backend_health["1"] || {};
-    var h2 = data.backend_health["2"] || {};
-    var statusText = "B1: " + (h1.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (h1.errors||0) + " err) | B2: " + (h2.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (h2.errors||0) + " err)";
+    var statusText = [1, 2, 3, 4].map(function(id) {
+      var health = data.backend_health[String(id)] || {};
+      return "B" + id + ": " + (health.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (health.errors || 0) + " err)";
+    }).join(" | ");
     document.getElementById("healthStatus").textContent = statusText;
   }
 
@@ -1502,23 +1576,24 @@ async function loadBackendConfig() {
     document.getElementById("autoModeInfo").classList.toggle("hidden", !this.checked);
   });
 
-  // Backend 1 & 2 from profiles
+  // Backend profiles
   var profiles = data.backend_profiles || [];
-  var b1 = profiles.find(function(p){return p.id==="1";}) || {};
-  var b2 = profiles.find(function(p){return p.id==="2";}) || {};
-  document.getElementById("b1Summary").textContent = (b1.backend_api_keys || 0) + " keys · Model: " + (b1.backend_model || "—");
-  document.getElementById("b2Summary").textContent = (b2.backend_api_keys || 0) + " keys · Model: " + (b2.backend_model || "—");
+  var byId = {};
+  profiles.forEach(function(profile) { byId[profile.id] = profile; });
+  [1, 2, 3, 4].forEach(function(id) {
+    var profile = byId[String(id)] || {};
+    var summary = document.getElementById("b" + id + "Summary");
+    var baseUrl = document.getElementById("cfg" + id + "BaseUrl");
+    var model = document.getElementById("cfg" + id + "Model");
+    var status = document.getElementById("backend" + id + "Status");
+    var keyList = document.getElementById("backend" + id + "KeysList");
+    if (summary) summary.textContent = (profile.backend_api_keys || 0) + " keys · Model: " + (profile.backend_model || "—");
+    if (baseUrl) baseUrl.value = profile.base_url || "";
+    if (model) model.value = profile.backend_model || "";
+    if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
+    if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], String(id));
+  });
   document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
-
-  document.getElementById("cfg1BaseUrl").value = b1.base_url || "";
-  document.getElementById("cfg1Model").value = b1.backend_model || "";
-  document.getElementById("backend1Status").textContent = (b1.backend_api_keys || 0) + " keys";
-  renderKeyList(document.getElementById("backend1KeysList"), b1.backend_api_keys_full || [], "1");
-
-  document.getElementById("cfg2BaseUrl").value = b2.base_url || "";
-  document.getElementById("cfg2Model").value = b2.backend_model || "";
-  document.getElementById("backend2Status").textContent = (b2.backend_api_keys || 0) + " keys";
-  renderKeyList(document.getElementById("backend2KeysList"), b2.backend_api_keys_full || [], "2");
 
   document.getElementById("cfgTokenPerRequestMin").value = data.token_per_request_min || 65000;
   document.getElementById("cfgTokenPerRequestMax").value = data.token_per_request_max || 120000;
@@ -1529,29 +1604,29 @@ async function loadBackendConfig() {
 }
 
 function toggleRouterBox() {
-  var c1 = document.getElementById("chkBackend1").checked;
-  var c2 = document.getElementById("chkBackend2").checked;
-  var both = c1 && c2;
-  document.getElementById("routerModeBox").classList.toggle("hidden", !both);
+  var selected = [1, 2, 3, 4].filter(function(id) {
+    var el = document.getElementById("chkBackend" + id);
+    return el && el.checked;
+  });
+  var multiple = selected.length > 1;
+  document.getElementById("routerModeBox").classList.toggle("hidden", !multiple);
   var router = document.getElementById("cfgRouter");
   var weightedBox = document.getElementById("weightedConfigBox");
-  if (weightedBox) weightedBox.classList.toggle("hidden", !(both && router && router.value === "weighted"));
+  if (weightedBox) weightedBox.classList.toggle("hidden", !(multiple && router && router.value === "weighted"));
   syncBackendWeights();
   updateBackendRouterStatus();
 }
 
 function syncBackendWeightsFromConfig(weights) {
-  var b1 = 50;
-  if (weights && weights.backend1 != null) b1 = normalizeWeight(weights.backend1);
-  var slider = document.getElementById("cfgBackend1WeightSlider");
-  var input = document.getElementById("cfgBackend1WeightInput");
-  if (slider) slider.value = b1;
-  if (input) input.value = b1;
+  [1, 2, 3, 4].forEach(function(id) {
+    var input = document.getElementById("cfgBackend" + id + "WeightInput");
+    if (input) input.value = normalizeWeight(weights && weights["backend" + id] != null ? weights["backend" + id] : 25);
+  });
   syncBackendWeights();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
-  ["chkBackend1", "chkBackend2"].forEach(function(id) {
+  ["chkBackend1", "chkBackend2", "chkBackend3", "chkBackend4"].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.addEventListener("change", toggleRouterBox);
   });
@@ -1589,6 +1664,18 @@ async function saveBackend1Config() {
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
   if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 1. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  else alert(data.detail || "L\u1ed7i");
+}
+
+async function saveBackendConfig(backend) {
+  var updates = {};
+  updates["DORO_BACKEND" + backend + "_BASE_URL"] = document.getElementById("cfg" + backend + "BaseUrl").value.trim();
+  updates["DORO_BACKEND" + backend + "_MODEL"] = document.getElementById("cfg" + backend + "Model").value.trim();
+  Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
+  if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend " + backend + ". C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
 }
 
@@ -2025,20 +2112,23 @@ async function saveBackend2Config() {
 }
 
 async function saveActiveBackend() {
-  var c1 = document.getElementById("chkBackend1").checked;
-  var c2 = document.getElementById("chkBackend2").checked;
-  if (!c1 && !c2) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backend"); return; }
-  var active = (c1 && c2) ? "both" : (c1 ? "1" : "2");
+  var selected = [1, 2, 3, 4].filter(function(id) {
+    var el = document.getElementById("chkBackend" + id);
+    return el && el.checked;
+  });
+  if (!selected.length) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backend"); return; }
+  var active = selected.length > 1 ? "all" : String(selected[0]);
   var autoMode = document.getElementById("chkAutoMode").checked;
   var updates = {
     DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
     DORO_AUTO_MODE: autoMode ? "1" : "0",
   };
-  if (active === "both" && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
-    var b1Weight = normalizeWeight(document.getElementById("cfgBackend1WeightInput").value);
-    updates.DORO_BACKEND1_WEIGHT = String(b1Weight);
-    updates.DORO_BACKEND2_WEIGHT = String(100 - b1Weight);
+  if (active === "all" && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
+    [1, 2, 3, 4].forEach(function(id) {
+      var input = document.getElementById("cfgBackend" + id + "WeightInput");
+      updates["DORO_BACKEND" + id + "_WEIGHT"] = String(normalizeWeight(input ? input.value : 0));
+    });
   }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
