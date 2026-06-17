@@ -613,6 +613,7 @@ const retryBaseDelayMs = Number(process.env.DORO_RETRY_BASE_DELAY_MS || "500");
 const retryMaxDelayMs = Number(process.env.DORO_RETRY_MAX_DELAY_MS || "5000");
 const retryJitterMs = Number(process.env.DORO_RETRY_JITTER_MS || "300");
 const backendRequestRetryCount = Math.max(0, Math.min(3, Number(process.env.DORO_BACKEND_REQUEST_RETRIES || "2")));
+const backendStreamRetryCount = Math.max(0, Math.min(2, Number(process.env.DORO_BACKEND_STREAM_RETRIES || "0")));
 let activeBackend = 0;
 const backendQueue = [];
 let backendKeyCounter = 0;
@@ -2578,7 +2579,6 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           pendingChunks.length = 0;
           streamOpened = true;
         };
-        openStream();
         while (true) {
           const { value, done } = await reader.read();
           if (done) break;
@@ -2653,9 +2653,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       lastError = err;
       if (err.status) {
         const failureSignal = backendFailureSignal(err.status, err.text || err.message || "", err.code);
-        if (!wroteResponse && (!failureSignal || !failureSignal.immediate) && isRetryableStatus(err.status) && retryDepth < backendRequestRetryCount) {
+        if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
+        if (!wroteResponse && (!failureSignal || !failureSignal.immediate) && isRetryableStatus(err.status) && retryDepth < backendStreamRetryCount) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
-          addLog(`stream openai retry attempt=${retryDepth + 1}/${backendRequestRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
+          addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
           return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
         }
@@ -2664,7 +2665,6 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           continue;
         }
         if (obs) { obs.error_type = "backend"; obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code); }
-        if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
           const clientStatus = clientBackendStatus(err.status);
@@ -2675,9 +2675,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         res.write("data: [DONE]\n\n");
         return res.end();
       }
-      if (!wroteResponse && retryDepth < backendRequestRetryCount) {
+      if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
+      if (!wroteResponse && retryDepth < backendStreamRetryCount) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
-        addLog(`stream openai retry attempt=${retryDepth + 1}/${backendRequestRetryCount + 1} error=${err.name || "Error"}: ${err.message}`);
+        addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} error=${err.name || "Error"}: ${err.message}`);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
         return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
       }
