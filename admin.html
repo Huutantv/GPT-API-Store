@@ -1564,7 +1564,10 @@ async function loadBackendConfig() {
 
   // Auto mode
   var autoMode = !!data.auto_mode;
-  document.getElementById("chkAutoMode").checked = autoMode;
+  var autoModeEl = document.getElementById("chkAutoMode");
+  autoModeEl.checked = autoMode;
+  autoModeEl.dataset.loadedValue = autoMode ? "1" : "0";
+  autoModeEl.dataset.dirty = "0";
   document.getElementById("autoModeInfo").classList.toggle("hidden", !autoMode);
   if (autoMode && data.backend_health) {
     var statusText = [1, 2, 3, 4].map(function(id) {
@@ -1576,9 +1579,10 @@ async function loadBackendConfig() {
   }
 
   // Toggle router box + auto mode info
-  document.getElementById("chkAutoMode").addEventListener("change", function() {
+  document.getElementById("chkAutoMode").onchange = function() {
+    this.dataset.dirty = "1";
     document.getElementById("autoModeInfo").classList.toggle("hidden", !this.checked);
-  });
+  };
 
   // Backend profiles
   var profiles = data.backend_profiles || [];
@@ -2122,12 +2126,16 @@ async function saveActiveBackend() {
   });
   if (!selected.length) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backend"); return; }
   var active = selected.join(",");
-  var autoMode = document.getElementById("chkAutoMode").checked;
+  var autoModeEl = document.getElementById("chkAutoMode");
+  var autoMode = autoModeEl.checked;
   var updates = {
     DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
-    DORO_AUTO_MODE: autoMode ? "1" : "0",
   };
+  var nextAutoMode = autoMode ? "1" : "0";
+  if (autoModeEl.dataset.dirty === "1" || autoModeEl.dataset.loadedValue !== nextAutoMode) {
+    updates.DORO_AUTO_MODE = nextAutoMode;
+  }
   if (selected.length > 1 && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
     [1, 2, 3, 4].forEach(function(id) {
       var input = document.getElementById("cfgBackend" + id + "WeightInput");
