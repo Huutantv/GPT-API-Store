@@ -501,6 +501,109 @@ function trackBackendSuccess(id) {
   }
 }
 
+function backendFailureSignal(status, text, code) {
+  const numericStatus = Number(status) || 0;
+  const lower = `${text || ""} ${code || ""}`.toLowerCase();
+  if (lower.includes("no tool output found") || lower.includes("tool_call_id")) return null;
+  if ([401, 403].includes(numericStatus)) return { track: true, immediate: true, reason: `auth_${numericStatus}` };
+  if (numericStatus === 402) return { track: true, immediate: true, reason: "billing_or_quota" };
+  if (numericStatus === 429) return { track: true, immediate: false, reason: "rate_limited" };
+  if ([408, 500, 502, 503, 504, 524].includes(numericStatus)) {
+    if (lower.includes("no_available_providers") || lower.includes("no available providers")) {
+      return { track: true, immediate: false, reason: "provider_pool_empty" };
+    }
+    return { track: true, immediate: false, reason: `http_${numericStatus}` };
+  }
+  if (!numericStatus && lower) return { track: true, immediate: false, reason: "network" };
+  return null;
+}
+
+function resetBackendHealthState(state) {
+  state.errors = 0;
+  state.lastStatus = 0;
+  state.lastReason = "";
+  state.lastErrorAt = null;
+  state.warmupSuccess = 0;
+  state.warmupStart = null;
+}
+
+function isBackendHealthy(id) {
+  const state = _backendHealth[id];
+  if (!state || !state.downSince) return true;
+  if (Date.now() - state.downSince >= AUTO_RECOVERY_MS) {
+    state.downSince = null;
+    resetBackendHealthState(state);
+    state.windowStart = Date.now();
+    addLog(`auto-mode: backend ${id} recovery window expired, re-enabled for retry`);
+    notifyTelegram(
+      `\u2139\ufe0f <b>Auto mode: Th\u1eed l\u1ea1i Backend ${id}</b>\n` +
+      `\ud83d\udd04 Sau ${Math.round(AUTO_RECOVERY_MS/1000)}s, backend n\u00e0y s\u1ebd \u0111\u01b0\u1ee3c th\u1eed l\u1ea1i\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+    return true;
+  }
+  return false;
+}
+
+function trackBackendError(id, status, text = "", code = "") {
+  if (!_backendHealth[id]) return;
+  if (String(process.env.DORO_AUTO_MODE || "0") !== "1") return;
+  const signal = backendFailureSignal(status, text, code);
+  if (!signal || !signal.track) return;
+
+  const state = _backendHealth[id];
+  const now = Date.now();
+  if (now - state.windowStart > AUTO_ERROR_WINDOW_MS) {
+    state.errors = 0;
+    state.windowStart = now;
+  }
+  state.errors += 1;
+  state.lastStatus = Number(status) || 0;
+  state.lastReason = signal.reason;
+  state.lastErrorAt = now;
+
+  const threshold = signal.immediate ? 1 : AUTO_ERROR_THRESHOLD;
+  if (state.errors >= threshold && !state.downSince) {
+    state.downSince = now;
+    state.downCount += 1;
+    addLog(`auto-mode: backend ${id} marked DOWN reason=${signal.reason} errors=${state.errors}`);
+    notifyTelegram(
+      `\ud83d\udd34 <b>Auto mode: Backend ${id} t\u1ea1m ng\u1eaft</b>\n` +
+      `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
+      `\u26a0\ufe0f ${state.errors} l\u1ed7i (${signal.reason})\n` +
+      `\ud83d\udd04 Request m\u1edbi s\u1ebd t\u1ef1 chuy\u1ec3n sang backend c\u00f2n healthy\n` +
+      `\u23f0 S\u1ebd th\u1eed l\u1ea1i sau ${Math.round(AUTO_RECOVERY_MS/1000)}s\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+  }
+}
+
+function trackBackendSuccess(id) {
+  if (!_backendHealth[id]) return;
+  const state = _backendHealth[id];
+  if (state.downSince) {
+    backendWarmupPass(id);
+    const now = Date.now();
+    const warmupSuccess = state.warmupSuccess || 0;
+    const warmupStart = state.warmupStart || now;
+    if (now - warmupStart <= AUTO_SOFT_RECOVERY_WINDOW_MS && warmupSuccess < AUTO_SOFT_RECOVERY_SUCCESS) {
+      addLog(`auto-mode: backend ${id} warmup ${warmupSuccess}/${AUTO_SOFT_RECOVERY_SUCCESS}`);
+      return;
+    }
+    state.downSince = null;
+    resetBackendHealthState(state);
+    addLog(`auto-mode: backend ${id} recovered`);
+    notifyTelegram(
+      `\u2705 <b>Auto mode: Backend ${id} \u0111\u00e3 ph\u1ee5c h\u1ed3i</b>\n` +
+      `\ud83d\udfe2 Ho\u1ea1t \u0111\u1ed9ng b\u00ecnh th\u01b0\u1eddng tr\u1edf l\u1ea1i\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+  } else {
+    state.errors = Math.max(0, state.errors - 1);
+    if (state.errors === 0) resetBackendHealthState(state);
+  }
+}
+
 const app = express();
 const port = Number(firstEnv("DORO_PROXY_PORT", { default: "4000" }));
 const maxConcurrent = Number(process.env.DORO_MAX_CONCURRENT || "50");
@@ -1771,6 +1874,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         return { response, settings, payload, data };
       } catch (err) {
         lastError = err;
+        let failureSignal = backendFailureSignal(err.status || 0, err.text || err.message || "", err.code);
         // Detect quota exceeded → block model + retry với model khác
         if (isQuotaExceededError(err.status, err.text)) {
           const payload = payloadBuilder(settings);
@@ -1794,11 +1898,12 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
             } catch (retryErr) {
               lastError = retryErr;
               err = retryErr;
+              failureSignal = backendFailureSignal(err.status || 0, err.text || err.message || "", err.code);
             }
           }
         }
 
-        const canRetrySameBackend = attempt < backendRequestRetryCount && (!err.status || isRetryableStatus(err.status));
+        const canRetrySameBackend = attempt < backendRequestRetryCount && (!failureSignal || !failureSignal.immediate) && (!err.status || isRetryableStatus(err.status));
         if (canRetrySameBackend) {
           if (obs) {
             obs.is_retry = true;
@@ -1812,7 +1917,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         }
 
         // Auto-mode: track backend lỗi để tự ngắt
-        if (err.status) trackBackendError(settings.profileId, err.status);
+        trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
         const canTryNext = !err.status || (isRetryableStatus(err.status) && i < settingsChain.length - 1);
         if (canTryNext && i < settingsChain.length - 1) {
           if (obs) {
@@ -2369,6 +2474,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       }
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
       uptimeTrackSuccess();
+      if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
       return;
     } catch (err) {
       if (stopHeartbeat) stopHeartbeat();
@@ -2387,6 +2493,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           obs.error_type = "backend";
           obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code);
         }
+        if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (wroteResponse) {
           sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
@@ -2408,6 +2515,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         obs.error_type = "network";
         obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180);
       }
+      if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
       if (wroteResponse) {
         sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
         return res.end();
@@ -2525,12 +2633,14 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         const estTokens = Math.ceil(inputText.length / 4) + 200;
         credit.deductCredit(apiKeyToken, Math.floor(estTokens * 0.7), Math.ceil(estTokens * 0.3), modelName || "", reqId || "");
       }
+      if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
       return res.end();
     } catch (err) {
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
       if (err.status) {
-        if (!wroteResponse && isRetryableStatus(err.status) && retryDepth < backendRequestRetryCount) {
+        const failureSignal = backendFailureSignal(err.status, err.text || err.message || "", err.code);
+        if (!wroteResponse && (!failureSignal || !failureSignal.immediate) && isRetryableStatus(err.status) && retryDepth < backendRequestRetryCount) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           addLog(`stream openai retry attempt=${retryDepth + 1}/${backendRequestRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
@@ -2541,6 +2651,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           continue;
         }
         if (obs) { obs.error_type = "backend"; obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code); }
+        if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
           const clientStatus = clientBackendStatus(err.status);
@@ -2562,6 +2673,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         continue;
       }
       if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
+      if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
       if (!wroteResponse) {
         return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
       }
@@ -4308,7 +4420,15 @@ app.get("/api/config", (req, res) => {
   });
   const backendHealth = Object.fromEntries(BACKEND_IDS.map((id) => {
     const state = _backendHealth[id] || { errors: 0, downCount: 0, downSince: null };
-    return [id, { healthy: isBackendHealthy(id), errors: state.errors, down_count: state.downCount, down_since: state.downSince }];
+    return [id, {
+      healthy: isBackendHealthy(id),
+      errors: state.errors,
+      down_count: state.downCount,
+      down_since: state.downSince,
+      last_status: state.lastStatus || 0,
+      last_reason: state.lastReason || "",
+      last_error_at: state.lastErrorAt || null,
+    }];
   }));
   res.json({
     active_backend: active,

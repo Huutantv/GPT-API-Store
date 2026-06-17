@@ -1569,7 +1569,8 @@ async function loadBackendConfig() {
   if (autoMode && data.backend_health) {
     var statusText = [1, 2, 3, 4].map(function(id) {
       var health = data.backend_health[String(id)] || {};
-      return "B" + id + ": " + (health.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (health.errors || 0) + " err)";
+      var reason = health.last_reason ? ", " + health.last_reason : "";
+      return "B" + id + ": " + (health.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (health.errors || 0) + " err" + reason + ")";
     }).join(" | ");
     document.getElementById("healthStatus").textContent = statusText;
   }
