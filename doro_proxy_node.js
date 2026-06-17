@@ -1375,6 +1375,47 @@ function flattenOrphanToolMessages(messages) {
   return changed ? flattened : messages;
 }
 
+function dropUnansweredToolCalls(messages) {
+  if (!Array.isArray(messages)) return messages;
+  let changed = false;
+  const normalized = [];
+
+  for (let i = 0; i < messages.length; i += 1) {
+    const message = messages[i];
+    if (!message || typeof message !== "object" || message.role !== "assistant" || !Array.isArray(message.tool_calls) || !message.tool_calls.length) {
+      normalized.push(message);
+      continue;
+    }
+
+    const answeredIds = new Set();
+    for (let j = i + 1; j < messages.length; j += 1) {
+      const next = messages[j];
+      if (!next || typeof next !== "object" || next.role !== "tool") break;
+      const toolCallId = String(next.tool_call_id || "").trim();
+      if (toolCallId) answeredIds.add(toolCallId);
+    }
+
+    const toolCalls = message.tool_calls.filter((call) => {
+      const callId = String((call && call.id) || "").trim();
+      return callId && answeredIds.has(callId);
+    });
+
+    if (toolCalls.length === message.tool_calls.length) {
+      normalized.push(message);
+      continue;
+    }
+
+    changed = true;
+    const clean = { ...message };
+    if (toolCalls.length) clean.tool_calls = toolCalls;
+    else delete clean.tool_calls;
+    normalized.push(clean);
+    addLog(`unanswered tool calls dropped missing=${message.tool_calls.length - toolCalls.length}`);
+  }
+
+  return changed ? normalized : messages;
+}
+
 function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
   if (!data || typeof data !== "object") return data;
   if (data.model && publicModel) data.model = publicModel;
@@ -1843,6 +1884,7 @@ function applyBackendToolCompatibility(payload, settings) {
     });
     if (normalized) addLog(`tool arguments normalized for ${settings.profileLabel}: messages=${normalized}`);
     payload.messages = flattenOrphanToolMessages(payload.messages);
+    payload.messages = dropUnansweredToolCalls(payload.messages);
   }
   if (!settings.disableTools) return payload;
   let removed = false;
