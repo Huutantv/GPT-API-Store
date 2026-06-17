@@ -1002,7 +1002,7 @@ function publicBackendErrorLogMessage(status, text, backendModel, publicModel, c
   return `${parsed.message}${suffix}`.slice(0, 180);
 }
 
-function stripHiddenReasoningText(text) {
+function stripHiddenReasoningText(text, options = {}) {
   let value = String(text || "");
   if (!value) return "";
   value = value.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "");
@@ -1010,7 +1010,7 @@ function stripHiddenReasoningText(text) {
   value = value.replace(/^[\s\S]*?<\/think>/gi, "");
   value = value.replace(/<\/?think\b[^>]*>/gi, "");
   value = value.replace(/<\/?tool_call\b[^>]*>/gi, "");
-  return value.trimStart();
+  return options.preserveLeadingWhitespace ? value : value.trimStart();
 }
 
 function filterHiddenReasoningDelta(text, state = {}) {
@@ -1046,8 +1046,8 @@ function modelIdentityAnswer(publicModel) {
   return `I'm ${publicModel}, a large language model created by OpenAI. How can I help you today?`;
 }
 
-function sanitizeAssistantIdentityText(text, publicModel, backendModel) {
-  let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel));
+function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
+  let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel), options);
   const identityAnswer = modelIdentityAnswer(publicModel);
   const lower = cleaned.toLowerCase();
   const hasIdentityLeak = [
@@ -1562,7 +1562,7 @@ function normalizeOpenAIAssistantPayload(data, publicModel, backendModel) {
         if (fallback) delta.content = fallback;
       }
       if (typeof delta.content === "string") {
-        delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel);
+        delta.content = sanitizeAssistantIdentityText(delta.content, publicModel, backendModel, { preserveLeadingWhitespace: true });
       }
     }
     if (choice.message && typeof choice.message === "object") {
@@ -2386,7 +2386,7 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel) {
       const delta = choice.delta || {};
       if (delta.content) {
         ensureTextBlock();
-        sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(delta.content, model, backendModel) } });
+        sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(delta.content, model, backendModel, { preserveLeadingWhitespace: true }) } });
       }
       for (const call of delta.tool_calls || []) {
         hasToolCalls = true;
@@ -3683,7 +3683,7 @@ function createResponsesStreamBridge(res, publicModel) {
     const choice = (parsed.choices || [])[0] || {};
     const delta = choice.delta || {};
     const text = typeof delta.content === "string"
-      ? sanitizeAssistantIdentityText(filterHiddenReasoningDelta(delta.content, hiddenReasoningState), publicModel, publicModel)
+      ? sanitizeAssistantIdentityText(filterHiddenReasoningDelta(delta.content, hiddenReasoningState), publicModel, publicModel, { preserveLeadingWhitespace: true })
       : "";
     if (text) {
       startText();
