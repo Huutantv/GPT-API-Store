@@ -1903,6 +1903,19 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
           }
         }
 
+        const shouldTryNextBackend = (!err.status || isRetryableStatus(err.status)) && i < settingsChain.length - 1;
+        if (shouldTryNextBackend) {
+          trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+          if (obs) {
+            obs.is_retry = true;
+            obs.retry_count += 1;
+            obs.error_type = err.status ? "backend" : "network";
+            obs.final_backend_status = err.status || obs.final_backend_status;
+          }
+          addLog(`backend profile retry ${settings.profileLabel} -> ${settingsChain[i + 1].profileLabel} error=${err.status || err.name || "network"}`);
+          break;
+        }
+
         const canRetrySameBackend = attempt < backendRequestRetryCount && (!failureSignal || !failureSignal.immediate) && (!err.status || isRetryableStatus(err.status));
         if (canRetrySameBackend) {
           if (obs) {
