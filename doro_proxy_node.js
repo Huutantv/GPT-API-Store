@@ -894,7 +894,7 @@ function orderedBackendKeys(apiKeys) {
 function backendHeaders(apiKey, extra = {}) {
   return {
     Authorization: `Bearer ${apiKey}`,
-    "Content-Type": "application/json",
+    "Content-Type": "application/json; charset=utf-8",
     ...extra,
   };
 }
@@ -1104,6 +1104,35 @@ function prependIdentityGuard(messages, publicModel) {
   return [
     ...original.slice(0, firstNonSystem),
     identitySystemMessage(publicModel),
+    ...original.slice(firstNonSystem),
+  ];
+}
+
+function encodingPreservationMessage() {
+  return {
+    role: "system",
+    content: [
+      "Source encoding policy:",
+      "- Treat source files and user-provided text as UTF-8.",
+      "- Preserve valid Unicode characters exactly, especially Vietnamese text in string literals, comments, filenames, and resource keys.",
+      "- Do not convert, transliterate, escape, normalize, or reinterpret Unicode through Latin-1, Windows-1252, ASCII, or mojibake forms.",
+      "- When editing code, change only the requested logic and leave unrelated string literals byte-for-byte equivalent.",
+      "- If existing text is already mojibake, repair it only when the user explicitly asks for encoding repair or the task clearly requires it.",
+    ].join("\n"),
+  };
+}
+
+function prependEncodingGuard(messages) {
+  const original = Array.isArray(messages) ? messages : [];
+  const alreadyPresent = original.some((message) =>
+    message && message.role === "system" && String(message.content || "").includes("Source encoding policy:")
+  );
+  if (alreadyPresent) return original;
+  const firstNonSystem = original.findIndex((message) => message && message.role !== "system");
+  if (firstNonSystem === -1) return [...original, encodingPreservationMessage()];
+  return [
+    ...original.slice(0, firstNonSystem),
+    encodingPreservationMessage(),
     ...original.slice(firstNonSystem),
   ];
 }
@@ -2279,7 +2308,7 @@ function sseWrite(res, event, data) {
 
 function setSseHeaders(res) {
   if (res.headersSent) return;
-  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("Connection", "keep-alive");
@@ -2946,6 +2975,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     const payload = anthropicToOpenAI(body, settings.backendModel);
     payload.model = settings.backendModel;
     payload.messages = prependIdentityGuard(payload.messages, publicModel);
+    payload.messages = prependEncodingGuard(payload.messages);
     applyBackendPayloadLimits(payload, settings);
     applyBackendMessageCompatibility(payload, settings);
     applyBackendToolCompatibility(payload, settings);
@@ -2957,6 +2987,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       const payload = anthropicToOpenAI(body, profileSettings.backendModel);
       payload.model = profileSettings.backendModel;
       payload.messages = prependIdentityGuard(payload.messages, publicModel);
+      payload.messages = prependEncodingGuard(payload.messages);
       return payload;
     }, "/chat/completions", req.obs, (response) => {
       const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
@@ -3807,9 +3838,10 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (imageCount) addLog(`responses images count=${imageCount}`);
   const rawResponseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
   const responseMessages = hydrateResponsesContinuation(original.previous_response_id, rawResponseMessages);
+  const guardedResponseMessages = prependEncodingGuard(prependAgentToolGuard(responseMessages, chatTools));
   req.body = {
     model: original.model || "opus",
-    messages: prependAgentToolGuard(responseMessages, chatTools),
+    messages: guardedResponseMessages,
     temperature: original.temperature,
     top_p: original.top_p,
     max_tokens: responseMaxTokens,
@@ -3889,6 +3921,7 @@ async function openAIChatCompletionsHandler(req, res) {
     const payload = { ...body, model: settings.backendModel };
     if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
     if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+    if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
     applyBackendPayloadLimits(payload, settings);
     applyBackendMessageCompatibility(payload, settings);
     applyBackendToolCompatibility(payload, settings);
@@ -3911,6 +3944,7 @@ async function openAIChatCompletionsHandler(req, res) {
         const payload = { ...roundBody, model: profileSettings.backendModel };
         if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
         if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+        if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
         applyBackendPayloadLimits(payload, profileSettings);
         applyBackendMessageCompatibility(payload, profileSettings);
         applyBackendToolCompatibility(payload, profileSettings);
