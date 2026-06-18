@@ -1114,8 +1114,14 @@ function encodingPreservationMessage() {
     content: [
       "Source encoding policy:",
       "- Treat source files and user-provided text as UTF-8.",
+      "- Do not guess a file's encoding. Verify the actual encoding from file metadata, tool output, or existing bytes before writing.",
+      "- If encoding cannot be verified, do not rewrite the file; ask for confirmation or make only a minimal byte-preserving patch.",
       "- Preserve valid Unicode characters exactly, especially Vietnamese text in string literals, comments, filenames, and resource keys.",
       "- Do not convert, transliterate, escape, normalize, or reinterpret Unicode through Latin-1, Windows-1252, ASCII, or mojibake forms.",
+      "- Never use mojibake-looking text as the source of truth for Vietnamese unless the user explicitly confirms that text is intentional.",
+      "- Treat sequences such as Ã, Â, Æ, Ä, áº, á» or strings like KhÃ³a, KhÃ´ng, Sá»‘, PhÆ°á»£ng as likely mojibake in Vietnamese source.",
+      "- If a source file mixes valid Vietnamese and mojibake-looking Vietnamese, assume the mojibake is corruption; do not propagate it to other lines.",
+      "- Never replace valid Vietnamese such as Khóa, Không, Số lượng, Phượng Hoàng with mojibake equivalents.",
       "- When editing code, make the smallest targeted patch that satisfies the request.",
       "- Do not rewrite or replace an entire file when a localized edit, search/replace, or patch is sufficient.",
       "- Prefer patch/edit operations over full-file writes, heredocs, generated replacements, or formatter-wide rewrites.",
@@ -1143,6 +1149,78 @@ function prependEncodingGuard(messages) {
     encodingPreservationMessage(),
     ...original.slice(firstNonSystem),
   ];
+}
+
+const MOJIBAKE_VI_RE = /(?:Ã|Â|Æ|Ä|áº|á»|â€|�)/;
+const SOURCE_EDIT_RE = /\b(code|source|file|patch|diff|edit|write|rewrite|replace|refactor|java|js|ts|html|css|php|py|go|cpp|cs|xml|json|yaml|yml|properties)\b|(?:sửa|sua|fix|lỗi|loi|ghi|đè|de|thay|file|mã nguồn|ma nguon)/i;
+
+function contentToSearchableText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (!part || typeof part !== "object") return String(part || "");
+      return part.text || part.content || part.input_text || part.output_text || "";
+    }).join("\n");
+  }
+  if (!content || typeof content !== "object") return String(content || "");
+  return content.text || content.content || content.input_text || content.output_text || "";
+}
+
+function messagesLookLikeSourceEdit(messages) {
+  return (Array.isArray(messages) ? messages : []).some((message) => {
+    if (!message || typeof message !== "object") return false;
+    return SOURCE_EDIT_RE.test(contentToSearchableText(message.content));
+  });
+}
+
+function looksLikeVietnameseMojibake(text) {
+  const value = String(text || "");
+  if (!MOJIBAKE_VI_RE.test(value)) return false;
+  return [
+    /(?:Kh|KhÃ|KhÃƒ|S|SÃ|Sá|Ph|PhÆ|Trang|M|MÃ|Má|Linh|B|BÃ|Bá|N|NÃ|Ná|Ch|ChÆ|Th|Thá|lÆ|Æ°|Æ¡|á»|áº)/i,
+    /(?:Ã³|Ã´|Ãª|Ã |Ã¡|Ã¢|Ã£|Ãª|Ã¹|Ãº|á»‘|á»“|á»£|á»‹|áº¡|áº£|áº¥|áº§|Æ°|Æ¡)/i,
+  ].some((pattern) => pattern.test(value));
+}
+
+function findMojibakeInOpenAIResponse(data) {
+  for (const choice of Array.isArray(data && data.choices) ? data.choices : []) {
+    const message = choice && choice.message;
+    const delta = choice && choice.delta;
+    const texts = [
+      message && contentToSearchableText(message.content),
+      delta && contentToSearchableText(delta.content),
+    ];
+    for (const call of Array.isArray(message && message.tool_calls) ? message.tool_calls : []) {
+      texts.push(call && call.function && call.function.arguments);
+    }
+    for (const call of Array.isArray(delta && delta.tool_calls) ? delta.tool_calls : []) {
+      texts.push(call && call.function && call.function.arguments);
+    }
+    const found = texts.find(looksLikeVietnameseMojibake);
+    if (found) return String(found).slice(0, 160);
+  }
+  return "";
+}
+
+function mojibakeBlockedError(sample) {
+  const err = new Error("Blocked assistant output because it appears to contain mojibake/corrupted Vietnamese text. Retry with UTF-8 preservation and a minimal patch.");
+  err.status = 422;
+  err.code = "mojibake_output_blocked";
+  err.text = JSON.stringify({
+    error: {
+      message: err.message,
+      type: "invalid_output",
+      code: err.code,
+      sample,
+    },
+  });
+  return err;
+}
+
+function assertNoMojibakeForSourceEdit(data, messages) {
+  if (!messagesLookLikeSourceEdit(messages)) return;
+  const sample = findMojibakeInOpenAIResponse(data);
+  if (sample) throw mojibakeBlockedError(sample);
 }
 
 function agentToolContinuationMessage() {
@@ -2356,7 +2434,7 @@ function emitAnthropicBufferedStream(res, data, model, backendModel) {
   res.end();
 }
 
-async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel) {
+async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, blockMojibake = false) {
   const id = `msg_${Date.now()}`;
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -2417,6 +2495,7 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel) {
       } catch (_) {
         continue;
       }
+      if (blockMojibake) assertNoMojibakeForSourceEdit(chunk, [{ role: "user", content: "code edit" }]);
       if (chunk.usage) usage = chunk.usage;
       const choice = (chunk.choices || [])[0] || {};
       finishReason = choice.finish_reason || finishReason;
@@ -2514,7 +2593,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         wroteResponse = true;
         setSseHeaders(res);
         stopHeartbeat = startSseHeartbeat(res);
-        return pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel);
+        return pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages));
       });
       if (stopHeartbeat) stopHeartbeat();
       // Trừ credit sau khi stream xong
@@ -2649,6 +2728,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
             }
             const payloadError = backendErrorFromPayload(parsed, resp.status || 502);
             if (payloadError && !hasAssistantOutput) throw payloadError;
+            assertNoMojibakeForSourceEdit(parsed, payload.messages);
             normalizeOpenAIAssistantPayload(parsed, publicModel, backendModel);
             if (parsed.usage && parsed.usage.total_tokens) {
               totalTokens = parsed.usage.total_tokens;
@@ -3008,6 +3088,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
     req.obs.backend_base_url = finalSettings.baseUrl || req.obs.backend_base_url;
     req.obs.final_backend_status = response.status;
+    assertNoMojibakeForSourceEdit(data, body.messages);
     const out = openaiToAnthropic(data, publicModel, finalSettings.backendModel);
     const tokens = Number((data.usage || {}).total_tokens || 0);
     const tokensIn = Number((data.usage || {}).prompt_tokens || 0);
@@ -3966,6 +4047,7 @@ async function openAIChatCompletionsHandler(req, res) {
 
       finalSettings = result.settings;
       data = result.data;
+      assertNoMojibakeForSourceEdit(data, roundBody.messages);
       normalizeOpenAIAssistantPayload(data, publicModel, finalSettings.backendModel);
 
       const usage = data.usage || {};
