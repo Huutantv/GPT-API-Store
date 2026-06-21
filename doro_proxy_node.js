@@ -2075,6 +2075,96 @@ function applyBackendPayloadLimits(payload, settings) {
   return payload;
 }
 
+function normalizeChatContentForBackend(content, settings) {
+  if (!Array.isArray(content)) return content;
+  const visionOk = supportsVision(settings && settings.backendModel);
+  let changed = false;
+  const normalized = [];
+
+  for (const part of content) {
+    if (typeof part === "string") {
+      normalized.push({ type: "text", text: part });
+      changed = true;
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    if (part.type === "text") {
+      normalized.push({ type: "text", text: String(part.text || "") });
+      continue;
+    }
+    if (part.type === "image_url") {
+      if (visionOk) normalized.push(part);
+      else normalized.push({ type: "text", text: "[image attached - backend model does not support vision]" });
+      changed = true;
+      continue;
+    }
+    if (part.type === "input_text") {
+      normalized.push({ type: "text", text: String(part.text || part.input_text || "") });
+      changed = true;
+      continue;
+    }
+    if (part.type === "input_image" || part.type === "file" || part.type === "input_file") {
+      normalized.push({ type: "text", text: `[${part.type} attached - cannot be forwarded to chat backend]` });
+      changed = true;
+      continue;
+    }
+    const text = part.text || part.content || part.input_text || part.output_text;
+    normalized.push({ type: "text", text: text ? String(text) : JSON.stringify(part) });
+    changed = true;
+  }
+
+  if (!changed) return content;
+  if (!visionOk) return normalized.map((part) => part.text || "").filter(Boolean).join("\n");
+  return normalized;
+}
+
+function normalizeOpenAIChatPayloadForBackend(payload, settings) {
+  if (!payload || typeof payload !== "object") return payload;
+  if (payload.max_tokens == null && payload.max_completion_tokens != null) {
+    payload.max_tokens = payload.max_completion_tokens;
+  }
+
+  const stripFields = [
+    "max_completion_tokens",
+    "reasoning",
+    "store",
+    "metadata",
+    "prediction",
+    "modalities",
+    "audio",
+    "web_search_options",
+    "previous_response_id",
+    "truncation",
+    "service_tier",
+  ];
+  let stripped = [];
+  for (const field of stripFields) {
+    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+      delete payload[field];
+      stripped.push(field);
+    }
+  }
+  if (payload.parallel_tool_calls != null && !Array.isArray(payload.tools)) {
+    delete payload.parallel_tool_calls;
+    stripped.push("parallel_tool_calls");
+  }
+
+  if (Array.isArray(payload.messages)) {
+    let contentChanged = 0;
+    payload.messages = payload.messages.map((message) => {
+      if (!message || typeof message !== "object") return message;
+      const content = normalizeChatContentForBackend(message.content, settings);
+      if (content === message.content) return message;
+      contentChanged += 1;
+      return { ...message, content };
+    });
+    if (contentChanged) addLog(`chat content normalized for ${settings.profileLabel}: messages=${contentChanged}`);
+  }
+
+  if (stripped.length) addLog(`chat payload stripped for ${settings.profileLabel}: ${stripped.join(",")}`);
+  return payload;
+}
+
 function messageContentToText(content) {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
@@ -4012,6 +4102,7 @@ async function openAIChatCompletionsHandler(req, res) {
     if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
     if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
     applyBackendPayloadLimits(payload, settings);
+    normalizeOpenAIChatPayloadForBackend(payload, settings);
     applyBackendMessageCompatibility(payload, settings);
     applyBackendToolCompatibility(payload, settings);
     const backendUrl = `${settings.baseUrl}/chat/completions`;
@@ -4035,6 +4126,7 @@ async function openAIChatCompletionsHandler(req, res) {
         if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
         if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
         applyBackendPayloadLimits(payload, profileSettings);
+        normalizeOpenAIChatPayloadForBackend(payload, profileSettings);
         applyBackendMessageCompatibility(payload, profileSettings);
         applyBackendToolCompatibility(payload, profileSettings);
         return payload;
