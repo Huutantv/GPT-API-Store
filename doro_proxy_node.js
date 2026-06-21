@@ -4281,8 +4281,62 @@ app.get("/api/orders/packages", (_req, res) => {
 app.post("/api/orders/create", async (req, res) => {
   const { packageId, customerName, customerEmail, customerPhone } = req.body || {};
   if (!packageId || !customerEmail) return res.status(400).json({ detail: "Thi\u1ebfu th\u00f4ng tin" });
+
+  // Rate limit: tối đa 5 đơn hàng / IP / giờ
+  const clientIp = (req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+  if (clientIp) {
+    if (!orderRateMap) orderRateMap = new Map();
+    const now = Date.now();
+    const windowMs = 60 * 60 * 1000;
+    const maxOrders = 5;
+    let entry = orderRateMap.get(clientIp);
+    if (!entry || now - entry.windowStart > windowMs) {
+      entry = { windowStart: now, count: 0 };
+      orderRateMap.set(clientIp, entry);
+    }
+    if (entry.count >= maxOrders) {
+      try { addLog(`RATELIMIT orders/create ip=${clientIp} rejected (${entry.count}/${maxOrders})`); } catch (_) {}
+      return res.status(429).json({ detail: "Quá nhiều yêu cầu tạo đơn hàng. Vui lòng thử lại sau 1 giờ." });
+    }
+    entry.count++;
+  }
+
+  // Validate email format
+  const emailPattern = /^[^\s@<>"'`;()\\]+@[^\s@<>"'`;()\\]+\.[^\s@<>"'`;()\\]{2,}$/;
+  if (!emailPattern.test(String(customerEmail || ""))) {
+    try { addLog(`SECURITY orders/create bad-email ip=${clientIp} email=${String(customerEmail||"").slice(0,80)}`); } catch (_) {}
+    return res.status(400).json({ detail: "Email không hợp lệ" });
+  }
+
+  // Validate packageId
+  if (!/^[a-z][a-z0-9_]{0,19}$/i.test(String(packageId || ""))) {
+    return res.status(400).json({ detail: "Gói không hợp lệ" });
+  }
+
+  // Sanitize customerName
+  const rawName = String(customerName || "").trim();
+  const dangerousPattern = /[<>"'`;(){}\[\]\\]|(\b(?:SELECT|INSERT|DELETE|UPDATE|DROP|UNION|EXEC|EVAL|ALERT|DOCUMENT|WINDOW|ONERROR|ONLOAD|SRC=)\b)/i;
+  if (rawName.length > 100) {
+    return res.status(400).json({ detail: "Tên quá dài (tối đa 100 ký tự)" });
+  }
+  if (rawName && dangerousPattern.test(rawName)) {
+    try { addLog(`SECURITY orders/create bad-name ip=${clientIp} name=${rawName.slice(0,80)}`); } catch (_) {}
+    return res.status(400).json({ detail: "Tên chứa ký tự không hợp lệ" });
+  }
+
+  // Sanitize customerPhone
+  const rawPhone = String(customerPhone || "").trim();
+  if (rawPhone.length > 20) {
+    return res.status(400).json({ detail: "SĐT quá dài (tối đa 20 ký tự)" });
+  }
+  if (rawPhone && dangerousPattern.test(rawPhone)) {
+    return res.status(400).json({ detail: "SĐT chứa ký tự không hợp lệ" });
+  }
+
+  const safeEmail = String(customerEmail || "").trim().slice(0, 200);
+
   try {
-    const order = orders.createOrder({ packageId, customerName, customerEmail, customerPhone });
+    const order = orders.createOrder({ packageId, customerName: rawName, customerEmail: safeEmail, customerPhone: rawPhone });
     const bankAccount = process.env.BANK_ACCOUNT || "0000000000";
     const bankCode    = process.env.BANK_CODE    || "MB";
     const bankOwner   = process.env.BANK_OWNER   || "NGUYEN VAN A";

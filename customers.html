@@ -107,6 +107,15 @@ function authHeaders() {
   return { "Authorization": `Bearer ${ADMIN_KEY}`, "Content-Type": "application/json" };
 }
 
+function escapeHtml(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function doLogin() {
   const key = document.getElementById("adminKeyInput").value.trim();
   if (!key) return;
@@ -170,10 +179,10 @@ function filterTable() {
     return `<tr class="border-b border-white/5 hover:bg-white/2 cursor-pointer" onclick="showDetail('${encodeURIComponent(c.customer_email)}')">
       <td class="px-5 py-3 text-gray-500 text-xs">${i + 1}</td>
       <td class="px-5 py-3">
-        <p class="font-medium">${c.customer_name || '<span class="text-gray-500">—</span>'}</p>
-        <p class="text-xs text-gray-400">${c.customer_email}</p>
+        <p class="font-medium">${c.customer_name ? escapeHtml(c.customer_name) : '<span class="text-gray-500">—</span>'}</p>
+        <p class="text-xs text-gray-400">${escapeHtml(c.customer_email)}</p>
       </td>
-      <td class="px-5 py-3 text-sm text-gray-300">${c.customer_phone || '<span class="text-gray-600">—</span>'}</td>
+      <td class="px-5 py-3 text-sm text-gray-300">${c.customer_phone ? escapeHtml(c.customer_phone) : '<span class="text-gray-600">—</span>'}</td>
       <td class="px-5 py-3 text-right">
         <span class="px-2 py-0.5 rounded text-xs ${hasPaid ? "bg-green-500/10 text-green-400" : "bg-gray-500/10 text-gray-400"}">${c.paid_orders}/${c.total_orders}</span>
       </td>
@@ -202,9 +211,9 @@ async function showDetail(emailEncoded) {
     <!-- Thông tin cơ bản -->
     <div class="bg-dark-900 rounded-xl p-4 space-y-2">
       <h3 class="text-xs text-gray-500 uppercase tracking-wider mb-3">Thông tin khách hàng</h3>
-      <div class="flex justify-between text-sm"><span class="text-gray-400">Họ tên</span><span class="font-medium">${c.customer_name || "—"}</span></div>
-      <div class="flex justify-between text-sm"><span class="text-gray-400">Email</span><span class="font-mono text-primary">${email}</span></div>
-      <div class="flex justify-between text-sm"><span class="text-gray-400">SĐT</span><span>${c.customer_phone || "—"}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Họ tên</span><span class="font-medium">${escapeHtml(c.customer_name || "—")}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">Email</span><span class="font-mono text-primary">${escapeHtml(email)}</span></div>
+      <div class="flex justify-between text-sm"><span class="text-gray-400">SĐT</span><span>${escapeHtml(c.customer_phone || "—")}</span></div>
       <div class="flex justify-between text-sm"><span class="text-gray-400">Tổng đơn</span><span>${c.total_orders || 0} đơn (${c.paid_orders || 0} đã TT)</span></div>
       <div class="flex justify-between text-sm"><span class="text-gray-400">Tổng chi</span><span class="font-bold text-green-400">${Number(c.total_spent || 0).toLocaleString("vi-VN")}đ</span></div>
     </div>
@@ -217,12 +226,12 @@ async function showDetail(emailEncoded) {
         ${keys.map(k => `
         <div class="bg-dark-900 rounded-xl p-4">
           <div class="flex items-center justify-between mb-2">
-            <span class="text-xs text-gray-500">${k.package_id || "—"} · ${k.paid_at ? new Date(k.paid_at).toLocaleDateString("vi-VN") : "—"}</span>
+            <span class="text-xs text-gray-500">${escapeHtml(k.package_id || "—")} · ${k.paid_at ? new Date(k.paid_at).toLocaleDateString("vi-VN") : "—"}</span>
             <span class="px-2 py-0.5 rounded text-xs ${k.active ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"}">${k.active ? "Hoạt động" : "Bị khoá"}</span>
           </div>
           <div class="flex items-center gap-2">
-            <code class="text-xs font-mono text-primary flex-1 truncate">${k.key || "—"}</code>
-            <button onclick="navigator.clipboard.writeText('${k.key}');this.textContent='✓';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs px-2 py-0.5 bg-dark-700 rounded hover:bg-dark-600 transition shrink-0">Copy</button>
+            <code class="text-xs font-mono text-primary flex-1 truncate">${escapeHtml(k.key || "—")}</code>
+            <button onclick="navigator.clipboard.writeText(${JSON.stringify(k.key || "")});this.textContent='✓';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs px-2 py-0.5 bg-dark-700 rounded hover:bg-dark-600 transition shrink-0">Copy</button>
           </div>
           <div class="flex gap-4 mt-2 text-xs text-gray-500">
             <span>Credit: <strong class="text-white">${Number(k.credit || 0).toLocaleString()}</strong></span>
@@ -242,8 +251,8 @@ async function showDetail(emailEncoded) {
           const label = o.status === "paid" ? "Đã TT" : o.status === "cancelled" ? "Đã huỷ" : "Chờ TT";
           return `<div class="flex items-center justify-between bg-dark-900 rounded-xl px-4 py-3 text-sm">
             <div>
-              <span class="font-mono text-xs text-yellow-300">${o.order_code}</span>
-              <span class="text-gray-500 text-xs ml-2">${o.package_id}</span>
+              <span class="font-mono text-xs text-yellow-300">${escapeHtml(o.order_code)}</span>
+              <span class="text-gray-500 text-xs ml-2">${escapeHtml(o.package_id)}</span>
             </div>
             <div class="flex items-center gap-3">
               <span class="font-bold">${Number(o.amount).toLocaleString("vi-VN")}đ</span>

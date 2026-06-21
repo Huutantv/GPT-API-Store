@@ -4,6 +4,16 @@
  */
 const nodemailer = require("nodemailer");
 
+// Escape HTML để chặn injection khi nhúng dữ liệu người dùng vào email HTML
+function escapeHtml(value) {
+  return String(value == null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function createTransport() {
   return nodemailer.createTransport({
     service: "gmail",
@@ -20,6 +30,11 @@ async function sendApiKey({ to, customerName, packageName, apiKey, credit, rpmLi
     return false;
   }
   const transport = createTransport();
+  // Escape mọi giá trị do user nhập trước khi nhúng vào HTML
+  const safeName = escapeHtml(customerName || "bạn");
+  const safePackage = escapeHtml(packageName || "");
+  const safeKey = escapeHtml(apiKey || "");
+  const safeBase = escapeHtml(baseUrl || "");
   const html = `
 <!DOCTYPE html>
 <html lang="vi">
@@ -31,18 +46,18 @@ async function sendApiKey({ to, customerName, packageName, apiKey, credit, rpmLi
     <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px">Thanh toán thành công</p>
   </div>
   <div style="padding:32px 40px">
-    <p style="margin:0 0 16px;font-size:15px">Xin chào <strong>${customerName || "bạn"}</strong>,</p>
+    <p style="margin:0 0 16px;font-size:15px">Xin chào <strong>${safeName}</strong>,</p>
     <p style="margin:0 0 24px;color:#9ca3af;font-size:14px;line-height:1.6">
-      Cảm ơn bạn đã mua gói <strong style="color:#6366f1">${packageName}</strong>. Dưới đây là thông tin API key của bạn.
+      Cảm ơn bạn đã mua gói <strong style="color:#6366f1">${safePackage}</strong>. Dưới đây là thông tin API key của bạn.
     </p>
     <div style="background:#0a0a0f;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:20px;margin-bottom:24px">
       <p style="margin:0 0 8px;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:1px">API Key</p>
-      <code style="font-size:13px;color:#a78bfa;word-break:break-all;font-family:monospace">${apiKey}</code>
+      <code style="font-size:13px;color:#a78bfa;word-break:break-all;font-family:monospace">${safeKey}</code>
     </div>
     <div style="display:grid;gap:12px;margin-bottom:24px">
       <div style="background:#1a1a2e;border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between">
         <span style="font-size:13px;color:#9ca3af">Base URL</span>
-        <code style="font-size:13px;color:#34d399">${baseUrl}/v1</code>
+        <code style="font-size:13px;color:#34d399">${safeBase}/v1</code>
       </div>
       <div style="background:#1a1a2e;border-radius:8px;padding:12px 16px;display:flex;justify-content:space-between">
         <span style="font-size:13px;color:#9ca3af">Credit</span>
@@ -57,8 +72,8 @@ async function sendApiKey({ to, customerName, packageName, apiKey, credit, rpmLi
       <p style="margin:0 0 12px;font-size:13px;font-weight:600">Cài đặt nhanh (Python)</p>
       <pre style="margin:0;font-size:12px;color:#9ca3af;overflow-x:auto">from openai import OpenAI
 client = OpenAI(
-    api_key="${apiKey}",
-    base_url="${baseUrl}/v1"
+    api_key="${safeKey}",
+    base_url="${safeBase}/v1"
 )
 response = client.chat.completions.create(
     model="gpt-5.5",
@@ -67,17 +82,17 @@ response = client.chat.completions.create(
     </div>
     <div style="background:#1a1a2e;border-radius:12px;padding:20px;margin-bottom:24px">
       <p style="margin:0 0 12px;font-size:13px;font-weight:600">Dung voi Codex</p>
-      <pre style="margin:0;font-size:12px;color:#9ca3af;overflow-x:auto">$env:OPENAI_API_KEY="${apiKey}"
-$env:OPENAI_BASE_URL="${baseUrl}/v1"
+      <pre style="margin:0;font-size:12px;color:#9ca3af;overflow-x:auto">$env:OPENAI_API_KEY="${safeKey}"
+$env:OPENAI_BASE_URL="${safeBase}/v1"
 codex --model gpt-5.5 "hello"</pre>
       <p style="margin:12px 0 0;font-size:12px;color:#9ca3af;line-height:1.6">
         Extension Codex: chon OpenAI Compatible, dien API Key, Base URL va model gpt-5.5.
       </p>
     </div>
     <div style="text-align:center;margin-bottom:24px">
-      <a href="${baseUrl}/portal?key=${encodeURIComponent(apiKey)}" style="display:inline-block;padding:12px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px;margin:0 6px 8px">Mo Portal</a>
-      <a href="${baseUrl}/guides/codex?key=${encodeURIComponent(apiKey)}" style="display:inline-block;padding:12px 20px;background:#1a1a2e;color:#c4b5fd;text-decoration:none;border:1px solid rgba(99,102,241,0.35);border-radius:10px;font-weight:600;font-size:14px;margin:0 6px 8px">Huong dan Codex</a>
-      <a href="${baseUrl}/portal" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px">Xem số dư & lịch sử</a>
+      <a href="${safeBase}/portal?key=${encodeURIComponent(apiKey)}" style="display:inline-block;padding:12px 20px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px;margin:0 6px 8px">Mo Portal</a>
+      <a href="${safeBase}/guides/codex?key=${encodeURIComponent(apiKey)}" style="display:inline-block;padding:12px 20px;background:#1a1a2e;color:#c4b5fd;text-decoration:none;border:1px solid rgba(99,102,241,0.35);border-radius:10px;font-weight:600;font-size:14px;margin:0 6px 8px">Huong dan Codex</a>
+      <a href="${safeBase}/portal" style="display:inline-block;padding:12px 28px;background:#6366f1;color:#fff;text-decoration:none;border-radius:10px;font-weight:600;font-size:14px">Xem số dư & lịch sử</a>
     </div>
     <p style="margin:0;font-size:12px;color:#4b5563;text-align:center;line-height:1.6">
       Cần hỗ trợ? Liên hệ qua Zalo hoặc Telegram.<br>
@@ -91,7 +106,7 @@ codex --model gpt-5.5 "hello"</pre>
   await transport.sendMail({
     from: `"GPT API Store" <${process.env.MAIL_USER}>`,
     to,
-    subject: `[GPT API] API Key gói ${packageName} của bạn`,
+    subject: `[GPT API] API Key gói ${safePackage} của bạn`,
     html,
   });
   return true;

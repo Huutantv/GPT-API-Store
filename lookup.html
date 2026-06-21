@@ -109,6 +109,16 @@ body{font-family:'Inter',sans-serif}
 const BASE = window.location.origin;
 let activeTab = 'email';
 
+function escapeHtml(v) {
+  var a = "&", l = a+"lt;", g = a+"gt;", q = a+"quot;", s = a+"#39;";
+  return String(v == null ? "" : v)
+    .replace(/&/g, a+"amp;")
+    .replace(/</g, l)
+    .replace(/>/g, g)
+    .replace(/"/g, q)
+    .replace(/'/g, s);
+}
+
 function switchTab(tab) {
   activeTab = tab;
   const isEmail = tab === 'email';
@@ -253,14 +263,14 @@ function renderOrder(o) {
       <div class="flex items-start justify-between gap-3">
         <div>
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="font-mono font-bold text-sm text-primary">${o.order_code || '\u2014'}</span>
+            <span class="font-mono font-bold text-sm text-primary">${escapeHtml(o.order_code || '\u2014')}</span>
             ${expired ? '<span class="px-2.5 py-1 rounded-full text-xs font-semibold border status-cancelled">&#9888; Key hết hạn</span>' : statusLabel(o.status)}
           </div>
           <p class="text-xs text-gray-500 mt-1">T\u1ea1o l\u00fac: ${fmtDate(o.created_at)}</p>
         </div>
         <div class="text-right shrink-0">
           <p class="text-xl font-black">${Number(o.amount || 0).toLocaleString('vi-VN')}<span class="text-sm font-normal text-gray-400 ml-1">\u0111</span></p>
-          <p class="text-xs text-gray-500">${o.package_id || '\u2014'}</p>
+          <p class="text-xs text-gray-500">${escapeHtml(o.package_id || '\u2014')}</p>
         </div>
       </div>
 
@@ -268,7 +278,7 @@ function renderOrder(o) {
       <div class="grid grid-cols-2 gap-3 text-sm">
         <div class="bg-dark-900 rounded-xl px-3 py-2.5">
           <p class="text-xs text-gray-500 mb-0.5">Kh\u00e1ch h\u00e0ng</p>
-          <p class="font-medium truncate">${o.customer_name || '\u2014'}</p>
+          <p class="font-medium truncate">${escapeHtml(o.customer_name || '\u2014')}</p>
         </div>
         <div class="bg-dark-900 rounded-xl px-3 py-2.5">
           <p class="text-xs text-gray-500 mb-0.5">${Number(o.token_remaining || 0) > 0 ? 'Token' : 'Credit'}</p>
@@ -300,7 +310,7 @@ function renderOrder(o) {
       <!-- Pending info -->
       <div class="bg-yellow-500/5 border border-yellow-500/20 rounded-xl p-4">
         <p class="text-xs text-yellow-400 font-semibold mb-2">&#9679; \u0110ang ch\u1edd thanh to\u00e1n</p>
-        <p class="text-xs text-gray-400">Chuy\u1ec3n kho\u1ea3n v\u1edbi n\u1ed9i dung: <strong class="text-yellow-300 font-mono">${o.order_code}</strong></p>
+        <p class="text-xs text-gray-400">Chuy\u1ec3n kho\u1ea3n v\u1edbi n\u1ed9i dung: <strong class="text-yellow-300 font-mono">${escapeHtml(o.order_code)}</strong></p>
         <a href="/checkout" class="inline-block mt-3 px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">Ti\u1ebfp t\u1ee5c thanh to\u00e1n</a>
       </div>
       ` : ''}
