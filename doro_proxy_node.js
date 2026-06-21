@@ -4508,7 +4508,7 @@ app.get("/api/orders", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const status = req.query.status;
-  const list = status ? orders.listByStatus(status) : orders.listOrders(200);
+  const list = status ? orders.listByStatus(status) : orders.listOrders("", 200);
   res.json({ orders: list });
 });
 
