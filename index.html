@@ -202,12 +202,12 @@ API key truy c&#7853;p GPT-5.5, GPT-5.4, GPT-4o v&#7899;i gi&#225; t&#7889;t nh&
 <div class="max-w-5xl mx-auto px-4 md:px-6">
 <div class="text-center mb-14">
 <h2 class="text-3xl md:text-4xl font-bold mb-4">H&#432;&#7899;ng D&#7851;n C&#224;i &#272;&#7863;t</h2>
-<p class="text-gray-400 text-lg">T&#432;&#417;ng th&#237;ch OpenAI SDK, Cline, Roo Code, OpenClaw, Codex CLI</p>
+<p class="text-gray-400 text-lg">T&#432;&#417;ng th&#237;ch OpenAI SDK, Cline, Kilo Code, OpenClaw, Codex CLI</p>
 </div>
 <div class="space-y-8">
 <div class="flex flex-wrap gap-2 justify-center overflow-x-auto pb-2" id="docTabs">
 <button onclick="showTab('tab-quick')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-primary text-white" data-tab="tab-quick">B&#7855;t &#273;&#7847;u nhanh</button>
-<button onclick="showTab('tab-cline')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-cline">Cline / Roo Code</button>
+<button onclick="showTab('tab-cline')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-cline">Cline / Kilo Code</button>
 <button onclick="showTab('tab-openclaw')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-openclaw">OpenClaw</button>
 <button onclick="showTab('tab-codex')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-codex">Codex CLI</button>
 </div>
@@ -246,16 +246,16 @@ for chunk in response:
 </div>
 </div>
 
-<!-- Cline / Roo Code -->
+<!-- Cline / Kilo Code -->
 <div id="tab-cline" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">C&#224;i v&#224;o Roo Code (VS Code)</h3>
+<h3 class="text-xl font-bold mb-6">Cài đặt Cline / Kilo Code (VS Code)</h3>
 <div class="space-y-5">
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">C&#224;i extension Roo Code</p>
-    <p class="text-xs text-gray-400">VS Code → Extensions (Ctrl+Shift+X) → T&#236;m <strong class="text-white">"Roo Code"</strong> → Install</p>
+    <p class="text-sm font-semibold text-white mb-1">C&#224;i extension Cline hoặc Kilo Code</p>
+    <p class="text-xs text-gray-400">VS Code → Extensions (Ctrl+Shift+X) → T&#236;m <strong class="text-white">"Cline"</strong> hoặc <strong class="text-white">"Kilo Code"</strong> → Install</p>
   </div>
 </div>
 
@@ -263,14 +263,14 @@ for chunk in response:
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span>
   <div class="flex-1">
     <p class="text-sm font-semibold text-white mb-1">M&#7903; Settings → Providers</p>
-    <p class="text-xs text-gray-400">Click icon Roo Code b&#234;n tr&#225;i → &#9881;&#65039; Settings → Tab <strong class="text-white">ROO CODE</strong> → <strong class="text-white">Providers</strong></p>
+    <p class="text-xs text-gray-400"><strong class="text-white">Cline</strong>: mở biểu tượng Cline bên trái → Settings hoặc API Configuration.<br><strong class="text-white">Kilo Code</strong>: mở biểu tượng Kilo Code bên trái → Settings → Provider / API Provider.</p>
   </div>
 </div>
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-2">&#272;i&#7873;n th&#244;ng tin c&#7845;u h&#236;nh</p>
+    <p class="text-sm font-semibold text-white mb-2">Nhập thông tin cấu hình</p>
     <div class="bg-dark-900 rounded-xl p-4 space-y-2.5">
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-gray-500 text-xs w-28 shrink-0">API Provider</span>
@@ -295,31 +295,30 @@ for chunk in response:
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">4</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">B&#7853;t Enable Streaming &#10003;</p>
-    <p class="text-xs text-gray-400">T&#237;ch ch&#7885;n <strong class="text-white">Enable streaming</strong> trong Settings &#273;&#7875; ph&#7843;n h&#7891;i nhanh h&#417;n</p>
+    <p class="text-sm font-semibold text-white mb-1">Bật Streaming nếu có</p>
+    <p class="text-xs text-gray-400">Bật <strong class="text-white">Enable Streaming</strong> trong Settings để phản hồi nhanh hơn.</p>
   </div>
 </div>
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">5</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">Nh&#7845;n Save v&#224; test th&#7917;</p>
-    <p class="text-xs text-gray-400">Click <strong class="text-white">Save</strong> → M&#7903; chat Roo Code → G&#245; th&#7917; m&#7897;t c&#226;u &#273;&#7875; ki&#7875;m tra</p>
+    <p class="text-sm font-semibold text-white mb-1">Lưu cấu hình và test thử</p>
+    <p class="text-xs text-gray-400">Click <strong class="text-white">Save</strong> → Mở chat Cline hoặc Kilo Code → Gõ thử: <code class="bg-dark-900 px-1.5 py-0.5 rounded">Hello, bạn có hoạt động không?</code></p>
   </div>
 </div>
 
 </div>
 
 <div class="mt-5 p-3 bg-primary/10 border border-primary/20 rounded-lg text-xs text-primary">
-  &#128214; Xem h&#432;&#7899;ng d&#7851;n Roo Code chi ti&#7871;t t&#7841;i
-  <a href="https://docs.google.com/document/d/1nMuEJFCw5VVIsREM8xMMUCy2pec54057g_SFN0BT6-E/edit?ouid=114248237795900119340&usp=docs_home&ths=true" target="_blank" rel="noopener noreferrer" class="font-semibold underline hover:text-white transition">Google Docs h&#432;&#7899;ng d&#7851;n c&#7845;u h&#236;nh Roo Code</a>.
+  C&#7845;u h&#236;nh m&#7851;u: API Provider <strong>OpenAI Compatible</strong>, Base URL <code>https://zplay.io.vn/v1</code>, Model <code>gpt-5.5</code>, Enable Streaming <strong>On</strong>.
 </div>
 
 <div class="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">
   &#x2139;&#xFE0F; Model c&#243; th&#7875; ch&#7885;n: <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.5</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.5-turbo</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.4</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-4o</code>
 </div>
 <div class="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-300">
-  &#x26A0;&#xFE0F; Ph&#7843;i ch&#7885;n <strong>OpenAI Compatible</strong> — kh&#244;ng ch&#7885;n Anthropic hay OpenAI m&#7863;c &#273;&#7883;nh
+  &#x26A0;&#xFE0F; Ph&#7843;i ch&#7885;n <strong>OpenAI Compatible</strong>; kh&#244;ng ch&#7885;n Anthropic, OpenAI m&#7863;c &#273;&#7883;nh, Google Gemini ho&#7863;c OpenRouter n&#7871;u kh&#244;ng c&#243; h&#432;&#7899;ng d&#7851;n ri&#234;ng.
 </div>
 </div>
 
@@ -416,8 +415,8 @@ requires_openai_auth = true</code></pre>
 <p class="text-gray-400 text-sm mt-4">Chuy&#7875;n kho&#7843;n ng&#226;n h&#224;ng, Momo, ZaloPay. Nh&#7853;n API key trong 5 ph&#250;t sau thanh to&#225;n.</p>
 </details>
 <details class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
-<summary class="font-semibold cursor-pointer flex items-center justify-between">D&#249;ng &#273;&#432;&#7907;c v&#7899;i Cline, Roo Code, Cursor kh&#244;ng?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
-<p class="text-gray-400 text-sm mt-4">C&#243;. Ch&#7885;n provider OpenAI Compatible, nh&#7853;p Base URL v&#224; API key l&#224; xong. Kh&#225;ch h&#224;ng c&#243; th&#7875; xem th&#234;m <a href="https://docs.google.com/document/d/1nMuEJFCw5VVIsREM8xMMUCy2pec54057g_SFN0BT6-E/edit?ouid=114248237795900119340&usp=docs_home&ths=true" target="_blank" rel="noopener noreferrer" class="text-primary font-semibold hover:underline">h&#432;&#7899;ng d&#7851;n c&#7845;u h&#236;nh Roo Code</a>.</p>
+<summary class="font-semibold cursor-pointer flex items-center justify-between">D&#249;ng &#273;&#432;&#7907;c v&#7899;i Cline, Kilo Code, Cursor kh&#244;ng?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
+<p class="text-gray-400 text-sm mt-4">C&#243;. Ch&#7885;n provider OpenAI Compatible, nh&#7853;p Base URL <code class="text-primary">https://zplay.io.vn/v1</code>, API key v&#224; model <code class="text-primary">gpt-5.5</code> l&#224; xong.</p>
 </details>
 </div>
 </div>
