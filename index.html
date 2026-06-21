@@ -357,17 +357,33 @@ for chunk in response:
 
 <!-- Codex CLI -->
 <div id="tab-codex" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">C&#224;i v&#224;o Codex CLI</h3>
+<h3 class="text-xl font-bold mb-6">C&#7845;u h&#236;nh Codex CLI</h3>
 <div class="space-y-4 text-sm text-gray-300 mb-6">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span><p>Export bi&#7871;n m&#244;i tr&#432;&#7901;ng trong terminal:</p></div>
+<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span><p>T&#7841;o th&#432; m&#7909;c <code>.codex</code> trong th&#432; m&#7909;c g&#7889;c h&#7879; th&#7889;ng.</p></div>
 </div>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-green-400 overflow-x-auto mb-6"><code>export OPENAI_API_KEY="sk-your-api-key"
-export OPENAI_BASE_URL="https://zplay.io.vn/v1"</code></pre>
+<pre class="bg-dark-900 rounded-xl p-4 text-sm text-green-400 overflow-x-auto mb-6"><code>macOS/Linux: ~/.codex/
+Windows: %USERPROFILE%\.codex\</code></pre>
 <div class="space-y-4 text-sm text-gray-300 mb-6">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span><p>Ch&#7841;y Codex v&#7899;i --model:</p></div>
+<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span><p>T&#7841;o t&#7879;p <code>config.toml</code>:</p></div>
 </div>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto mb-6"><code>codex --model gpt-5.5 "Vi&#7871;t gi&#250;p t&#244;i m&#7897;t h&#224;m JavaScript debounce"</code></pre>
-<div class="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm text-yellow-300">&#x26A0;&#xFE0F; N&#7871;u l&#7879;nh env kh&#244;ng &#259;n, ki&#7875;m tra config file c&#7911;a b&#7843;n Codex (~/.codex/config.toml) nh&#432;ng gi&#7919; nguy&#234;n 3 gi&#225; tr&#7883;: API key, Base URL, model.</div>
+<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto mb-6"><code>model_provider = "zplay"
+model = "gpt-5" #model = "gpt-5-codex"
+model_reasoning_effort = "high"
+disable_response_storage = true
+
+[model_providers.zplay]
+name = "zplay"
+base_url = "https://zplay.io.vn/v1"
+wire_api = "responses"
+requires_openai_auth = true</code></pre>
+<div class="space-y-4 text-sm text-gray-300 mb-6">
+<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span><p>T&#7841;o t&#7879;p <code>auth.json</code>:</p></div>
+</div>
+<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto mb-6"><code>{
+  "auth_mode": "apikey",
+  "OPENAI_API_KEY": "your-api-key-here"
+}</code></pre>
+<div class="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm text-yellow-300">L&#432;u &#253;: B&#7841;n c&#7847;n t&#7841;o th&#432; m&#7909;c .codex th&#7911; c&#244;ng, sau &#273;&#243; t&#7841;o config.toml v&#224; auth.json b&#234;n trong.</div>
 <div class="mt-4">
   <a href="https://docs.google.com/document/d/1CeFpdpPA6VsclU8UWWK2iunm18kWj8XyMspxKGgoYrs/edit?tab=t.0" target="_blank" rel="noopener noreferrer" class="text-center px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-sm text-primary font-semibold hover:bg-primary/20 transition">M&#7903; Google Docs chi ti&#7871;t</a>
 </div>

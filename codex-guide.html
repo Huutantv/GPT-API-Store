@@ -31,7 +31,7 @@ body{font-family:'Inter',sans-serif}
     </div>
     <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
       <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Model goi y</p>
-      <code class="text-blue-300 text-sm">gpt-5.5</code>
+      <code class="text-blue-300 text-sm">gpt-5</code>
     </div>
     <div class="bg-dark-700 border border-white/10 rounded-2xl p-5">
       <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">API key</p>
@@ -46,19 +46,19 @@ body{font-family:'Inter',sans-serif}
 
   <section class="grid grid-cols-1 lg:grid-cols-2 gap-5">
     <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
-      <h2 class="text-xl font-bold">2. Windows PowerShell</h2>
+      <h2 class="text-xl font-bold">2. Windows: %USERPROFILE%\.codex\</h2>
       <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code id="winCmd">-</code></pre>
       <button onclick="copyBlock('winCmd', this)" class="px-4 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Copy</button>
     </div>
     <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
-      <h2 class="text-xl font-bold">3. macOS/Linux</h2>
+      <h2 class="text-xl font-bold">3. macOS/Linux: ~/.codex/</h2>
       <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code id="unixCmd">-</code></pre>
       <button onclick="copyBlock('unixCmd', this)" class="px-4 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Copy</button>
     </div>
   </section>
 
   <section class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
-    <h2 class="text-xl font-bold">4. Extension Codex</h2>
+    <h2 class="text-xl font-bold">4. Noi dung cau hinh</h2>
     <pre class="bg-dark-900 rounded-2xl p-4 text-sm text-gray-300 overflow-x-auto"><code id="extensionCfg">-</code></pre>
     <button onclick="copyBlock('extensionCfg', this)" class="px-4 py-2.5 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Copy</button>
   </section>
@@ -66,9 +66,9 @@ body{font-family:'Inter',sans-serif}
   <section class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 space-y-4">
     <h2 class="text-xl font-bold">Loi thuong gap</h2>
     <div class="space-y-3 text-sm text-gray-400 leading-relaxed">
-      <p><strong class="text-gray-200">Codex khong nhan key:</strong> kiem tra bien moi truong hoac file <code class="text-primary">~/.codex/config.toml</code>.</p>
+      <p><strong class="text-gray-200">Codex khong nhan key:</strong> kiem tra file <code class="text-primary">~/.codex/auth.json</code> hoac <code class="text-primary">%USERPROFILE%\.codex\auth.json</code>.</p>
       <p><strong class="text-gray-200">Sai endpoint:</strong> Base URL phai ket thuc bang <code class="text-primary">/v1</code>.</p>
-      <p><strong class="text-gray-200">Sai model:</strong> dung model goi y <code class="text-primary">gpt-5.5</code> de test truoc.</p>
+      <p><strong class="text-gray-200">Sai model:</strong> dung model goi y <code class="text-primary">gpt-5</code> de test truoc. Co the doi sang <code class="text-primary">gpt-5-codex</code> neu can.</p>
     </div>
     <a href="https://docs.google.com/document/d/1CeFpdpPA6VsclU8UWWK2iunm18kWj8XyMspxKGgoYrs/edit?tab=t.0" target="_blank" rel="noopener noreferrer" class="inline-flex px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-sm text-gray-300 hover:text-white transition">Mo Google Docs goc</a>
   </section>
@@ -76,12 +76,14 @@ body{font-family:'Inter',sans-serif}
 
 <script>
 const BASE = window.location.origin;
-const MODEL = "gpt-5.5";
+const MODEL = "gpt-5";
 const apiKey = new URLSearchParams(window.location.search).get("key") || "sk-your-api-key";
 document.getElementById("baseUrl").textContent = `${BASE}/v1`;
-document.getElementById("winCmd").textContent = `$env:OPENAI_API_KEY="${apiKey}"\n$env:OPENAI_BASE_URL="${BASE}/v1"\ncodex --model ${MODEL} "hello"`;
-document.getElementById("unixCmd").textContent = `export OPENAI_API_KEY="${apiKey}"\nexport OPENAI_BASE_URL="${BASE}/v1"\ncodex --model ${MODEL} "hello"`;
-document.getElementById("extensionCfg").textContent = `API Key  : ${apiKey}\nBase URL : ${BASE}/v1\nModel    : ${MODEL}`;
+const configToml = `model_provider = "zplay"\nmodel = "${MODEL}" #model = "gpt-5-codex"\nmodel_reasoning_effort = "high"\ndisable_response_storage = true\n\n[model_providers.zplay]\nname = "zplay"\nbase_url = "https://zplay.io.vn/v1"\nwire_api = "responses"\nrequires_openai_auth = true`;
+const authJson = `{"auth_mode":"apikey","OPENAI_API_KEY":"${apiKey}"}`;
+document.getElementById("winCmd").textContent = `New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.codex"\n@'\n${configToml}\n'@ | Set-Content -Encoding UTF8 -Path "$env:USERPROFILE\\.codex\\config.toml"\n@'\n${JSON.stringify(JSON.parse(authJson), null, 2)}\n'@ | Set-Content -Encoding UTF8 -Path "$env:USERPROFILE\\.codex\\auth.json"`;
+document.getElementById("unixCmd").textContent = `mkdir -p ~/.codex\ncat > ~/.codex/config.toml <<'EOF'\n${configToml}\nEOF\ncat > ~/.codex/auth.json <<'EOF'\n${JSON.stringify(JSON.parse(authJson), null, 2)}\nEOF`;
+document.getElementById("extensionCfg").textContent = `config.toml\n\n${configToml}\n\nauth.json\n\n${JSON.stringify(JSON.parse(authJson), null, 2)}\n\nVi tri tep cau hinh:\nmacOS/Linux: ~/.codex/\nWindows: %USERPROFILE%\\.codex\\\n\nLuu y: Can tao thu muc .codex thu cong neu chua co, sau do tao config.toml va auth.json ben trong.`;
 function copyBlock(id, btn) {
   navigator.clipboard.writeText(document.getElementById(id).textContent).then(() => {
     const old = btn.textContent;

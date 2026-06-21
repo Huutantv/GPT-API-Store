@@ -189,7 +189,7 @@ body{font-family:'Inter',sans-serif}
           </div>
           <div class="flex items-center justify-between gap-3">
             <span class="text-sm text-gray-400">Model</span>
-            <code id="codexOnboardingModel" class="text-xs text-blue-300">gpt-5.5</code>
+            <code id="codexOnboardingModel" class="text-xs text-blue-300">gpt-5</code>
           </div>
           <button onclick="copyCodexConfig(this)" class="w-full px-4 py-2.5 bg-blue-500/10 border border-blue-500/30 hover:bg-blue-500/20 rounded-xl text-sm font-semibold text-blue-300 transition">Copy cấu hình Codex</button>
         </div>
@@ -202,7 +202,7 @@ body{font-family:'Inter',sans-serif}
         <div class="flex flex-wrap items-center gap-2 mb-4">
           <button id="codexTabWindows" onclick="setCodexTab('windows')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-white">Windows</button>
           <button id="codexTabUnix" onclick="setCodexTab('unix')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10">macOS/Linux</button>
-          <button id="codexTabExtension" onclick="setCodexTab('extension')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10">Extension</button>
+          <button id="codexTabConfig" onclick="setCodexTab('config')" class="px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10">config.toml</button>
         </div>
         <div class="space-y-4">
           <div>
@@ -211,20 +211,20 @@ body{font-family:'Inter',sans-serif}
           </div>
           <div>
             <div class="flex items-center justify-between gap-3 mb-2">
-              <p class="text-xs text-gray-500 uppercase tracking-wider">2. Dán cấu hình</p>
+              <p class="text-xs text-gray-500 uppercase tracking-wider">2. Tạo thư mục .codex và dán cấu hình</p>
               <button onclick="copyCodexVisibleCommand(this)" class="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-gray-300 hover:text-white transition">Copy lệnh</button>
             </div>
             <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="codexCommandBlock">-</code></pre>
           </div>
           <div>
             <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">3. Chạy thử</p>
-            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-green-300 overflow-x-auto"><code id="codexTestCmd">codex --model gpt-5.5 "hello"</code></pre>
+            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-green-300 overflow-x-auto"><code id="codexTestCmd">codex --model gpt-5 "hello"</code></pre>
           </div>
           <details class="bg-dark-900/70 border border-white/10 rounded-2xl p-4">
             <summary class="cursor-pointer text-sm font-semibold text-gray-200">4. Lỗi thường gặp</summary>
             <div class="mt-3 space-y-2 text-xs text-gray-400 leading-relaxed">
-              <p>Nếu Codex không nhận key, hãy mở file <code class="text-primary">~/.codex/config.toml</code> và kiểm tra API key, Base URL, model.</p>
-              <p>Nếu chạy trên Windows, dùng PowerShell command trong tab Windows thay vì lệnh export.</p>
+              <p>Nếu Codex không nhận key, hãy kiểm tra <code class="text-primary">config.toml</code> và <code class="text-primary">auth.json</code> trong thư mục <code class="text-primary">.codex</code>.</p>
+              <p>Vị trí: macOS/Linux <code class="text-primary">~/.codex/</code>, Windows <code class="text-primary">%USERPROFILE%\.codex\</code>.</p>
             </div>
           </details>
           <button onclick="finishCodexOnboarding()" class="w-full px-5 py-3 bg-green-500/10 border border-green-500/30 hover:bg-green-500/20 rounded-xl text-sm font-semibold text-green-300 transition">Tôi đã setup xong</button>
@@ -236,7 +236,7 @@ body{font-family:'Inter',sans-serif}
 
 <script>
 const BASE = window.location.origin;
-const CODEX_MODEL = "gpt-5.5";
+const CODEX_MODEL = "gpt-5";
 let selectedPkg = null;
 let currentOrder = null;
 let pollTimer = null;
@@ -420,32 +420,29 @@ function closeCodexOnboardingModal() {
 
 function getCodexCommands(tab = codexActiveTab) {
   const key = document.getElementById("codexOnboardingKey")?.textContent || "sk-...";
-  const baseUrl = `${BASE}/v1`;
+  const configToml = `model_provider = "zplay"\nmodel = "${CODEX_MODEL}" #model = "gpt-5-codex"\nmodel_reasoning_effort = "high"\ndisable_response_storage = true\n\n[model_providers.zplay]\nname = "zplay"\nbase_url = "https://zplay.io.vn/v1"\nwire_api = "responses"\nrequires_openai_auth = true`;
+  const authJson = JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: key }, null, 2);
   if (tab === "unix") {
-    return `export OPENAI_API_KEY="${key}"\nexport OPENAI_BASE_URL="${baseUrl}"\ncodex --model ${CODEX_MODEL} "hello"`;
+    return `mkdir -p ~/.codex\ncat > ~/.codex/config.toml <<'EOF'\n${configToml}\nEOF\ncat > ~/.codex/auth.json <<'EOF'\n${authJson}\nEOF`;
   }
-  if (tab === "extension") {
-    return `API Key  : ${key}\nBase URL : ${baseUrl}\nModel    : ${CODEX_MODEL}`;
+  if (tab === "config") {
+    return `config.toml\n\n${configToml}\n\nauth.json\n\n${authJson}\n\nVị trí tệp cấu hình:\nmacOS/Linux: ~/.codex/\nWindows: %USERPROFILE%\\.codex\\\n\nLưu ý: Bạn cần tạo thư mục .codex thủ công, sau đó tạo config.toml và auth.json bên trong.`;
   }
-  return `$env:OPENAI_API_KEY="${key}"\n$env:OPENAI_BASE_URL="${baseUrl}"\ncodex --model ${CODEX_MODEL} "hello"`;
+  return `New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\\.codex"\n@'\n${configToml}\n'@ | Set-Content -Encoding UTF8 -Path "$env:USERPROFILE\\.codex\\config.toml"\n@'\n${authJson}\n'@ | Set-Content -Encoding UTF8 -Path "$env:USERPROFILE\\.codex\\auth.json"`;
 }
 
 function setCodexTab(tab) {
   codexActiveTab = tab;
-  ["windows", "unix", "extension"].forEach(name => {
+  ["windows", "unix", "config"].forEach(name => {
     const btn = document.getElementById(`codexTab${name[0].toUpperCase()}${name.slice(1)}`);
     if (!btn) return;
     btn.className = name === tab
       ? "px-3 py-2 rounded-lg text-xs font-semibold bg-primary text-white"
       : "px-3 py-2 rounded-lg text-xs font-semibold bg-dark-900 text-gray-400 border border-white/10";
   });
-  document.getElementById("codexInstallCmd").textContent = tab === "extension"
-    ? "Cài extension Codex, sau đó chọn OpenAI Compatible"
-    : "npm install -g @openai/codex";
+  document.getElementById("codexInstallCmd").textContent = "npm install -g @openai/codex";
   document.getElementById("codexCommandBlock").textContent = getCodexCommands(tab);
-  document.getElementById("codexTestCmd").textContent = tab === "extension"
-    ? `Gửi thử prompt: hello, model ${CODEX_MODEL}`
-    : `codex --model ${CODEX_MODEL} "hello"`;
+  document.getElementById("codexTestCmd").textContent = `codex --model ${CODEX_MODEL} "hello"`;
 }
 
 function copyCodexApiKey(btn) {
