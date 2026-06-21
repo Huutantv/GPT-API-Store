@@ -427,79 +427,8 @@ const AUTO_RECOVERY_MS = Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"); 
 const AUTO_SOFT_RECOVERY_SUCCESS = Number(process.env.DORO_AUTO_SOFT_RECOVERY_SUCCESS || "2");
 const AUTO_SOFT_RECOVERY_WINDOW_MS = Number(process.env.DORO_AUTO_SOFT_RECOVERY_WINDOW_MS || "30000");
 
-function isBackendHealthy(id) {
-  const state = _backendHealth[id];
-  if (!state || !state.downSince) return true;
-  // Đã đủ thời gian recovery → cho phép thử lại
-  if (Date.now() - state.downSince >= AUTO_RECOVERY_MS) {
-    state.downSince = null;
-    state.errors = 0;
-    state.windowStart = Date.now();
-    addLog(`auto-mode: backend ${id} recovery window expired, re-enabled for retry`);
-    notifyTelegram(
-      `\u2139\ufe0f <b>Auto mode: Th\u1eed l\u1ea1i Backend ${id}</b>\n` +
-      `\ud83d\udd04 Sau ${Math.round(AUTO_RECOVERY_MS/1000)}s, c\u1ea3 2 backend ho\u1ea1t \u0111\u1ed9ng tr\u1edf l\u1ea1i\n` +
-      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
-    );
-    return true;
-  }
-  return false;
-}
+// (dead code removed: old isBackendHealthy/trackBackendError/trackBackendSuccess v1 - replaced by signal-aware versions below)
 
-function trackBackendError(id, status) {
-  if (!_backendHealth[id]) return;
-  if (String(process.env.DORO_AUTO_MODE || "0") !== "1") return;
-  if (![502, 503, 504, 500].includes(status)) return;
-
-  const state = _backendHealth[id];
-  const now = Date.now();
-  if (now - state.windowStart > AUTO_ERROR_WINDOW_MS) {
-    state.errors = 0;
-    state.windowStart = now;
-  }
-  state.errors += 1;
-
-  if (state.errors >= AUTO_ERROR_THRESHOLD && !state.downSince) {
-    state.downSince = now;
-    state.downCount += 1;
-    addLog(`auto-mode: backend ${id} marked DOWN after ${state.errors} errors`);
-    notifyTelegram(
-      `\ud83d\udd34 <b>Auto mode: Backend ${id} t\u1ea1m ng\u1eaft</b>\n` +
-      `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
-      `\u26a0\ufe0f ${state.errors} l\u1ed7i li\u00ean ti\u1ebfp\n` +
-      `\ud83d\udd04 T\u1ef1 \u0111\u1ed9ng chuy\u1ec3n sang backend c\u00f2n l\u1ea1i\n` +
-      `\u23f0 S\u1ebd th\u1eed l\u1ea1i sau ${Math.round(AUTO_RECOVERY_MS/1000)}s\n` +
-      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
-    );
-  }
-}
-
-function trackBackendSuccess(id) {
-  if (!_backendHealth[id]) return;
-  const state = _backendHealth[id];
-  if (state.downSince) {
-    backendWarmupPass(id);
-    const now = Date.now();
-    const warmupSuccess = state.warmupSuccess || 0;
-    const warmupStart = state.warmupStart || now;
-    if (now - warmupStart <= AUTO_SOFT_RECOVERY_WINDOW_MS && warmupSuccess < AUTO_SOFT_RECOVERY_SUCCESS) {
-      addLog(`auto-mode: backend ${id} warmup ${warmupSuccess}/${AUTO_SOFT_RECOVERY_SUCCESS}`);
-      return;
-    }
-    state.downSince = null;
-    state.errors = 0;
-    state.warmupSuccess = 0;
-    state.warmupStart = null;
-    addLog(`auto-mode: backend ${id} recovered`);
-    notifyTelegram(
-      `\u2705 <b>Auto mode: Backend ${id} \u0111\u00e3 ph\u1ee5c h\u1ed3i</b>\n` +
-      `\ud83d\udfe2 Ho\u1ea1t \u0111\u1ed9ng b\u00ecnh th\u01b0\u1eddng tr\u1edf l\u1ea1i\n` +
-      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
-    );
-  } else {
-    state.errors = Math.max(0, state.errors - 1);
-  }
-}
 
 function backendFailureSignal(status, text, code) {
   const numericStatus = Number(status) || 0;
@@ -901,6 +830,11 @@ function backendHeaders(apiKey, extra = {}) {
 
 function isRetryableStatus(status) {
   return [408, 401, 402, 403, 429, 500, 502, 503, 504, 524].includes(status);
+}
+
+// 401/402/403 là lỗi auth/billing per-account, không nên retry key khác trong cùng backend
+function isRetryableAcrossKeys(status) {
+  return [408, 429, 500, 502, 503, 504, 524].includes(status);
 }
 
 function publicModelName(requestedModel, backendModel) {
@@ -2700,7 +2634,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
       if (err.status) {
-        if (!wroteResponse && isRetryableStatus(err.status) && i < ordered.length - 1) {
+        if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) {
             obs.is_retry = true;
             obs.retry_count += 1;
@@ -2743,7 +2677,11 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
     }
   }
-  res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
+  // Throw để backend-chain wrapper có thể failover sang backend khác
+  const chainErr = new Error("All keys exhausted for this backend");
+  chainErr.status = lastError ? lastError.status : 502;
+  chainErr.text = lastError ? lastError.text : "";
+  throw chainErr;
 }
 
 async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth = 0) {
@@ -2867,7 +2805,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
           return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
         }
-        if (!wroteResponse && isRetryableStatus(err.status) && i < ordered.length - 1) {
+        if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           continue;
         }
@@ -2903,7 +2841,11 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       return res.end();
     }
   }
-  return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
+  // Throw để backend-chain wrapper có thể failover sang backend khác
+  const chainErr = new Error("All keys exhausted for this backend");
+  chainErr.status = lastError ? lastError.status : 502;
+  chainErr.text = lastError ? lastError.text : "";
+  throw chainErr;
 }
 
 function friendlyErrorMessage(err, backendModel, publicModel) {
@@ -3150,15 +3092,36 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   addLog(`proxy anthropic->openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
   printLog(`[proxy] anthropic->openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
   if (useStream) {
-    const payload = anthropicToOpenAI(body, settings.backendModel);
-    payload.model = settings.backendModel;
-    payload.messages = prependIdentityGuard(payload.messages, publicModel);
-    payload.messages = prependEncodingGuard(payload.messages);
-    applyBackendPayloadLimits(payload, settings);
-    applyBackendMessageCompatibility(payload, settings);
-    applyBackendToolCompatibility(payload, settings);
-    const backendUrl = `${settings.baseUrl}/chat/completions`;
-    return streamAnthropicWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+    // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
+    for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
+      const chainSettings = settingsChain[chainIdx];
+      req.obs.backend_id = chainSettings.profileId || "";
+      req.obs.backend_profile = chainSettings.profileLabel || chainSettings.profileId || "";
+      req.obs.backend_model = chainSettings.backendModel || "";
+      req.obs.backend_base_url = chainSettings.baseUrl || "";
+      const payload = anthropicToOpenAI(body, chainSettings.backendModel);
+      payload.model = chainSettings.backendModel;
+      payload.messages = prependIdentityGuard(payload.messages, publicModel);
+      payload.messages = prependEncodingGuard(payload.messages);
+      applyBackendPayloadLimits(payload, chainSettings);
+      applyBackendMessageCompatibility(payload, chainSettings);
+      applyBackendToolCompatibility(payload, chainSettings);
+      const backendUrl = `${chainSettings.baseUrl}/chat/completions`;
+      try {
+        await streamAnthropicWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+        return;
+      } catch (streamErr) {
+        if (res.headersSent || chainIdx >= settingsChain.length - 1) {
+          if (!res.headersSent) return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
+          return;
+        }
+        addLog(`stream anthropic backend-chain failover from backend ${chainSettings.profileId} to ${settingsChain[chainIdx+1].profileId} err=${streamErr.status||streamErr.message}`);
+        req.obs.is_retry = true;
+        req.obs.retry_count = (req.obs.retry_count || 0) + 1;
+        continue;
+      }
+    }
+    return;
   }
   try {
     const { response, settings: finalSettings, data } = await postWithBackendChain(settingsChain, (profileSettings) => {
@@ -4097,16 +4060,37 @@ async function openAIChatCompletionsHandler(req, res) {
   req.obs.backend_base_url = settings.baseUrl || "";
   addLog(`proxy openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
   if (body.stream) {
-    const payload = { ...body, model: settings.backendModel };
-    if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
-    if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
-    if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
-    applyBackendPayloadLimits(payload, settings);
-    normalizeOpenAIChatPayloadForBackend(payload, settings);
-    applyBackendMessageCompatibility(payload, settings);
-    applyBackendToolCompatibility(payload, settings);
-    const backendUrl = `${settings.baseUrl}/chat/completions`;
-    return streamOpenAIWithFailover(res, backendUrl, payload, settings.apiKeys, publicModel, settings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+    // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
+    for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
+      const chainSettings = settingsChain[chainIdx];
+      req.obs.backend_id = chainSettings.profileId || "";
+      req.obs.backend_profile = chainSettings.profileLabel || chainSettings.profileId || "";
+      req.obs.backend_model = chainSettings.backendModel || "";
+      req.obs.backend_base_url = chainSettings.baseUrl || "";
+      const payload = { ...body, model: chainSettings.backendModel };
+      if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
+      if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+      if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
+      applyBackendPayloadLimits(payload, chainSettings);
+      normalizeOpenAIChatPayloadForBackend(payload, chainSettings);
+      applyBackendMessageCompatibility(payload, chainSettings);
+      applyBackendToolCompatibility(payload, chainSettings);
+      const backendUrl = `${chainSettings.baseUrl}/chat/completions`;
+      try {
+        await streamOpenAIWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+        return;
+      } catch (streamErr) {
+        if (res.headersSent || chainIdx >= settingsChain.length - 1) {
+          if (!res.headersSent) return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
+          return;
+        }
+        addLog(`stream openai backend-chain failover from backend ${chainSettings.profileId} to ${settingsChain[chainIdx+1].profileId} err=${streamErr.status||streamErr.message}`);
+        req.obs.is_retry = true;
+        req.obs.retry_count = (req.obs.retry_count || 0) + 1;
+        continue;
+      }
+    }
+    return;
   }
   try {
     const internalTools = serverToolsEnabled() ? serverToolSchemas() : [];
