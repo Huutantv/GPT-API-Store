@@ -41,6 +41,8 @@ const {
   getTokenPerRequest,
 } = require("./package_quotas");
 
+const orderRateMap = new Map();
+
 function firstEnv(...names) {
   const fallback = names[names.length - 1];
   const actualNames = typeof fallback === "object" && fallback && "default" in fallback
@@ -4333,7 +4335,6 @@ app.post("/api/orders/create", async (req, res) => {
   // Rate limit: tối đa 5 đơn hàng / IP / giờ
   const clientIp = (req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
   if (clientIp) {
-    if (!orderRateMap) orderRateMap = new Map();
     const now = Date.now();
     const windowMs = 60 * 60 * 1000;
     const maxOrders = 5;
@@ -4346,7 +4347,6 @@ app.post("/api/orders/create", async (req, res) => {
       try { addLog(`RATELIMIT orders/create ip=${clientIp} rejected (${entry.count}/${maxOrders})`); } catch (_) {}
       return res.status(429).json({ detail: "Quá nhiều yêu cầu tạo đơn hàng. Vui lòng thử lại sau 1 giờ." });
     }
-    entry.count++;
   }
 
   // Validate email format
@@ -4384,11 +4384,21 @@ app.post("/api/orders/create", async (req, res) => {
   const safeEmail = String(customerEmail || "").trim().slice(0, 200);
 
   try {
+    const bankAccount = String(process.env.BANK_ACCOUNT || "").trim();
+    const bankCode    = String(process.env.BANK_CODE || "").trim();
+    const bankOwner   = String(process.env.BANK_OWNER || "").trim();
+    const bankName    = String(process.env.BANK_NAME || "").trim();
+    if (!bankAccount || !bankCode || !bankOwner || !bankName) {
+      try { addLog("orders/create missing BANK_* config; refused to create payment QR"); } catch (_) {}
+      return res.status(500).json({ detail: "Chưa cấu hình thông tin ngân hàng để tạo QR thanh toán." });
+    }
+
+    if (clientIp) {
+      const entry = orderRateMap.get(clientIp);
+      if (entry) entry.count++;
+    }
+
     const order = orders.createOrder({ packageId, customerName: rawName, customerEmail: safeEmail, customerPhone: rawPhone });
-    const bankAccount = process.env.BANK_ACCOUNT || "0000000000";
-    const bankCode    = process.env.BANK_CODE    || "MB";
-    const bankOwner   = process.env.BANK_OWNER   || "NGUYEN VAN A";
-    const bankName    = process.env.BANK_NAME    || "MB Bank";
     const baseUrl     = process.env.DORO_PUBLIC_URL || `http://localhost:${port}`;
     const qrUrl = `https://img.vietqr.io/image/${bankCode}-${bankAccount}-compact2.png?amount=${order.amount}&addInfo=${order.order_code}&accountName=${encodeURIComponent(bankOwner)}`;
     res.json({ ok: true, order, qr_url: qrUrl, bank_account: bankAccount, bank_code: bankCode, bank_owner: bankOwner, bank_name: bankName, base_url: baseUrl });

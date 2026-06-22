@@ -65,7 +65,7 @@ body{font-family:'Inter',sans-serif}
     <p id="step2Err" class="text-red-400 text-sm hidden"></p>
     <div class="flex gap-3">
       <button onclick="goStep1()" class="px-6 py-3 bg-dark-700 border border-white/10 rounded-xl text-sm font-semibold hover:bg-dark-600 transition">← Quay lại</button>
-      <button onclick="goStep3()" class="flex-1 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold transition">Tạo đơn hàng →</button>
+      <button id="createOrderBtn" onclick="goStep3()" class="flex-1 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold transition">Tạo đơn hàng →</button>
     </div>
   </div>
 
@@ -241,6 +241,7 @@ let selectedPkg = null;
 let currentOrder = null;
 let pollTimer = null;
 let codexActiveTab = "windows";
+let creatingOrder = false;
 
 // Load packages
 fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
@@ -322,6 +323,7 @@ function goStep2() {
 }
 
 async function goStep3() {
+  if (creatingOrder) return;
   const name = document.getElementById("custName").value.trim();
   const email = document.getElementById("custEmail").value.trim();
   const phone = document.getElementById("custPhone").value.trim();
@@ -330,20 +332,47 @@ async function goStep3() {
   if (!email || !email.includes("@")) { err.textContent = "Email không hợp lệ"; err.classList.remove("hidden"); return; }
   err.classList.add("hidden");
 
-  const r = await fetch(`${BASE}/api/orders/create`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ packageId: selectedPkg.id, customerName: name, customerEmail: email, customerPhone: phone }),
-  });
-  const data = await r.json();
-  if (!data.ok) { err.textContent = data.detail || "Lỗi tạo đơn hàng"; err.classList.remove("hidden"); return; }
+  const btn = document.getElementById("createOrderBtn");
+  creatingOrder = true;
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("opacity-60", "cursor-not-allowed");
+    btn.textContent = "Đang tạo đơn...";
+  }
 
-  currentOrder = data.order;
-  document.getElementById("step2").classList.add("hidden");
-  document.getElementById("step3").classList.remove("hidden");
-  setStepInd(3);
-  renderPayment(data);
-  startPolling();
+  try {
+    const r = await fetch(`${BASE}/api/orders/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ packageId: selectedPkg.id, customerName: name, customerEmail: email, customerPhone: phone }),
+    });
+    const text = await r.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+
+    if (!r.ok || !data.ok) {
+      err.textContent = data.detail || `Không tạo được đơn hàng (HTTP ${r.status}). Vui lòng thử lại sau.`;
+      err.classList.remove("hidden");
+      return;
+    }
+
+    currentOrder = data.order;
+    document.getElementById("step2").classList.add("hidden");
+    document.getElementById("step3").classList.remove("hidden");
+    setStepInd(3);
+    renderPayment(data);
+    startPolling();
+  } catch (_) {
+    err.textContent = "Không kết nối được máy chủ tạo đơn hàng. Vui lòng thử lại.";
+    err.classList.remove("hidden");
+  } finally {
+    creatingOrder = false;
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("opacity-60", "cursor-not-allowed");
+      btn.textContent = "Tạo đơn hàng →";
+    }
+  }
 }
 
 function renderPayment(data) {
