@@ -385,6 +385,13 @@ body{font-family:'Inter',sans-serif}
           <p class="text-xs text-gray-500" id="b4Summary">&mdash;</p>
         </div>
       </label>
+      <label class="flex items-center gap-3 bg-dark-900 hover:bg-dark-600 border border-white/10 rounded-lg px-4 py-3 cursor-pointer transition">
+        <input type="checkbox" id="chkBackend5" class="w-5 h-5 accent-pink-500">
+        <div class="flex-1">
+          <p class="font-semibold text-sm flex items-center gap-2"><span class="w-2 h-2 bg-pink-400 rounded-full"></span> Backend 5 <span class="text-[10px] font-normal text-pink-300/80">(context + vision 5v)</span></p>
+          <p class="text-xs text-gray-500" id="b5Summary">&mdash;</p>
+        </div>
+      </label>
     </div>
     <div id="routerModeBox" class="hidden space-y-3">
       <label class="text-xs text-gray-400 block mb-1">Khi ch&#7841;y nhi&#7873;u backend</label>
@@ -397,14 +404,15 @@ body{font-family:'Inter',sans-serif}
         <div class="flex items-center justify-between gap-3">
           <div>
             <p class="text-sm font-semibold text-white">Chia t&#7843;i theo %</p>
-            <p class="text-xs text-gray-500 mt-1">Nh&#7853;p tr&#7885;ng s&#7889; cho Backend 1-4. Proxy s&#7869; t&#7921; chu&#7849;n h&#243;a t&#7893;ng v&#7873; 100%.</p>
+            <p class="text-xs text-gray-500 mt-1">Nh&#7853;p tr&#7885;ng s&#7889; cho Backend 1-5. Proxy s&#7869; t&#7921; chu&#7849;n h&#243;a t&#7893;ng v&#7873; 100%.</p>
           </div>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
           <div><label class="text-xs text-gray-400 block mb-1">Backend 1</label><input id="cfgBackend1WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
           <div><label class="text-xs text-gray-400 block mb-1">Backend 2</label><input id="cfgBackend2WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
           <div><label class="text-xs text-gray-400 block mb-1">Backend 3</label><input id="cfgBackend3WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
           <div><label class="text-xs text-gray-400 block mb-1">Backend 4</label><input id="cfgBackend4WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 5</label><input id="cfgBackend5WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
         </div>
         <div class="space-y-2">
           <div class="h-3 bg-dark-600 rounded-full overflow-hidden flex">
@@ -412,12 +420,14 @@ body{font-family:'Inter',sans-serif}
             <div id="weightB2Bar" class="h-full bg-purple-500 transition-all" style="width:25%"></div>
             <div id="weightB3Bar" class="h-full bg-green-500 transition-all" style="width:25%"></div>
             <div id="weightB4Bar" class="h-full bg-yellow-500 transition-all" style="width:25%"></div>
+            <div id="weightB5Bar" class="h-full bg-pink-500 transition-all" style="width:25%"></div>
           </div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs text-gray-400">
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs text-gray-400">
             <span><span class="inline-block w-2 h-2 bg-blue-400 rounded-full mr-1"></span>Backend 1: <b id="weightB1Text" class="text-blue-300">50%</b></span>
             <span><span class="inline-block w-2 h-2 bg-purple-400 rounded-full mr-1"></span>Backend 2: <b id="weightB2Text" class="text-purple-300">50%</b></span>
             <span><span class="inline-block w-2 h-2 bg-green-400 rounded-full mr-1"></span>Backend 3: <b id="weightB3Text" class="text-green-300">25%</b></span>
             <span><span class="inline-block w-2 h-2 bg-yellow-400 rounded-full mr-1"></span>Backend 4: <b id="weightB4Text" class="text-yellow-300">25%</b></span>
+            <span><span class="inline-block w-2 h-2 bg-pink-400 rounded-full mr-1"></span>Backend 5: <b id="weightB5Text" class="text-pink-300">25%</b></span>
           </div>
         </div>
       </div>
@@ -549,6 +559,64 @@ body{font-family:'Inter',sans-serif}
         <p id="backend4Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
       <button onclick="saveBackendConfig('4')" class="w-full md:w-auto px-5 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 4</button>
+    </div>
+  </div>
+
+  <!-- Backend 5 (context) -->
+  <div class="bg-dark-700 border border-pink-500/20 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-pink-400 rounded-full"></span> Backend 5 <span class="text-xs font-normal text-gray-400">&middot; Context</span></h3>
+      <span class="text-xs text-gray-500" id="backend5Status">&mdash;</span>
+    </div>
+    <p class="text-xs text-gray-400">Backend x&#7917; l&#253; text/context. Khi tin nh&#7855;n m&#7899;i nh&#7845;t c&#243; &#7843;nh, request s&#7869; t&#7921; &#273;&#7897;ng chuy&#7875;n sang Backend 5 Vision (5v) b&#234;n d&#432;&#7899;i.</p>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+        <input id="cfg5BaseUrl" placeholder="https://backend5.example/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+        <input id="cfg5Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+        <div id="backend5KeysList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="newBackend5Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <button onclick="addBackendKey('5')" class="px-4 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+        </div>
+        <p id="backend5Msg" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+      <button onclick="saveBackendConfig('5')" class="w-full md:w-auto px-5 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5</button>
+    </div>
+  </div>
+
+  <!-- Backend 5 Vision (5v) -->
+  <div class="bg-dark-700 border border-fuchsia-500/20 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-fuchsia-400 rounded-full"></span> Backend 5 Vision <span class="text-xs font-normal text-gray-400">&middot; 5v &#8226; &#273;&#7885;c &#7843;nh</span></h3>
+      <span class="text-xs text-gray-500" id="backend5vStatus">&mdash;</span>
+    </div>
+    <p class="text-xs text-gray-400">Backend ph&#7909; tr&#7907; &#273;&#7885;c &#7843;nh, &#273;i k&#232;m Backend 5. Ch&#7881; ho&#7841;t &#273;&#7897;ng khi tin nh&#7855;n user m&#7899;i nh&#7845;t c&#243; &#7843;nh. N&#7871;u thi&#7871;u Base URL / Model / Key, request c&#243; &#7843;nh s&#7869; b&#7883; t&#7915; ch&#7889;i v&#7899;i l&#7895;i c&#7845;u h&#236;nh r&#245; r&#224;ng.</p>
+    <div class="space-y-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+        <input id="cfg5vBaseUrl" placeholder="https://vision.example/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Vision Model</label>
+        <input id="cfg5vModel" placeholder="qwen-vl / gpt-4o ..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+        <div id="backend5vKeysList" class="space-y-2 mb-2"></div>
+        <div class="flex gap-2">
+          <input id="newBackend5vKey" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <button onclick="addBackendKey('5v')" class="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+        </div>
+        <p id="backend5vMsg" class="text-xs text-gray-400 mt-1"></p>
+      </div>
+      <button onclick="saveBackend5VisionConfig()" class="w-full md:w-auto px-5 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5 Vision</button>
     </div>
   </div>
 
@@ -937,6 +1005,8 @@ function monitorDebugText(row) {
     "Model: " + (row.model_requested || ""),
     "Backend: " + (row.backend_profile || row.backend || row.backend_id || ""),
     "Backend model: " + (row.backend_model || ""),
+    "Type: " + (row.request_type || "") + (row.image_count ? (" (img " + row.image_count + ")") : ""),
+    "Route: " + (row.route_target || "") + (row.route_reason ? (" — " + row.route_reason) : ""),
     "Status: " + (row.status || ""),
     "Upstream: " + (row.final_backend_status || ""),
     "Retry: " + (row.retry_count || 0),
@@ -1502,12 +1572,12 @@ function normalizeWeight(value) {
 }
 
 function currentBackendWeights() {
-  var values = [1, 2, 3, 4].map(function(id) {
+  var values = [1, 2, 3, 4, 5].map(function(id) {
     var input = document.getElementById("cfgBackend" + id + "WeightInput");
     return normalizeWeight(input ? input.value : 0);
   });
   var total = values.reduce(function(sum, value) { return sum + value; }, 0);
-  if (total <= 0) values = [25, 25, 25, 25], total = 100;
+  if (total <= 0) values = [20, 20, 20, 20, 20], total = 100;
   var used = 0;
   return values.map(function(value, index) {
     if (index === values.length - 1) return 100 - used;
@@ -1519,7 +1589,7 @@ function currentBackendWeights() {
 
 function syncBackendWeights() {
   var weights = currentBackendWeights();
-  [1, 2, 3, 4].forEach(function(id, index) {
+  [1, 2, 3, 4, 5].forEach(function(id, index) {
     var pct = weights[index];
     var text = document.getElementById("weightB" + id + "Text");
     var bar = document.getElementById("weightB" + id + "Bar");
@@ -1539,7 +1609,7 @@ function updateBackendRouterStatus(data) {
   var el = document.getElementById("activeStatus");
   if (!el) return;
 
-  var selected = [1, 2, 3, 4].filter(function(id) {
+  var selected = [1, 2, 3, 4, 5].filter(function(id) {
     var el = document.getElementById("chkBackend" + id);
     return el && el.checked;
   });
@@ -1553,9 +1623,9 @@ async function loadBackendConfig() {
   // Active backend → checkbox state
   var active = data.active_backend || "1";
   var activeIds = active === "all"
-    ? ["1", "2", "3", "4"]
+    ? ["1", "2", "3", "4", "5"]
     : (active === "both" ? ["1", "2"] : String(active).split(",").map(function(s){ return s.trim(); }));
-  [1, 2, 3, 4].forEach(function(id) {
+  [1, 2, 3, 4, 5].forEach(function(id) {
     var el = document.getElementById("chkBackend" + id);
     if (el) el.checked = activeIds.indexOf(String(id)) !== -1;
   });
@@ -1570,7 +1640,7 @@ async function loadBackendConfig() {
   autoModeEl.dataset.dirty = "0";
   document.getElementById("autoModeInfo").classList.toggle("hidden", !autoMode);
   if (autoMode && data.backend_health) {
-    var statusText = [1, 2, 3, 4].map(function(id) {
+    var statusText = [1, 2, 3, 4, 5].map(function(id) {
       var health = data.backend_health[String(id)] || {};
       var reason = health.last_reason ? ", " + health.last_reason : "";
       return "B" + id + ": " + (health.healthy ? "\ud83d\udfe2 OK" : "\ud83d\udd34 DOWN") + " (" + (health.errors || 0) + " err" + reason + ")";
@@ -1588,7 +1658,7 @@ async function loadBackendConfig() {
   var profiles = data.backend_profiles || [];
   var byId = {};
   profiles.forEach(function(profile) { byId[profile.id] = profile; });
-  [1, 2, 3, 4].forEach(function(id) {
+  [1, 2, 3, 4, 5].forEach(function(id) {
     var profile = byId[String(id)] || {};
     var summary = document.getElementById("b" + id + "Summary");
     var baseUrl = document.getElementById("cfg" + id + "BaseUrl");
@@ -1601,6 +1671,19 @@ async function loadBackendConfig() {
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
     if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], String(id));
   });
+
+  // Backend 5 Vision (5v) profile
+  var vision = data.backend5_vision || {};
+  var b5vBaseUrl = document.getElementById("cfg5vBaseUrl");
+  var b5vModel = document.getElementById("cfg5vModel");
+  var b5vStatus = document.getElementById("backend5vStatus");
+  var b5vKeyList = document.getElementById("backend5vKeysList");
+  if (b5vBaseUrl) b5vBaseUrl.value = vision.base_url || "";
+  if (b5vModel) b5vModel.value = vision.backend_model || "";
+  if (b5vStatus) b5vStatus.textContent = vision.configured
+    ? ((vision.backend_api_keys || 0) + " keys · OK")
+    : "Chưa cấu hình đủ";
+  if (b5vKeyList) renderKeyList(b5vKeyList, vision.backend_api_keys_full || [], "5v");
   document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
 
   document.getElementById("cfgTokenPerRequestMin").value = data.token_per_request_min || 65000;
@@ -1612,7 +1695,7 @@ async function loadBackendConfig() {
 }
 
 function toggleRouterBox() {
-  var selected = [1, 2, 3, 4].filter(function(id) {
+  var selected = [1, 2, 3, 4, 5].filter(function(id) {
     var el = document.getElementById("chkBackend" + id);
     return el && el.checked;
   });
@@ -1626,15 +1709,15 @@ function toggleRouterBox() {
 }
 
 function syncBackendWeightsFromConfig(weights) {
-  [1, 2, 3, 4].forEach(function(id) {
+  [1, 2, 3, 4, 5].forEach(function(id) {
     var input = document.getElementById("cfgBackend" + id + "WeightInput");
-    if (input) input.value = normalizeWeight(weights && weights["backend" + id] != null ? weights["backend" + id] : 25);
+    if (input) input.value = normalizeWeight(weights && weights["backend" + id] != null ? weights["backend" + id] : 20);
   });
   syncBackendWeights();
 }
 
 document.addEventListener("DOMContentLoaded", function() {
-  ["chkBackend1", "chkBackend2", "chkBackend3", "chkBackend4"].forEach(function(id) {
+  ["chkBackend1", "chkBackend2", "chkBackend3", "chkBackend4", "chkBackend5"].forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.addEventListener("change", toggleRouterBox);
   });
@@ -2120,7 +2203,7 @@ async function saveBackend2Config() {
 }
 
 async function saveActiveBackend() {
-  var selected = [1, 2, 3, 4].filter(function(id) {
+  var selected = [1, 2, 3, 4, 5].filter(function(id) {
     var el = document.getElementById("chkBackend" + id);
     return el && el.checked;
   });
@@ -2137,7 +2220,7 @@ async function saveActiveBackend() {
     updates.DORO_AUTO_MODE = nextAutoMode;
   }
   if (selected.length > 1 && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
-    [1, 2, 3, 4].forEach(function(id) {
+    [1, 2, 3, 4, 5].forEach(function(id) {
       var input = document.getElementById("cfgBackend" + id + "WeightInput");
       updates["DORO_BACKEND" + id + "_WEIGHT"] = String(normalizeWeight(input ? input.value : 0));
     });
@@ -2145,6 +2228,19 @@ async function saveActiveBackend() {
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
   if (data.ok) { alert("\u0110\u00e3 l\u01b0u. C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
+  else alert(data.detail || "L\u1ed7i");
+}
+
+async function saveBackend5VisionConfig() {
+  var updates = {
+    DORO_BACKEND5_VISION_BASE_URL: document.getElementById("cfg5vBaseUrl").value.trim(),
+    DORO_BACKEND5_VISION_MODEL: document.getElementById("cfg5vModel").value.trim(),
+  };
+  Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
+  if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 5 Vision. C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
 }
 

@@ -585,6 +585,8 @@ function monitorDebugText(row){
     'Model: '+(row.model_requested||''),
     'Backend: '+(row.backend_profile||row.backend||row.backend_id||''),
     'Backend model: '+(row.backend_model||''),
+    'Type: '+(row.request_type||'')+(row.image_count?(' (img '+row.image_count+')'):''),
+    'Route: '+(row.route_target||'')+(row.route_reason?(' — '+row.route_reason):''),
     'Status: '+(row.status||''),
     'Upstream: '+(row.final_backend_status||''),
     'Retry: '+(row.retry_count||0),

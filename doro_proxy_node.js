@@ -75,7 +75,11 @@ function normalizeModelName(modelName) {
   return String(modelName || "").trim().toLowerCase();
 }
 
-const BACKEND_IDS = ["1", "2", "3", "4"];
+const BACKEND_IDS = ["1", "2", "3", "4", "5"];
+
+function equalBackendWeights() {
+  return Math.round(100 / BACKEND_IDS.length);
+}
 
 function activeBackendIds() {
   const value = String(process.env.DORO_ACTIVE_BACKEND || "1").trim().toLowerCase();
@@ -144,7 +148,7 @@ function backendRequiresFlattenedToolHistory(settings) {
 function backendWeights() {
   const raw = BACKEND_IDS.map((id) => clampPercent(process.env[`DORO_BACKEND${id}_WEIGHT`], 0));
   const total = raw.reduce((sum, value) => sum + value, 0);
-  const source = total > 0 ? raw : [25, 25, 25, 25];
+  const source = total > 0 ? raw : BACKEND_IDS.map(() => equalBackendWeights());
   const sourceTotal = source.reduce((sum, value) => sum + value, 0) || 100;
   let used = 0;
   const weights = {};
@@ -169,7 +173,7 @@ function normalizeBackendWeights(values = {}, fallback = backendWeights()) {
     return clampPercent(value, fallback[key] || 0);
   });
   const total = raw.reduce((sum, value) => sum + value, 0);
-  const source = total > 0 ? raw : [25, 25, 25, 25];
+  const source = total > 0 ? raw : BACKEND_IDS.map(() => equalBackendWeights());
   const sourceTotal = source.reduce((sum, value) => sum + value, 0) || 100;
   const weights = {};
   let used = 0;
@@ -202,6 +206,8 @@ function backendProfile(id = activeBackendId()) {
       maxTokens: optionalPositiveInt(process.env[`${prefix}_MAX_TOKENS`]),
       userAssistantOnly: envFlag(process.env[`${prefix}_USER_ASSISTANT_ONLY`], defaultUserAssistantOnlyForModel(model)),
       disableTools: envFlag(process.env[`${prefix}_DISABLE_TOOLS`], String(model || "").toLowerCase().includes("deepseek")),
+      apiStyle: normalizeApiStyle(process.env[`${prefix}_API_STYLE`]),
+      isVision: false,
     };
   }
 
@@ -216,12 +222,46 @@ function backendProfile(id = activeBackendId()) {
     maxTokens: optionalPositiveInt(process.env.DORO_BACKEND1_MAX_TOKENS || process.env.DORO_BACKEND_MAX_TOKENS),
     userAssistantOnly: envFlag(process.env.DORO_BACKEND1_USER_ASSISTANT_ONLY, defaultUserAssistantOnlyForModel(process.env.DORO_BACKEND_MODEL)),
     disableTools: envFlag(process.env.DORO_BACKEND1_DISABLE_TOOLS, String(process.env.DORO_BACKEND_MODEL || "").toLowerCase().includes("deepseek")),
+    apiStyle: normalizeApiStyle(process.env.DORO_BACKEND1_API_STYLE),
+    isVision: false,
   };
 }
 
 function backendAuthEnvField(id) {
-  const backendId = BACKEND_IDS.includes(String(id)) ? String(id) : "1";
+  const raw = String(id);
+  if (raw === "5v") return "DORO_BACKEND5_VISION_AUTH_TOKEN";
+  const backendId = BACKEND_IDS.includes(raw) ? raw : "1";
   return backendId === "1" ? "ANTHROPIC_AUTH_TOKEN" : `DORO_BACKEND${backendId}_AUTH_TOKEN`;
+}
+
+function normalizeApiStyle(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return raw === "anthropic" ? "anthropic" : "openai";
+}
+
+// Backend 5 Vision (5v): profile phụ trợ đọc ảnh, đi kèm Backend 5 context.
+// Chỉ được dùng khi tin nhắn user mới nhất có ảnh và Backend 5 đang active.
+function backend5VisionProfile() {
+  const prefix = "DORO_BACKEND5_VISION";
+  const apiKeyRaw = process.env[`${prefix}_AUTH_TOKEN`] || "";
+  const apiKeys = splitEnvList(apiKeyRaw);
+  const baseUrlRaw = process.env[`${prefix}_BASE_URL`] || "";
+  const model = process.env[`${prefix}_MODEL`] || "";
+  const configured = !!(apiKeys.length && baseUrlRaw.trim() && model.trim());
+  return {
+    id: "5v",
+    label: process.env[`${prefix}_NAME`] || "Backend 5 Vision",
+    apiKeyRaw,
+    apiKeys,
+    baseUrl: normalizeOpenAIBaseUrl(baseUrlRaw),
+    backendModel: model,
+    maxTokens: optionalPositiveInt(process.env[`${prefix}_MAX_TOKENS`]),
+    userAssistantOnly: envFlag(process.env[`${prefix}_USER_ASSISTANT_ONLY`], false),
+    disableTools: envFlag(process.env[`${prefix}_DISABLE_TOOLS`], false),
+    apiStyle: normalizeApiStyle(process.env[`${prefix}_API_STYLE`]),
+    isVision: true,
+    configured,
+  };
 }
 
 function resolveBackendModel(requestedModel, profile = backendProfile(activeBackendIds()[0] || "1")) {
@@ -402,23 +442,76 @@ function getSettingsChain(requestedModel) {
       ids = [first, ...ids.filter((id) => id !== first)];
     }
   }
-  return ids.map((id) => {
-    const profile = backendProfile(id);
-    const requested = requestedModel || firstEnv("DORO_MODEL", "MODEL", "CLAUDE_CODE_SUBAGENT_MODEL", { default: "opus" });
-    const backendModel = resolveBackendModel(requested, profile);
+  return ids.map((id) => profileToSettings(backendProfile(id), requestedModel))
+    .filter((settings) => settings.apiKeys.length);
+}
+
+// Chuẩn hoá một backend profile thành object settings dùng chung cho forward.
+function profileToSettings(profile, requestedModel) {
+  const requested = requestedModel || firstEnv("DORO_MODEL", "MODEL", "CLAUDE_CODE_SUBAGENT_MODEL", { default: "opus" });
+  const backendModel = resolveBackendModel(requested, profile);
+  return {
+    profileId: profile.id,
+    profileLabel: profile.label,
+    apiKey: profile.apiKeys[0],
+    apiKeys: profile.apiKeys,
+    baseUrl: profile.baseUrl,
+    requestedModel: requested,
+    backendModel,
+    maxTokens: profile.maxTokens,
+    userAssistantOnly: profile.userAssistantOnly,
+    disableTools: profile.disableTools,
+    apiStyle: profile.apiStyle || "openai",
+    isVision: !!profile.isVision,
+  };
+}
+
+// ── Backend 5 + Vision (5v) router ───────────────────────────────────────────
+// Trả về { chain, requestType, imageCount, historicalImageCount, routeTarget,
+//          routeReason } hoặc { error: { status, message, code } }.
+// Chỉ được gọi khi Backend 5 đang active. Quyết định dựa trên tin nhắn user
+// MỚI NHẤT: có ảnh -> Vision (5v); chỉ chữ -> context (5) và loại ảnh lịch sử.
+function resolveBackend5Pair(messages, requestedModel) {
+  const imageCount = latestUserImageCount(messages);
+  const historicalImageCount = totalImageCount(messages);
+
+  if (imageCount > 0) {
+    const vision = backend5VisionProfile();
+    if (!vision.configured) {
+      return {
+        error: {
+          status: 400,
+          code: "vision_backend_not_configured",
+          message: "Image request requires Backend 5 Vision: configure DORO_BACKEND5_VISION_BASE_URL, DORO_BACKEND5_VISION_MODEL and DORO_BACKEND5_VISION_AUTH_TOKEN.",
+        },
+      };
+    }
     return {
-      profileId: profile.id,
-      profileLabel: profile.label,
-      apiKey: profile.apiKeys[0],
-      apiKeys: profile.apiKeys,
-      baseUrl: profile.baseUrl,
-      requestedModel: requested,
-      backendModel,
-      maxTokens: profile.maxTokens,
-      userAssistantOnly: profile.userAssistantOnly,
-      disableTools: profile.disableTools,
+      chain: [profileToSettings(vision, requestedModel)],
+      requestType: "image",
+      imageCount,
+      historicalImageCount,
+      routeTarget: vision.label,
+      routeReason: "latest user message contains image(s)",
+      messages,
     };
-  }).filter((settings) => settings.apiKeys.length);
+  }
+
+  // Text/context: dùng Backend 5 (+ failover text khai báo trong DORO_ACTIVE_BACKEND).
+  // Loại ảnh lịch sử trước khi forward.
+  const textIds = activeBackendIds().filter((id) => id !== "5");
+  const chain = [profileToSettings(backendProfile("5"), requestedModel)]
+    .concat(textIds.map((id) => profileToSettings(backendProfile(id), requestedModel)))
+    .filter((settings) => settings.apiKeys.length);
+  return {
+    chain,
+    requestType: "text",
+    imageCount: 0,
+    historicalImageCount,
+    routeTarget: backendProfile("5").label,
+    routeReason: "latest user message is text/context",
+    messages: historicalImageCount > 0 ? stripHistoricalImages(messages) : messages,
+  };
 }
 
 // ── Auto Mode — Backend Health Tracking ──────────────────────────────────────
@@ -2077,7 +2170,8 @@ function applyBackendPayloadLimits(payload, settings) {
 
 function normalizeChatContentForBackend(content, settings) {
   if (!Array.isArray(content)) return content;
-  const visionOk = supportsVision(settings && settings.backendModel);
+  // Profile vision (5v) luôn giữ ảnh, không phụ thuộc tên model.
+  const visionOk = (settings && settings.isVision) || supportsVision(settings && settings.backendModel);
   let changed = false;
   const normalized = [];
 
@@ -2304,6 +2398,62 @@ function anthropicToolChoiceToOpenAI(choice) {
 function supportsVision(model) {
   const normalized = String(model || "").toLowerCase();
   return ["vision", "gpt-4o", "gpt-5", "claude", "gemini", "qwen-vl", "minimax"].some((part) => normalized.includes(part));
+}
+
+// ── Backend 5 Vision routing helpers ─────────────────────────────────────────
+// Nhận diện một content block là ảnh, theo cả Anthropic và OpenAI style.
+function isImageContentBlock(block) {
+  return Boolean(block && typeof block === "object" && (
+    block.type === "image"
+    || block.type === "image_url"
+    || block.type === "input_image"
+    || block.image_url
+    || (block.source && ["base64", "url"].includes(block.source.type))
+  ));
+}
+
+// Chỉ đếm ảnh trong tin nhắn `user` MỚI NHẤT. Không quét toàn lịch sử,
+// để ảnh cũ không kéo nhầm các câu hỏi text tiếp theo sang vision.
+function latestUserImageCount(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  for (let index = list.length - 1; index >= 0; index -= 1) {
+    const message = list[index];
+    if (!message || message.role !== "user") continue;
+    return Array.isArray(message.content)
+      ? message.content.filter(isImageContentBlock).length
+      : 0;
+  }
+  return 0;
+}
+
+// Tổng số ảnh trong toàn bộ lịch sử (dùng cho observability).
+function totalImageCount(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  let total = 0;
+  for (const message of list) {
+    if (message && Array.isArray(message.content)) {
+      total += message.content.filter(isImageContentBlock).length;
+    }
+  }
+  return total;
+}
+
+// Loại ảnh khỏi lịch sử trước khi gửi sang backend context (5).
+// Tạo mảng/đối tượng mới, không mutate messages gốc để failover an toàn.
+function stripHistoricalImages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  let changed = false;
+  const next = messages.map((message) => {
+    if (!message || !Array.isArray(message.content)) return message;
+    if (!message.content.some(isImageContentBlock)) return message;
+    changed = true;
+    const content = message.content.filter((block) => !isImageContentBlock(block));
+    if (!content.length) {
+      content.push({ type: "text", text: "[Historical image omitted for context backend]" });
+    }
+    return { ...message, content };
+  });
+  return changed ? next : messages;
 }
 
 function anthropicToOpenAI(body, backendModel = "") {
@@ -3037,6 +3187,11 @@ app.use((req, res, next) => {
     backend_profile: "",
     backend_model: "",
     backend_base_url: "",
+    request_type: "",
+    image_count: 0,
+    historical_image_count: 0,
+    route_target: "",
+    route_reason: "",
     stream: false,
     error_type: "",
     error_message: "",
@@ -3089,6 +3244,11 @@ app.use((req, res, next) => {
       backend_profile: req.obs.backend_profile || "",
       backend_model: req.obs.backend_model || "",
       backend_base_url: req.obs.backend_base_url || "",
+      request_type: req.obs.request_type || "",
+      image_count: req.obs.image_count || 0,
+      historical_image_count: req.obs.historical_image_count || 0,
+      route_target: req.obs.route_target || "",
+      route_reason: req.obs.route_reason || "",
       stream: !!req.obs.stream,
       bytes_in: Number(req.get("content-length") || 0) || (req.rawBody ? req.rawBody.length : 0),
       bytes_out: bytesOut,
@@ -3114,6 +3274,29 @@ function modelList() {
   return { object: "list", data: PUBLIC_MODELS };
 }
 app.get(["/v1/models", "/models"], (_req, res) => res.json(modelList()));
+
+// Khi Backend 5 active: định tuyến giữa context (5) và vision (5v) dựa trên
+// tin nhắn user mới nhất. Trả về { handled, sent, chain, messages }.
+// - handled=false: Backend 5 không active, dùng getSettingsChain như cũ.
+// - sent=true: đã gửi response lỗi (vision chưa cấu hình), handler phải return.
+function maybeBackend5Chain(req, res, messages, originalModel, errPayloadFn) {
+  if (!activeBackendIds().includes("5")) return { handled: false };
+  const r = resolveBackend5Pair(messages, originalModel);
+  if (r.error) {
+    req.obs.error_type = "validation";
+    req.obs.error_message = r.error.message;
+    req.obs.request_type = "image";
+    res.status(r.error.status).json(errPayloadFn(r.error.status, r.error.message, "invalid_request_error", r.error.code));
+    return { handled: true, sent: true };
+  }
+  req.obs.request_type = r.requestType;
+  req.obs.image_count = r.imageCount;
+  req.obs.historical_image_count = r.historicalImageCount;
+  req.obs.route_target = r.routeTarget;
+  req.obs.route_reason = r.routeReason;
+  addLog(`backend5 route ${r.requestType} -> ${r.routeTarget} images=${r.imageCount} history_images=${r.historicalImageCount}`);
+  return { handled: true, sent: false, chain: r.chain, messages: r.messages };
+}
 
 app.post(["/v1/messages", "/messages"], async (req, res) => {
   const auth = checkAuth(req);
@@ -3144,7 +3327,10 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     }
     return res.json(directAnthropicResponse(publicModel, answer));
   }
-  const settingsChain = getSettingsChain(originalModel);
+  const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
+  if (b5.handled && b5.sent) return;
+  if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
   if (!settings) {
     req.obs.error_type = "validation";
@@ -4113,7 +4299,10 @@ async function openAIChatCompletionsHandler(req, res) {
     }
     return res.json(directOpenAIResponse(publicModel, answer));
   }
-  const settingsChain = getSettingsChain(originalModel);
+  const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
+  if (b5.handled && b5.sent) return;
+  if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
   if (!settings) {
     req.obs.error_type = "validation";
@@ -4772,6 +4961,20 @@ app.get("/api/config", (req, res) => {
       last_error_at: state.lastErrorAt || null,
     }];
   }));
+  const visionProfile = backend5VisionProfile();
+  const backend5Vision = {
+    id: visionProfile.id,
+    label: visionProfile.label,
+    base_url: visionProfile.baseUrl,
+    backend_model: visionProfile.backendModel,
+    max_tokens: visionProfile.maxTokens || null,
+    api_style: visionProfile.apiStyle,
+    configured: visionProfile.configured,
+    backend_api_keys: visionProfile.apiKeys.length,
+    backend_api_key_masks: visionProfile.apiKeys.map(maskSecret),
+    backend_api_keys_full: visionProfile.apiKeys,
+    api_key_masked: maskSecret(visionProfile.apiKeys[0]),
+  };
   res.json({
     active_backend: active,
     active_backend_label: activeLabel,
@@ -4789,6 +4992,7 @@ app.get("/api/config", (req, res) => {
     backend_router_mode: backendRouterMode(),
     backend_weights: weights,
     backend_profiles: profiles,
+    backend5_vision: backend5Vision,
     base_url: settings.baseUrl,
     backend_model: settings.backendModel,
     backend_keys: settings.apiKeys,
@@ -4805,6 +5009,8 @@ app.get("/api/config", (req, res) => {
       DORO_BACKEND2_BASE_URL: !!String(process.env.DORO_BACKEND2_BASE_URL || "").trim(),
       DORO_BACKEND3_BASE_URL: !!String(process.env.DORO_BACKEND3_BASE_URL || "").trim(),
       DORO_BACKEND4_BASE_URL: !!String(process.env.DORO_BACKEND4_BASE_URL || "").trim(),
+      DORO_BACKEND5_BASE_URL: !!String(process.env.DORO_BACKEND5_BASE_URL || "").trim(),
+      DORO_BACKEND5_VISION_BASE_URL: !!String(process.env.DORO_BACKEND5_VISION_BASE_URL || "").trim(),
     },
     port,
     virtual_keys: validProxyKeys.length,
@@ -4853,6 +5059,23 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND4_MAX_TOKENS",
     "DORO_BACKEND4_USER_ASSISTANT_ONLY",
     "DORO_BACKEND4_DISABLE_TOOLS",
+    "DORO_BACKEND5_NAME",
+    "DORO_BACKEND5_BASE_URL",
+    "DORO_BACKEND5_AUTH_TOKEN",
+    "DORO_BACKEND5_MODEL",
+    "DORO_BACKEND5_MAX_TOKENS",
+    "DORO_BACKEND5_USER_ASSISTANT_ONLY",
+    "DORO_BACKEND5_DISABLE_TOOLS",
+    "DORO_BACKEND5_API_STYLE",
+    "DORO_BACKEND5_WEIGHT",
+    "DORO_BACKEND5_VISION_NAME",
+    "DORO_BACKEND5_VISION_BASE_URL",
+    "DORO_BACKEND5_VISION_AUTH_TOKEN",
+    "DORO_BACKEND5_VISION_MODEL",
+    "DORO_BACKEND5_VISION_MAX_TOKENS",
+    "DORO_BACKEND5_VISION_USER_ASSISTANT_ONLY",
+    "DORO_BACKEND5_VISION_DISABLE_TOOLS",
+    "DORO_BACKEND5_VISION_API_STYLE",
     "DORO_BACKEND_TIMEOUT",
     "DORO_AUTO_MODE",
     "DORO_AUTO_RECOVERY_MS",
@@ -4877,16 +5100,17 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
-    if (/^DORO_BACKEND[1-4]_WEIGHT$/.test(field)) {
+    if (/^DORO_BACKEND[1-5]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
       continue;
     }
-    if (/^DORO_BACKEND[1-4]_MAX_TOKENS$/.test(field)) value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (/^DORO_BACKEND(?:[1-5]|5_VISION)_MAX_TOKENS$/.test(field)) value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_TOKEN_PER_REQUEST") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "TELEGRAM_ALERTS_ENABLED") continue;
-    if (/^DORO_BACKEND[1-4]_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
-    if (/^DORO_BACKEND[1-4]_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
-    if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND[2-4]_AUTH_TOKEN$/.test(field)) {
+    if (/^DORO_BACKEND(?:[1-5]|5_VISION)_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
+    if (/^DORO_BACKEND(?:[1-5]|5_VISION)_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
+    if (/^DORO_BACKEND5(?:_VISION)?_API_STYLE$/.test(field)) value = normalizeApiStyle(value);
+    if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND(?:[2-5]|5_VISION)_AUTH_TOKEN$/.test(field)) {
       value = value.replace(/\n/g, ",").split(",").map((k) => k.trim()).filter(Boolean).join(",");
     }
     if (value) updates[field] = value;
@@ -4910,7 +5134,7 @@ app.post("/api/backend-keys", (req, res) => {
   const backend = String(body.backend || "1").trim();
   const key = String(body.key || "").trim();
   if (!key) return res.status(400).json({ detail: "Missing key" });
-  if (!BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
+  if (!BACKEND_IDS.includes(backend) && backend !== "5v") return res.status(400).json({ detail: "Invalid backend" });
 
   const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");
@@ -4927,7 +5151,7 @@ app.delete("/api/backend-keys", (req, res) => {
   const body = req.body || {};
   const backend = String(body.backend || "1").trim();
   const key = String(body.key || "").trim();
-  if (!BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
+  if (!BACKEND_IDS.includes(backend) && backend !== "5v") return res.status(400).json({ detail: "Invalid backend" });
 
   const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");
