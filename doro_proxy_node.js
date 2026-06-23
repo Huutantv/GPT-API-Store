@@ -3066,7 +3066,9 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
     }
   }
 
-  if (finishReason == null && !sawDone) throw incompleteBackendStreamError();
+  if (finishReason == null && !sawDone) {
+    throw incompleteBackendStreamError("Backend stream ended after partial output without finish_reason (OpenAI -> Anthropic pipe)");
+  }
 
   closeTextBlock();
   for (const block of toolBlocks.values()) {
@@ -3129,7 +3131,9 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
       sseWrite(res, event.type || "message", event);
     }
   }
-  if (!sawStop) throw incompleteBackendStreamError();
+  if (!sawStop) {
+    throw incompleteBackendStreamError("Backend stream ended after partial output without message_stop (Anthropic pipe)");
+  }
   res.end();
   return inputTokens + outputTokens;
 }
@@ -3301,6 +3305,10 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (wroteResponse) {
           sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
+          // Stream đã gửi message_start/content rồi mới bị cắt giữa chừng:
+          // gửi message_stop để Anthropic SDK thoát gọn thay vì treo chờ.
+          const isTruncatedAnthropic = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
+          if (isTruncatedAnthropic) sseWrite(res, "message_stop", { type: "message_stop" });
           return res.end();
         }
         const clientStatus = clientBackendStatus(err.status);
