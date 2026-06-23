@@ -2911,6 +2911,161 @@ function safeStreamBufferLimitBytes() {
   return configured || (8 * 1024 * 1024);
 }
 
+// Ép stream cho path non-stream: gửi stream:true lên backend rồi gộp thành JSON.
+// Giúp ổn định/liên tục (tránh 504/502 do upstream idle timeout khi phản hồi dài).
+// Mặc định tắt để rollback dễ; bật = 1.
+function forceStreamNonstreamEnabled() {
+  return envFlag(process.env.DORO_FORCE_STREAM_NONSTREAM, false);
+}
+
+// Gửi stream lên backend với key-failover; trả về { resp, apiKey }.
+// Giống postWithKeyFailover nhưng KHÔNG đọc text, giữ stream để collect.
+async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, settings) {
+  if (!orderedKeys.length) throw new Error("Missing backend API key");
+  let lastError;
+  for (let i = 0; i < orderedKeys.length; i += 1) {
+    try {
+      const resp = await withBackendKeySlot(orderedKeys[i], async () => {
+        return fetchWithTimeout(url, { method: "POST", headers: backendWireHeaders(orderedKeys[i], settings), body: JSON.stringify(payload), timeoutMs: backendStreamTimeoutMs });
+      });
+      if (obs) obs.final_backend_status = resp.status;
+      if (isRetryableAcrossKeys(resp.status) && i < orderedKeys.length - 1) {
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; }
+        addLog(`backend retry(stream) status=${resp.status} key=${i + 1}/${orderedKeys.length}`);
+        uptimeTrackError(resp.status);
+        await new Promise((r) => setTimeout(r, retryDelayMs(i + 1)));
+        continue;
+      }
+      if (!resp.ok) {
+        const text = await resp.text();
+        uptimeTrackError(resp.status);
+        const err = new Error(`Backend HTTP ${resp.status}: ${logPreview(text)}`);
+        err.status = resp.status;
+        err.text = text;
+        throw err;
+      }
+      uptimeTrackSuccess();
+      return { resp, apiKey: orderedKeys[i] };
+    } catch (err) {
+      lastError = err;
+      if (!err.status && i < orderedKeys.length - 1) {
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
+        addLog(`backend retry(stream) network key=${i + 1}/${orderedKeys.length} error=${err.name || "Error"}: ${err.message}`);
+        await new Promise((r) => setTimeout(r, retryDelayMs(i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError || new Error("Backend request failed without response");
+}
+
+// Ép stream cho path non-stream: gửi stream:true lên backend, gộp chunk thành JSON OpenAI.
+// Trả về shape tương tự postWithBackendChain: { data, settings, payload }.
+// Có failover backend-chain, retry key, model fallback. Truncated stream KHÔNG retry.
+async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathSuffix = "/chat/completions", obs) {
+  let lastError;
+  for (let i = 0; i < settingsChain.length; i += 1) {
+    const settings = settingsChain[i];
+    for (let attempt = 0; attempt <= backendRequestRetryCount; attempt += 1) {
+      try {
+        if (obs) {
+          obs.backend_id = settings.profileId || "";
+          obs.backend_profile = settings.profileLabel || settings.profileId || "";
+          obs.backend_model = settings.backendModel || "";
+          obs.backend_base_url = settings.baseUrl || "";
+        }
+        let payload = payloadBuilder(settings);
+        const originalModel = payload.model;
+        payload.model = selectBestModel(payload.model);
+        if (payload.model !== originalModel) addLog(`model-fallback: ${originalModel} -> ${payload.model}`);
+        payload = { ...payload, stream: true, stream_options: { include_usage: true } };
+        applyBackendPayloadLimits(payload, settings);
+        applyBackendMessageCompatibility(payload, settings);
+        applyBackendToolCompatibility(payload, settings);
+        const wirePayload = backendWirePayload(payload, settings);
+        if (settings.apiStyle === "anthropic") wirePayload.stream = true;
+        const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
+        const ordered = orderedBackendKeys(settings.apiKeys);
+        if (!ordered.length) throw new Error("Missing backend API key");
+        const { resp } = await postStreamWithKeyFailover(url, wirePayload, ordered, obs, settings);
+        const data = await collectOpenAIStream(resp);
+        if (!data.usage || !data.usage.total_tokens) {
+          const contentText = String(((((data.choices || [])[0]) || {}).message || {}).content || "");
+          data.usage = data.usage || {};
+          data.usage.completion_tokens = data.usage.completion_tokens || Math.ceil(contentText.length / 4);
+          data.usage.total_tokens = data.usage.total_tokens || (data.usage.prompt_tokens || 0) + (data.usage.completion_tokens || 0);
+        }
+        trackModelRequest(payload.model);
+        trackBackendSuccess(settings.profileId);
+        return { data, settings, payload };
+      } catch (err) {
+        lastError = err;
+        let failureSignal = backendFailureSignal(err.status || 0, err.text || err.message || "", err.code);
+        const isTruncated = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
+        if (isQuotaExceededError(err.status, err.text)) {
+          const tmpPayload = payloadBuilder(settings);
+          blockModel(tmpPayload.model || settings.backendModel, `HTTP ${err.status} quota exceeded`);
+          const nextModel = selectBestModel(tmpPayload.model || settings.backendModel);
+          if (nextModel !== (tmpPayload.model || settings.backendModel)) {
+            addLog(`model-fallback: retrying with ${nextModel} after quota error (stream)`);
+            try {
+              let retryPayload = payloadBuilder(settings);
+              retryPayload.model = nextModel;
+              retryPayload = { ...retryPayload, stream: true, stream_options: { include_usage: true } };
+              applyBackendPayloadLimits(retryPayload, settings);
+              applyBackendMessageCompatibility(retryPayload, settings);
+              applyBackendToolCompatibility(retryPayload, settings);
+              const wirePayload = backendWirePayload(retryPayload, settings);
+              if (settings.apiStyle === "anthropic") wirePayload.stream = true;
+              const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
+              const ordered = orderedBackendKeys(settings.apiKeys);
+              const { resp } = await postStreamWithKeyFailover(url, wirePayload, ordered, obs, settings);
+              const data = await collectOpenAIStream(resp);
+              if (!data.usage || !data.usage.total_tokens) {
+                const contentText = String(((((data.choices || [])[0]) || {}).message || {}).content || "");
+                data.usage = data.usage || {};
+                data.usage.completion_tokens = data.usage.completion_tokens || Math.ceil(contentText.length / 4);
+                data.usage.total_tokens = data.usage.total_tokens || (data.usage.prompt_tokens || 0) + (data.usage.completion_tokens || 0);
+              }
+              trackModelRequest(nextModel);
+              trackBackendSuccess(settings.profileId);
+              return { data, settings, payload: retryPayload };
+            } catch (retryErr) {
+              lastError = retryErr;
+              err = retryErr;
+              failureSignal = backendFailureSignal(err.status || 0, err.text || err.message || "", err.code);
+            }
+          }
+        }
+        const shouldTryNextBackend = !isTruncated && shouldFailoverBackend(err, i < settingsChain.length - 1);
+        if (shouldTryNextBackend) {
+          trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+          if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = err.status ? "backend" : "network"; obs.final_backend_status = err.status || obs.final_backend_status; }
+          addLog(`backend profile retry(stream) ${settings.profileLabel} -> ${settingsChain[i + 1].profileLabel} error=${err.status || err.name || "network"}`);
+          break;
+        }
+        const canRetrySameBackend = !isTruncated && attempt < backendRequestRetryCount && (!failureSignal || !failureSignal.immediate) && (!err.status || isRetryableStatus(err.status));
+        if (canRetrySameBackend) {
+          if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = err.status ? "backend" : "network"; obs.final_backend_status = err.status || obs.final_backend_status; }
+          addLog(`backend request retry(stream) ${settings.profileLabel} attempt=${attempt + 1}/${backendRequestRetryCount + 1} error=${err.status || err.name || "network"}`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt + 1)));
+          continue;
+        }
+        trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+        const canTryNext = !isTruncated && shouldFailoverBackend(err, i < settingsChain.length - 1);
+        if (canTryNext) {
+          if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = err.status ? "backend" : "network"; obs.final_backend_status = err.status || obs.final_backend_status; }
+          addLog(`backend profile retry(stream) ${settings.profileLabel} -> ${settingsChain[i + 1].profileLabel} error=${err.status || err.name || "network"}`);
+          break;
+        }
+        throw err;
+      }
+    }
+  }
+  throw lastError || new Error("No backend profile available");
+}
+
 function ssePayloadHasCompletionMarker(text, anthropicWire = false) {
   for (const line of String(text || "").split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
@@ -3207,16 +3362,25 @@ async function collectOpenAIStream(resp) {
   let finishReason = null;
   let usage = {};
   const toolCalls = {};
+  let sawDone = false;
+  let totalBytes = 0;
+  const byteLimit = safeStreamBufferLimitBytes();
   while (true) {
     const { value, done } = await reader.read();
     if (done) break;
+    totalBytes += value ? value.byteLength : 0;
+    if (totalBytes > byteLimit) {
+      try { await reader.cancel(); } catch (_) {}
+      throw incompleteBackendStreamError("Backend stream exceeded the safe buffer limit (collect)");
+    }
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() || "";
     for (const line of lines) {
       if (!line.startsWith("data:")) continue;
       const dataStr = line.slice(5).trim();
-      if (!dataStr || dataStr === "[DONE]") continue;
+      if (!dataStr) continue;
+      if (dataStr === "[DONE]") { sawDone = true; continue; }
       try {
         const chunk = JSON.parse(dataStr);
         if (chunk.usage) usage = chunk.usage;
@@ -3233,6 +3397,13 @@ async function collectOpenAIStream(resp) {
         }
       } catch (_) {}
     }
+  }
+  // Stream kết thúc nhưng không có finish_reason và không có [DONE] => bị cắt giữa chừng.
+  // Báo lỗi rõ thay vì trả về body truncated như thành công (giống các pipe stream).
+  if (finishReason == null && !sawDone) {
+    const err = incompleteBackendStreamError("Backend stream ended after partial output without finish_reason (collect)");
+    err.code = "truncated_backend_stream";
+    throw err;
   }
   return {
     id: `resp_${Date.now()}`,
@@ -3878,23 +4049,39 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     return;
   }
   try {
-    const { response, settings: finalSettings, data } = await postWithBackendChain(settingsChain, (profileSettings) => {
-      const payload = anthropicToOpenAI(body, profileSettings.backendModel);
-      payload.model = profileSettings.backendModel;
-      payload.messages = prependIdentityGuard(payload.messages, publicModel);
-      payload.messages = prependEncodingGuard(payload.messages);
-      return payload;
-    }, "/chat/completions", req.obs, (response) => {
-      const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
-      const payloadError = backendErrorFromPayload(parsed, response.status || 502);
-      if (payloadError) throw payloadError;
-      return parsed;
-    });
+    let finalSettings, data;
+    if (forceStreamNonstreamEnabled()) {
+      const result = await collectBackendStreamToOpenAI(settingsChain, (profileSettings) => {
+        const payload = anthropicToOpenAI(body, profileSettings.backendModel);
+        payload.model = profileSettings.backendModel;
+        payload.messages = prependIdentityGuard(payload.messages, publicModel);
+        payload.messages = prependEncodingGuard(payload.messages);
+        return payload;
+      }, "/chat/completions", req.obs);
+      finalSettings = result.settings;
+      data = result.data;
+    } else {
+      const response = await postWithBackendChain(settingsChain, (profileSettings) => {
+        const payload = anthropicToOpenAI(body, profileSettings.backendModel);
+        payload.model = profileSettings.backendModel;
+        payload.messages = prependIdentityGuard(payload.messages, publicModel);
+        payload.messages = prependEncodingGuard(payload.messages);
+        return payload;
+      }, "/chat/completions", req.obs, (response) => {
+        const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+        const payloadError = backendErrorFromPayload(parsed, response.status || 502);
+        if (payloadError) throw payloadError;
+        return parsed;
+      });
+      finalSettings = response.settings;
+      data = response.data;
+    }
+
     req.obs.backend_id = finalSettings.profileId || req.obs.backend_id;
     req.obs.backend_profile = finalSettings.profileLabel || finalSettings.profileId || req.obs.backend_profile;
     req.obs.backend_model = finalSettings.backendModel || req.obs.backend_model;
     req.obs.backend_base_url = finalSettings.baseUrl || req.obs.backend_base_url;
-    req.obs.final_backend_status = response.status;
+    req.obs.final_backend_status = req.obs.final_backend_status || 200;
     assertNoMojibakeForSourceEdit(data, body.messages);
     const out = openaiToAnthropic(data, publicModel, finalSettings.backendModel);
     const tokens = Number((data.usage || {}).total_tokens || 0);
@@ -4875,22 +5062,35 @@ async function openAIChatCompletionsHandler(req, res) {
     for (let round = 0; round < maxRounds; round += 1) {
       const roundBody = { ...body, messages };
       if (mergedTools) roundBody.tools = mergedTools;
-      const result = await postWithBackendChain(settingsChain, (profileSettings) => {
-        const payload = { ...roundBody, model: profileSettings.backendModel };
-        if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
-        if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
-        if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
-        applyBackendPayloadLimits(payload, profileSettings);
-        normalizeOpenAIChatPayloadForBackend(payload, profileSettings);
-        applyBackendMessageCompatibility(payload, profileSettings);
-        applyBackendToolCompatibility(payload, profileSettings);
-        return payload;
-      }, "/chat/completions", req.obs, (response) => {
-        const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
-        const payloadError = backendErrorFromPayload(parsed, response.status || 502);
-        if (payloadError) throw payloadError;
-        return parsed;
-      });
+      let result;
+      if (forceStreamNonstreamEnabled()) {
+        result = await collectBackendStreamToOpenAI(settingsChain, (profileSettings) => {
+          const payload = { ...roundBody, model: profileSettings.backendModel };
+          if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
+          if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+          if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
+          normalizeOpenAIChatPayloadForBackend(payload, profileSettings);
+          return payload;
+        }, "/chat/completions", req.obs);
+      } else {
+        result = await postWithBackendChain(settingsChain, (profileSettings) => {
+          const payload = { ...roundBody, model: profileSettings.backendModel };
+          if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
+          if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
+          if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
+          applyBackendPayloadLimits(payload, profileSettings);
+          normalizeOpenAIChatPayloadForBackend(payload, profileSettings);
+          applyBackendMessageCompatibility(payload, profileSettings);
+          applyBackendToolCompatibility(payload, profileSettings);
+          return payload;
+        }, "/chat/completions", req.obs, (response) => {
+          const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+          const payloadError = backendErrorFromPayload(parsed, response.status || 502);
+          if (payloadError) throw payloadError;
+          return parsed;
+        });
+      }
+
 
       finalSettings = result.settings;
       data = result.data;
@@ -5497,6 +5697,9 @@ app.get("/api/config", (req, res) => {
     active_backend_label: activeLabel,
     auto_mode: String(process.env.DORO_AUTO_MODE || "0") === "1",
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
+    force_stream_nonstream: forceStreamNonstreamEnabled(),
+    safe_stream_failover: safeStreamFailoverEnabled(),
+    safe_stream_max_bytes: safeStreamBufferLimitBytes(),
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
     model_daily_limit: Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"),
     model_limits: (process.env.DORO_MODEL_LIMITS || "").trim(),
@@ -5596,6 +5799,7 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND_TIMEOUT",
     "DORO_AUTO_MODE",
     "DORO_AUTO_RECOVERY_MS",
+    "DORO_FORCE_STREAM_NONSTREAM",
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
     "DORO_MODEL_LIMITS",
@@ -5617,6 +5821,7 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-5]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
       continue;
@@ -6282,6 +6487,7 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Router    : ${backendRouterMode()} | ${BACKEND_IDS.map((id) => `${backendProfile(id).label} ${backendWeights()[`backend${id}`]}%`).join(" / ")}`);
   printLog(`  Timeout   : ${backendTimeoutMs / 1000}s | Max concurrent: ${maxConcurrent}`);
   printLog(`  Retries   : request=${backendRequestRetryCount} | base=${retryBaseDelayMs}ms | max=${retryMaxDelayMs}ms`);
+  printLog(`  Stream    : force-nonstream=${forceStreamNonstreamEnabled() ? "ON" : "OFF"} | safe-failover=${safeStreamFailoverEnabled() ? "ON" : "OFF"} | max-bytes=${safeStreamBufferLimitBytes()}`);
   printLog(`  Keys      : ${validProxyKeys.length} virtual keys | ${settings.apiKeys.length} backend keys`);
   printLog("--------------------------------------------------");
 }).on("connection", (socket) => {
