@@ -3459,7 +3459,18 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.code = "empty_assistant_stream";
           throw err;
         }
-        if (!sawCompletionMarker) throw incompleteBackendStreamError();
+        if (!sawCompletionMarker) {
+          const streamErr = incompleteBackendStreamError();
+          streamErr.code = "truncated_backend_stream";
+          streamErr.text = JSON.stringify({
+            error: {
+              message: "Backend stream ended after assistant output but before finish_reason; refusing silent failover to avoid duplicate content/tool calls",
+              type: "api_error",
+              code: streamErr.code,
+            },
+          });
+          throw streamErr;
+        }
         if (anthropicWire) res.write("data: [DONE]\n\n");
       });
       if (stopHeartbeat) stopHeartbeat();
@@ -3482,7 +3493,8 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       if (err.status) {
         const failureSignal = backendFailureSignal(err.status, err.text || err.message || "", err.code);
         if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
-        if (!wroteResponse && (!failureSignal || !failureSignal.immediate) && isRetryableStatus(err.status) && retryDepth < backendStreamRetryCount) {
+        const isTruncatedStream = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
+        if (!wroteResponse && !isTruncatedStream && (!failureSignal || !failureSignal.immediate) && isRetryableStatus(err.status) && retryDepth < backendStreamRetryCount) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
