@@ -5995,6 +5995,86 @@ app.get("/api/logs", (req, res) => {
   res.json({ logs: [...logs] });
 });
 
+// ── System Logfile API (xem file log để bảo trì/debug) ────────────────────────
+// Whitelist file log được phép xem (chỉ trong ACCESS_LOG_DIR, chống path traversal).
+const SYSTEM_LOG_WHITELIST = ["pm2-out.log", "pm2-error.log"];
+function isAllowedLogFile(name) {
+  const raw = String(name || "").trim();
+  if (!raw || raw.includes("..") || raw.includes("/") || raw.includes("\\") || raw.includes("\0")) return false;
+  if (SYSTEM_LOG_WHITELIST.includes(raw)) return true;
+  if (/^access-\d{4}-\d{2}-\d{2}\.jsonl$/.test(raw)) return true;
+  return false;
+}
+function resolveLogFile(name) {
+  if (!isAllowedLogFile(name)) return null;
+  const full = path.join(ACCESS_LOG_DIR, name);
+  // Chống path traversal: resolved path phải nằm trong ACCESS_LOG_DIR
+  const normalizedRoot = path.resolve(ACCESS_LOG_DIR) + path.sep;
+  const normalizedFull = path.resolve(full);
+  if (normalizedFull + path.sep !== normalizedRoot && !normalizedFull.startsWith(normalizedRoot)) return null;
+  return normalizedFull;
+}
+
+// List file log trong logs/ kèm size/lastWrite
+app.get("/api/logs/files", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  try {
+    if (!fs.existsSync(ACCESS_LOG_DIR)) return res.json({ files: [] });
+    const files = [];
+    for (const name of fs.readdirSync(ACCESS_LOG_DIR)) {
+      if (!isAllowedLogFile(name)) continue;
+      try {
+        const st = fs.statSync(path.join(ACCESS_LOG_DIR, name));
+        if (!st.isFile()) continue;
+        files.push({ name, size: st.size, mtime: st.mtimeMs });
+      } catch (_) {}
+    }
+    files.sort((a, b) => b.mtime - a.mtime);
+    res.json({ files });
+  } catch (err) {
+    res.status(500).json({ detail: "Failed to list logs: " + (err.message || err) });
+  }
+});
+
+// Tail N dòng cuối của file log, hỗ trợ filter chuỗi
+app.get("/api/logs/tail", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const file = String(req.query.file || "").trim();
+  const full = resolveLogFile(file);
+  if (!full) return res.status(400).json({ detail: "Invalid or disallowed log file" });
+  const lines = Math.max(1, Math.min(2000, Number(req.query.lines) || 300));
+  const filter = String(req.query.filter || "").trim().slice(0, 200);
+  try {
+    if (!fs.existsSync(full)) return res.json({ file, lines: [], truncated: false });
+    const raw = fs.readFileSync(full, "utf8");
+    let arr = raw.split(/\r?\n/);
+    if (filter) {
+      const lower = filter.toLowerCase();
+      arr = arr.filter((l) => l.toLowerCase().includes(lower));
+    }
+    // Lấy N dòng cuối (sau filter) để tránh trả quá nhiều
+    const tail = arr.slice(-lines);
+    res.json({ file, lines: tail, truncated: arr.length > lines });
+  } catch (err) {
+    res.status(500).json({ detail: "Failed to read log: " + (err.message || err) });
+  }
+});
+
+// Download file log gốc
+app.get("/api/logs/download", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const file = String(req.query.file || "").trim();
+  const full = resolveLogFile(file);
+  if (!full) return res.status(400).json({ detail: "Invalid or disallowed log file" });
+  if (!fs.existsSync(full)) return res.status(404).json({ detail: "Log file not found" });
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${path.basename(full)}"`);
+  fs.createReadStream(full).pipe(res);
+});
+
 // ── Credit Management API ─────────────────────────────────────────────────────
 
 app.get("/api/credit/stats", (req, res) => {

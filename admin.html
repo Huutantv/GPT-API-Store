@@ -57,6 +57,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
 <button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+      <button onclick="showTab('logs');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="logs">&#x1F4DC; Logs</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -100,6 +101,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
 <button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+      <button onclick="showTab('logs')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="logs">&#x1F4DC; Logs</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
     <div class="p-3 border-t border-white/5">
@@ -924,9 +926,45 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
+<!-- Tab: Logs -->
+<div id="tab-logs" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h2 class="text-xl font-bold">&#x1F4DC; Logfile h&#7879; th&#7889;ng</h2>
+      <p class="text-sm text-gray-400 mt-1">Xem log process, l&#7895;i v&#224; access log &#273;&#7875; b&#7843;o tr&#236;/debug.</p>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+      <button onclick="loadLogs()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+      <button onclick="toggleLogsAuto()" id="logsAutoBtn" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">T&#7921; l&#224;m m&#7899;i: OFF</button>
+      <button onclick="downloadCurrentLog()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">T&#7843;i file</button>
+    </div>
+  </div>
+  <div class="flex items-center gap-3 flex-wrap">
+    <select id="logsSource" onchange="onLogsSourceChange()" class="px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+      <option value="pm2-error.log">PM2 Error (stderr)</option>
+      <option value="pm2-out.log">PM2 Out (stdout)</option>
+      <option value="__memory__">In-memory (300 d&#242;ng)</option>
+      <option value="__access_list__">Access logs (ch&#7885;n ng&#224;y)</option>
+    </select>
+    <input id="logsLines" type="number" min="50" max="2000" step="50" value="300" class="w-28 px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px" title="S&#7889; d&#242;ng tail">
+    <input id="logsFilter" type="text" placeholder="L&#7885;c chu&#7895;i..." class="w-48 px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px" onkeydown="if(event.key==='Enter')loadLogs()">
+    <span id="logsMeta" class="text-xs text-gray-500"></span>
+  </div>
+  <div id="logsAccessPicker" class="hidden flex items-center gap-3 flex-wrap">
+    <select id="logsAccessDate" onchange="loadLogs()" class="px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px"></select>
+    <span class="text-xs text-gray-500">Access log l&#224; JSONL, m&#7895; d&#242;ng 1 request.</span>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <pre id="logsOutput" class="text-xs font-mono p-4 overflow-auto max-h-[60vh] whitespace-pre-wrap break-all text-gray-300 leading-relaxed">Ch&#7885;n ngu&#7891;n log r&#7891;i b&#7845;m L&#224;m m&#7899;i.</pre>
+  </div>
+</div>
+
 <script>
 /* ===== GLOBALS ===== */
 var BASE = window.location.origin;
+var logsAutoTimer = null;
+var logsAutoOn = false;
+var logsCurrentSource = "pm2-error.log";
 var ADMIN_KEY = localStorage.getItem("gpt_admin_key") || "";
 var monitorRows = [];
 var monitorModalRow = null;
@@ -1143,7 +1181,9 @@ function showTab(name) {
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
+  if (name === "logs") { onLogsSourceChange(); }
   if (name !== "backend") stopModelUsageRefresh();
+  if (name !== "logs") stopLogsAuto();
 }
 </script>
 
@@ -2510,6 +2550,130 @@ function escapeHtml(str) {
 }
 function escapeAttr(str) {
   return String(str == null ? "" : str).replace(/'/g, "\\'").replace(/"/g, "&quot;");
+}
+
+/* ===== LOGS (system logfile viewer) ===== */
+function onLogsSourceChange() {
+  var src = document.getElementById("logsSource").value;
+  logsCurrentSource = src;
+  var picker = document.getElementById("logsAccessPicker");
+  picker.classList.toggle("hidden", src !== "__access_list__");
+  if (src === "__access_list__") {
+    loadAccessLogDates().then(function() { loadLogs(); });
+  } else {
+    loadLogs();
+  }
+}
+function logsApiUrl() {
+  var src = logsCurrentSource;
+  var lines = encodeURIComponent(document.getElementById("logsLines").value || "300");
+  var filter = encodeURIComponent(document.getElementById("logsFilter").value || "");
+  if (src === "__memory__") return BASE + "/api/logs";
+  if (src === "__access_list__") {
+    var date = document.getElementById("logsAccessDate").value || "";
+    return BASE + "/api/logs/tail?file=" + encodeURIComponent("access-" + date + ".jsonl") + "&lines=" + lines + "&filter=" + filter;
+  }
+  return BASE + "/api/logs/tail?file=" + encodeURIComponent(src) + "&lines=" + lines + "&filter=" + filter;
+}
+async function loadAccessLogDates() {
+  try {
+    var r = await fetch(BASE + "/api/logs/files", { headers: authHeaders() });
+    var d = await r.json();
+    var sel = document.getElementById("logsAccessDate");
+    var dates = (d.files || []).filter(function(f) { return /^access-\d{4}-\d{2}-\d{2}\.jsonl$/.test(f.name); })
+      .map(function(f) { return { date: f.name.replace(/^access-|\.jsonl$/g, ""), mtime: f.mtime }; })
+      .sort(function(a, b) { return b.mtime - a.mtime; });
+    if (!dates.length) { sel.innerHTML = '<option value="">(không có access log)</option>'; return; }
+    sel.innerHTML = dates.map(function(x) { return '<option value="' + x.date + '">' + x.date + '</option>'; }).join("");
+  } catch (e) {
+    document.getElementById("logsAccessDate").innerHTML = '<option value="">(lỗi tải)</option>';
+  }
+}
+async function loadLogs() {
+  var out = document.getElementById("logsOutput");
+  var meta = document.getElementById("logsMeta");
+  out.textContent = "Đang tải...";
+  meta.textContent = "";
+  try {
+    var r = await fetch(logsApiUrl(), { headers: authHeaders() });
+    if (!r.ok) { var ej = {}; try { ej = await r.json(); } catch (_) {} out.textContent = "Lỗi " + r.status + ": " + (ej.detail || r.statusText); return; }
+    var d = await r.json();
+    if (logsCurrentSource === "__memory__") {
+      var arr = (d.logs || []).slice();
+      var filter = (document.getElementById("logsFilter").value || "").trim().toLowerCase();
+      if (filter) arr = arr.filter(function(l) { return String(l).toLowerCase().includes(filter); });
+      renderLogs(arr, arr.length + " dòng in-memory", true);
+    } else {
+      renderLogs(d.lines || [], (d.file || "") + (d.truncated ? " (đã cắt, quá " + (document.getElementById("logsLines").value || "300") + " dòng)" : ""), false);
+    }
+  } catch (e) {
+    out.textContent = "Lỗi kết nối: " + (e.message || e);
+  }
+}
+function renderLogs(arr, metaText, isMemory) {
+  var out = document.getElementById("logsOutput");
+  var meta = document.getElementById("logsMeta");
+  meta.textContent = metaText + " · " + arr.length + " dòng hiển thị";
+  if (!arr.length) { out.textContent = "(không có log)"; return; }
+  // Tô màu dòng lỗi + escape HTML
+  var html = arr.map(function(line) {
+    var s = String(line == null ? "" : line);
+    var esc = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    var lower = s.toLowerCase();
+    var cls = "text-gray-300";
+    if (/error|err|stderr|uncaught|throw|exception|econn|etimedout|truncated_backend_stream|fail/i.test(lower)) cls = "text-red-400";
+    else if (/warn|retry|fallback|quota|429|502|503|504/i.test(lower)) cls = "text-yellow-400";
+    else if (isMemory && /\bok\b|done|success/i.test(lower)) cls = "text-green-400";
+    return '<span class="' + cls + '">' + esc + '</span>';
+  }).join("\n");
+  out.innerHTML = html;
+  // Auto-scroll xuống cuối
+  out.scrollTop = out.scrollHeight;
+}
+function toggleLogsAuto() {
+  logsAutoOn = !logsAutoOn;
+  var btn = document.getElementById("logsAutoBtn");
+  if (logsAutoOn) {
+    btn.textContent = "Tự làm mới: ON";
+    btn.classList.add("bg-primary/20", "text-primary");
+    if (logsAutoTimer) clearInterval(logsAutoTimer);
+    logsAutoTimer = setInterval(loadLogs, 5000);
+    loadLogs();
+  } else {
+    stopLogsAuto();
+  }
+}
+function stopLogsAuto() {
+  logsAutoOn = false;
+  if (logsAutoTimer) { clearInterval(logsAutoTimer); logsAutoTimer = null; }
+  var btn = document.getElementById("logsAutoBtn");
+  if (btn) { btn.textContent = "Tự làm mới: OFF"; btn.classList.remove("bg-primary/20", "text-primary"); }
+}
+function downloadCurrentLog() {
+  var src = logsCurrentSource;
+  if (src === "__memory__") {
+    fetch(BASE + "/api/logs", { headers: authHeaders() }).then(function(r) { return r.json(); }).then(function(d) {
+      triggerLogDownload(new Blob([(d.logs || []).join("\n")], { type: "text/plain;charset=utf-8" }), "in-memory.log");
+    }).catch(function(e) { alert("Lỗi tải: " + (e.message || e)); });
+    return;
+  }
+  var file = src;
+  if (src === "__access_list__") {
+    var date = document.getElementById("logsAccessDate").value || "";
+    if (!date) { alert("Chưa chọn ngày"); return; }
+    file = "access-" + date + ".jsonl";
+  }
+  fetch(BASE + "/api/logs/download?file=" + encodeURIComponent(file), { headers: authHeaders() })
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+    .then(function(blob) { triggerLogDownload(blob, file); })
+    .catch(function(e) { alert("Lỗi tải: " + (e.message || e)); });
+}
+function triggerLogDownload(blob, name) {
+  var a = document.createElement("a");
+  var url = URL.createObjectURL(blob);
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
 </script>
