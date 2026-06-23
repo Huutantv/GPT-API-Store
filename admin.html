@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
@@ -905,27 +905,6 @@ body{font-family:'Inter',sans-serif}
   </div>
 </div>
 
-    </div><!-- end content inner -->
-  </div><!-- end content -->
-</div><!-- end main layout -->
-
-<div id="monitorErrorModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
-  <div class="w-full max-w-3xl rounded-xl border border-white/10 bg-dark-800 shadow-2xl">
-    <div class="flex items-center justify-between border-b border-white/10 px-5 py-4">
-      <h3 class="text-base font-bold">Chi tiết lỗi request</h3>
-      <button onclick="closeMonitorErrorModal()" class="rounded-lg bg-dark-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-600">Đóng</button>
-    </div>
-    <div class="space-y-4 p-5">
-      <pre id="monitorErrorText" class="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-dark-900 p-3 text-xs text-red-200"></pre>
-      <pre id="monitorDebugText" class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-dark-900 p-3 font-mono text-xs text-gray-300"></pre>
-      <div class="flex flex-wrap gap-2">
-        <button onclick="copyMonitorModalText('error',this)" class="rounded-lg bg-dark-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-600">copy error</button>
-        <button onclick="copyMonitorModalText('debug',this)" class="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110">copy debug</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- Tab: Logs -->
 <div id="tab-logs" class="tab-content hidden space-y-6">
   <div class="flex items-center justify-between gap-3 flex-wrap">
@@ -958,6 +937,27 @@ body{font-family:'Inter',sans-serif}
     <pre id="logsOutput" class="text-xs font-mono p-4 overflow-auto max-h-[60vh] whitespace-pre-wrap break-all text-gray-300 leading-relaxed">Ch&#7885;n ngu&#7891;n log r&#7891;i b&#7845;m L&#224;m m&#7899;i.</pre>
   </div>
 </div>
+    </div><!-- end content inner -->
+  </div><!-- end content -->
+</div><!-- end main layout -->
+
+<div id="monitorErrorModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 p-4">
+  <div class="w-full max-w-3xl rounded-xl border border-white/10 bg-dark-800 shadow-2xl">
+    <div class="flex items-center justify-between border-b border-white/10 px-5 py-4">
+      <h3 class="text-base font-bold">Chi tiết lỗi request</h3>
+      <button onclick="closeMonitorErrorModal()" class="rounded-lg bg-dark-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-600">Đóng</button>
+    </div>
+    <div class="space-y-4 p-5">
+      <pre id="monitorErrorText" class="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-dark-900 p-3 text-xs text-red-200"></pre>
+      <pre id="monitorDebugText" class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-white/10 bg-dark-900 p-3 font-mono text-xs text-gray-300"></pre>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="copyMonitorModalText('error',this)" class="rounded-lg bg-dark-700 px-3 py-1.5 text-xs text-gray-300 hover:bg-dark-600">copy error</button>
+        <button onclick="copyMonitorModalText('debug',this)" class="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:brightness-110">copy debug</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <script>
 /* ===== GLOBALS ===== */
