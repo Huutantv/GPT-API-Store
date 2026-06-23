@@ -579,6 +579,13 @@ body{font-family:'Inter',sans-serif}
         <input id="cfg5Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
       <div>
+        <label class="text-xs text-gray-400 block mb-1">API Style</label>
+        <select id="cfg5ApiStyle" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <option value="anthropic">Anthropic Messages (/messages)</option>
+          <option value="openai">OpenAI Chat Completions (/chat/completions)</option>
+        </select>
+      </div>
+      <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend5KeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
@@ -606,6 +613,13 @@ body{font-family:'Inter',sans-serif}
       <div>
         <label class="text-xs text-gray-400 block mb-1">Vision Model</label>
         <input id="cfg5vModel" placeholder="qwen-vl / gpt-4o ..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">API Style</label>
+        <select id="cfg5vApiStyle" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <option value="openai">OpenAI Chat Completions (/chat/completions)</option>
+          <option value="anthropic">Anthropic Messages (/messages)</option>
+        </select>
       </div>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
@@ -1663,11 +1677,13 @@ async function loadBackendConfig() {
     var summary = document.getElementById("b" + id + "Summary");
     var baseUrl = document.getElementById("cfg" + id + "BaseUrl");
     var model = document.getElementById("cfg" + id + "Model");
+    var apiStyle = document.getElementById("cfg" + id + "ApiStyle");
     var status = document.getElementById("backend" + id + "Status");
     var keyList = document.getElementById("backend" + id + "KeysList");
     if (summary) summary.textContent = (profile.backend_api_keys || 0) + " keys · Model: " + (profile.backend_model || "—");
     if (baseUrl) baseUrl.value = profile.base_url || "";
     if (model) model.value = profile.backend_model || "";
+    if (apiStyle) apiStyle.value = profile.api_style || (id === 5 ? "anthropic" : "openai");
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
     if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], String(id));
   });
@@ -1676,10 +1692,12 @@ async function loadBackendConfig() {
   var vision = data.backend5_vision || {};
   var b5vBaseUrl = document.getElementById("cfg5vBaseUrl");
   var b5vModel = document.getElementById("cfg5vModel");
+  var b5vApiStyle = document.getElementById("cfg5vApiStyle");
   var b5vStatus = document.getElementById("backend5vStatus");
   var b5vKeyList = document.getElementById("backend5vKeysList");
   if (b5vBaseUrl) b5vBaseUrl.value = vision.base_url || "";
   if (b5vModel) b5vModel.value = vision.backend_model || "";
+  if (b5vApiStyle) b5vApiStyle.value = vision.api_style || "openai";
   if (b5vStatus) b5vStatus.textContent = vision.configured
     ? ((vision.backend_api_keys || 0) + " keys · OK")
     : "Chưa cấu hình đủ";
@@ -1762,6 +1780,8 @@ async function saveBackendConfig(backend) {
   var updates = {};
   updates["DORO_BACKEND" + backend + "_BASE_URL"] = document.getElementById("cfg" + backend + "BaseUrl").value.trim();
   updates["DORO_BACKEND" + backend + "_MODEL"] = document.getElementById("cfg" + backend + "Model").value.trim();
+  var apiStyle = document.getElementById("cfg" + backend + "ApiStyle");
+  if (apiStyle) updates["DORO_BACKEND" + backend + "_API_STYLE"] = apiStyle.value;
   Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
   if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
@@ -2235,6 +2255,7 @@ async function saveBackend5VisionConfig() {
   var updates = {
     DORO_BACKEND5_VISION_BASE_URL: document.getElementById("cfg5vBaseUrl").value.trim(),
     DORO_BACKEND5_VISION_MODEL: document.getElementById("cfg5vModel").value.trim(),
+    DORO_BACKEND5_VISION_API_STYLE: document.getElementById("cfg5vApiStyle").value,
   };
   Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
   if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }

@@ -206,7 +206,7 @@ function backendProfile(id = activeBackendId()) {
       maxTokens: optionalPositiveInt(process.env[`${prefix}_MAX_TOKENS`]),
       userAssistantOnly: envFlag(process.env[`${prefix}_USER_ASSISTANT_ONLY`], defaultUserAssistantOnlyForModel(model)),
       disableTools: envFlag(process.env[`${prefix}_DISABLE_TOOLS`], String(model || "").toLowerCase().includes("deepseek")),
-      apiStyle: normalizeApiStyle(process.env[`${prefix}_API_STYLE`]),
+      apiStyle: normalizeApiStyle(process.env[`${prefix}_API_STYLE`] || (backendId === "5" ? "anthropic" : "openai")),
       isVision: false,
     };
   }
@@ -921,6 +921,21 @@ function backendHeaders(apiKey, extra = {}) {
     "Content-Type": "application/json; charset=utf-8",
     ...extra,
   };
+}
+
+function backendWireHeaders(apiKey, settings, extra = {}) {
+  const headers = backendHeaders(apiKey, extra);
+  if (settings && settings.apiStyle === "anthropic") {
+    headers["x-api-key"] = apiKey;
+    headers["anthropic-version"] = "2023-06-01";
+  }
+  return headers;
+}
+
+function backendChatUrl(settings, fallbackUrl = "") {
+  if (!settings || settings.apiStyle !== "anthropic") return fallbackUrl || `${settings.baseUrl}/chat/completions`;
+  const base = String(settings.baseUrl || "").replace(/\/+$/, "");
+  return /\/messages$/i.test(base) ? base : `${base}/messages`;
 }
 
 function isRetryableStatus(status) {
@@ -2006,7 +2021,7 @@ async function runServerToolCalls(toolCalls, auth) {
   return results;
 }
 
-async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs) {
+async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs, settings = null) {
   const ordered = orderedBackendKeys(apiKeys);
   if (!ordered.length) throw new Error("Missing backend API key");
   let lastError;
@@ -2015,7 +2030,7 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       const { resp, text } = await withBackendKeySlot(ordered[i], async () => {
         const resp = await fetchWithTimeout(url, {
           method: "POST",
-          headers: backendHeaders(ordered[i], extraHeaders),
+          headers: backendWireHeaders(ordered[i], settings, extraHeaders),
           body: JSON.stringify(payload),
         });
         const text = await resp.text();
@@ -2074,8 +2089,10 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         applyBackendPayloadLimits(payload, settings);
         applyBackendMessageCompatibility(payload, settings);
         applyBackendToolCompatibility(payload, settings);
-        const url = `${settings.baseUrl}${pathSuffix}`;
-        const response = await postWithKeyFailover(url, payload, settings.apiKeys, {}, obs);
+        const wirePayload = backendWirePayload(payload, settings);
+        const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
+        const rawResponse = await postWithKeyFailover(url, wirePayload, settings.apiKeys, {}, obs, settings);
+        const response = adaptBackendResponseToOpenAI(rawResponse, settings);
         const data = responseHandler ? responseHandler(response, settings, payload) : undefined;
         // Track thành công
         trackModelRequest(payload.model);
@@ -2098,8 +2115,10 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
               applyBackendPayloadLimits(retryPayload, settings);
               applyBackendMessageCompatibility(retryPayload, settings);
               applyBackendToolCompatibility(retryPayload, settings);
-              const url = `${settings.baseUrl}${pathSuffix}`;
-              const response = await postWithKeyFailover(url, retryPayload, settings.apiKeys, {}, obs);
+              const wirePayload = backendWirePayload(retryPayload, settings);
+              const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
+              const rawResponse = await postWithKeyFailover(url, wirePayload, settings.apiKeys, {}, obs, settings);
+              const response = adaptBackendResponseToOpenAI(rawResponse, settings);
               const data = responseHandler ? responseHandler(response, settings, retryPayload) : undefined;
               trackModelRequest(nextModel);
               trackBackendSuccess(settings.profileId);
@@ -2537,6 +2556,203 @@ function anthropicToOpenAI(body, backendModel = "") {
   return payload;
 }
 
+function openAIImageToAnthropicBlock(part) {
+  if (!part || typeof part !== "object") return null;
+  let rawUrl = part.image_url || part.url || "";
+  if (rawUrl && typeof rawUrl === "object") rawUrl = rawUrl.url || "";
+  rawUrl = String(rawUrl || "");
+  if (!rawUrl) return null;
+
+  const dataUrl = rawUrl.match(/^data:([^;,]+);base64,([\s\S]+)$/i);
+  if (dataUrl) {
+    return {
+      type: "image",
+      source: { type: "base64", media_type: dataUrl[1] || "image/jpeg", data: dataUrl[2] },
+    };
+  }
+  return { type: "image", source: { type: "url", url: rawUrl } };
+}
+
+function openAIContentToAnthropicBlocks(content) {
+  if (typeof content === "string") return content ? [{ type: "text", text: content }] : [];
+  if (!Array.isArray(content)) {
+    const text = messageContentToText(content);
+    return text ? [{ type: "text", text }] : [];
+  }
+
+  const blocks = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      if (part) blocks.push({ type: "text", text: part });
+      continue;
+    }
+    if (!part || typeof part !== "object") continue;
+    if (["image_url", "input_image", "image"].includes(part.type) || part.image_url) {
+      const image = openAIImageToAnthropicBlock(part);
+      if (image) blocks.push(image);
+      continue;
+    }
+    const text = part.text || part.input_text || part.output_text || part.content || "";
+    if (text) blocks.push({ type: "text", text: String(text) });
+  }
+  return blocks;
+}
+
+function appendAnthropicMessage(messages, role, blocks) {
+  const content = Array.isArray(blocks) ? blocks.filter(Boolean) : [];
+  if (!content.length) return;
+  const last = messages[messages.length - 1];
+  if (last && last.role === role && Array.isArray(last.content)) {
+    last.content.push(...content);
+    return;
+  }
+  messages.push({ role, content });
+}
+
+function openAIChatToAnthropic(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const messages = [];
+  const systemParts = [];
+
+  for (const message of Array.isArray(source.messages) ? source.messages : []) {
+    if (!message || typeof message !== "object") continue;
+    const role = String(message.role || "user");
+    if (role === "system" || role === "developer") {
+      const text = messageContentToText(message.content);
+      if (text) systemParts.push(text);
+      continue;
+    }
+    if (role === "tool") {
+      appendAnthropicMessage(messages, "user", [{
+        type: "tool_result",
+        tool_use_id: String(message.tool_call_id || ""),
+        content: messageContentToText(message.content),
+      }]);
+      continue;
+    }
+
+    const targetRole = role === "assistant" ? "assistant" : "user";
+    const blocks = openAIContentToAnthropicBlocks(message.content);
+    if (targetRole === "assistant") {
+      for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
+        const fn = call && call.function && typeof call.function === "object" ? call.function : {};
+        const name = String(fn.name || "").trim();
+        if (!name) continue;
+        blocks.push({
+          type: "tool_use",
+          id: String(call.id || `call_${blocks.length}`),
+          name,
+          input: parseToolArguments(fn.arguments),
+        });
+      }
+    }
+    appendAnthropicMessage(messages, targetRole, blocks);
+  }
+
+  if (!messages.length) messages.push({ role: "user", content: [{ type: "text", text: "" }] });
+  const out = {
+    model: source.model,
+    messages,
+    max_tokens: optionalPositiveInt(source.max_tokens || source.max_completion_tokens) || 8192,
+    stream: !!source.stream,
+  };
+  if (systemParts.length) out.system = systemParts.join("\n\n");
+  if (source.temperature != null) out.temperature = source.temperature;
+  if (source.top_p != null) out.top_p = source.top_p;
+  if (source.stop != null) out.stop_sequences = Array.isArray(source.stop) ? source.stop : [source.stop];
+
+  const tools = (Array.isArray(source.tools) ? source.tools : []).map((tool) => {
+    const fn = tool && tool.function && typeof tool.function === "object" ? tool.function : tool;
+    const name = String((fn && fn.name) || "").trim();
+    if (!name) return null;
+    return {
+      name,
+      description: String(fn.description || ""),
+      input_schema: fn.parameters && typeof fn.parameters === "object"
+        ? fn.parameters
+        : { type: "object", properties: {} },
+    };
+  }).filter(Boolean);
+
+  const choice = source.tool_choice;
+  if (choice !== "none" && tools.length) {
+    out.tools = tools;
+    if (choice === "required") out.tool_choice = { type: "any" };
+    else if (choice === "auto") out.tool_choice = { type: "auto" };
+    else if (choice && typeof choice === "object") {
+      const name = String((choice.function && choice.function.name) || choice.name || "").trim();
+      if (name) out.tool_choice = { type: "tool", name };
+    }
+    if (source.parallel_tool_calls === false) {
+      out.tool_choice = { ...(out.tool_choice || { type: "auto" }), disable_parallel_tool_use: true };
+    }
+  }
+  return out;
+}
+
+function mapAnthropicStopReason(reason, hasToolCalls = false) {
+  if (hasToolCalls || reason === "tool_use") return "tool_calls";
+  if (reason === "max_tokens") return "length";
+  return "stop";
+}
+
+function anthropicToOpenAIChat(data) {
+  const source = data && typeof data === "object" ? data : {};
+  const textParts = [];
+  const toolCalls = [];
+  for (const block of Array.isArray(source.content) ? source.content : []) {
+    if (!block || typeof block !== "object") continue;
+    if (block.type === "text" && block.text) textParts.push(String(block.text));
+    if (block.type === "tool_use") {
+      toolCalls.push({
+        id: String(block.id || `call_${toolCalls.length}`),
+        type: "function",
+        function: {
+          name: String(block.name || "tool"),
+          arguments: JSON.stringify(block.input && typeof block.input === "object" ? block.input : {}),
+        },
+      });
+    }
+  }
+  const usage = source.usage && typeof source.usage === "object" ? source.usage : {};
+  const promptTokens = Number(usage.input_tokens || 0)
+    + Number(usage.cache_creation_input_tokens || 0)
+    + Number(usage.cache_read_input_tokens || 0);
+  const completionTokens = Number(usage.output_tokens || 0);
+  const message = {
+    role: "assistant",
+    content: textParts.length ? textParts.join("") : (toolCalls.length ? null : ""),
+  };
+  if (toolCalls.length) message.tool_calls = toolCalls;
+  return {
+    id: String(source.id || `chatcmpl_${Date.now()}`),
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model: source.model,
+    choices: [{
+      index: 0,
+      message,
+      finish_reason: mapAnthropicStopReason(source.stop_reason, toolCalls.length > 0),
+    }],
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+    },
+  };
+}
+
+function backendWirePayload(payload, settings) {
+  return settings && settings.apiStyle === "anthropic" ? openAIChatToAnthropic(payload) : payload;
+}
+
+function adaptBackendResponseToOpenAI(response, settings) {
+  if (!settings || settings.apiStyle !== "anthropic") return response;
+  const parsed = parseBackendJsonResponse(response.text, response.status, "messages");
+  if (parsed && parsed.error) return response;
+  return { ...response, text: JSON.stringify(anthropicToOpenAIChat(parsed)) };
+}
+
 function mapFinishReason(reason, hasToolCalls = false) {
   if (hasToolCalls || reason === "tool_calls") return "tool_use";
   if (reason === "length") return "max_tokens";
@@ -2563,6 +2779,7 @@ function openaiToAnthropic(data, model, backendModel) {
   const message = choice.message || {};
   const blocks = openaiMessageToAnthropicBlocks(message, model, backendModel);
   const hasToolCalls = blocks.some((block) => block.type === "tool_use");
+  const usage = data.usage || {};
   return {
     id: data.id || `msg_${Date.now()}`,
     type: "message",
@@ -2571,7 +2788,10 @@ function openaiToAnthropic(data, model, backendModel) {
     content: blocks,
     stop_reason: mapFinishReason(choice.finish_reason, hasToolCalls),
     stop_sequence: null,
-    usage: data.usage || {},
+    usage: {
+      input_tokens: Number(usage.input_tokens ?? usage.prompt_tokens ?? 0),
+      output_tokens: Number(usage.output_tokens ?? usage.completion_tokens ?? 0),
+    },
   };
 }
 
@@ -2766,6 +2986,117 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
   return usage.total_tokens || outputTokens || 0;
 }
 
+async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, blockMojibake = false) {
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split(/\r?\n/);
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const dataStr = line.slice(5).trim();
+      if (!dataStr || dataStr === "[DONE]") continue;
+      let event;
+      try {
+        event = JSON.parse(dataStr);
+      } catch (_) {
+        continue;
+      }
+      const payloadError = backendErrorFromPayload(event, 502);
+      if (payloadError) throw payloadError;
+      if (blockMojibake) assertNoMojibakeForSourceEdit(event, [{ role: "user", content: "code edit" }]);
+      if (event.type === "message_start" && event.message) {
+        event.message.model = model;
+        const usage = event.message.usage || {};
+        inputTokens = Number(usage.input_tokens || 0)
+          + Number(usage.cache_creation_input_tokens || 0)
+          + Number(usage.cache_read_input_tokens || 0);
+        outputTokens = Number(usage.output_tokens || 0);
+      }
+      if (event.type === "content_block_start" && event.content_block && event.content_block.type === "text") {
+        event.content_block.text = sanitizeAssistantIdentityText(event.content_block.text || "", model, backendModel, { preserveLeadingWhitespace: true });
+      }
+      if (event.type === "content_block_delta" && event.delta && event.delta.type === "text_delta") {
+        event.delta.text = sanitizeAssistantIdentityText(event.delta.text || "", model, backendModel, { preserveLeadingWhitespace: true });
+      }
+      if (event.type === "message_delta" && event.usage) {
+        outputTokens = Number(event.usage.output_tokens || outputTokens || 0);
+      }
+      sseWrite(res, event.type || "message", event);
+    }
+  }
+  res.end();
+  return inputTokens + outputTokens;
+}
+
+function anthropicStreamEventToOpenAIChunks(event, state) {
+  if (!event || typeof event !== "object") return [];
+  const chunks = [];
+  const makeChunk = (delta = {}, finishReason = null, usage = undefined) => ({
+    id: state.id,
+    object: "chat.completion.chunk",
+    created: state.created,
+    model: state.model,
+    choices: [{ index: 0, delta, finish_reason: finishReason }],
+    ...(usage ? { usage } : {}),
+  });
+
+  if (event.type === "message_start") {
+    const message = event.message || {};
+    state.id = String(message.id || state.id);
+    const usage = message.usage || {};
+    state.inputTokens = Number(usage.input_tokens || 0)
+      + Number(usage.cache_creation_input_tokens || 0)
+      + Number(usage.cache_read_input_tokens || 0);
+    state.outputTokens = Number(usage.output_tokens || 0);
+    chunks.push(makeChunk({ role: "assistant" }));
+  } else if (event.type === "content_block_start") {
+    const block = event.content_block || {};
+    if (block.type === "text" && block.text) {
+      chunks.push(makeChunk({ content: String(block.text) }));
+    } else if (block.type === "tool_use") {
+      const toolIndex = state.nextToolIndex++;
+      state.toolIndexes.set(Number(event.index || 0), toolIndex);
+      chunks.push(makeChunk({
+        tool_calls: [{
+          index: toolIndex,
+          id: String(block.id || `call_${toolIndex}`),
+          type: "function",
+          function: {
+            name: String(block.name || "tool"),
+            arguments: block.input && Object.keys(block.input).length ? JSON.stringify(block.input) : "",
+          },
+        }],
+      }));
+    }
+  } else if (event.type === "content_block_delta") {
+    const delta = event.delta || {};
+    if (delta.type === "text_delta" && delta.text) {
+      chunks.push(makeChunk({ content: String(delta.text) }));
+    } else if (delta.type === "input_json_delta") {
+      const blockIndex = Number(event.index || 0);
+      const toolIndex = state.toolIndexes.has(blockIndex) ? state.toolIndexes.get(blockIndex) : blockIndex;
+      chunks.push(makeChunk({ tool_calls: [{ index: toolIndex, function: { arguments: String(delta.partial_json || "") } }] }));
+    }
+  } else if (event.type === "message_delta") {
+    state.outputTokens = Number((event.usage && event.usage.output_tokens) || state.outputTokens || 0);
+    const usage = {
+      prompt_tokens: state.inputTokens,
+      completion_tokens: state.outputTokens,
+      total_tokens: state.inputTokens + state.outputTokens,
+    };
+    chunks.push(makeChunk({}, mapAnthropicStopReason(event.delta && event.delta.stop_reason, state.nextToolIndex > 0), usage));
+  }
+  return chunks;
+}
+
 async function collectOpenAIStream(resp) {
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -2808,18 +3139,20 @@ async function collectOpenAIStream(resp) {
   };
 }
 
-async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId) {
+async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings = null) {
   const ordered = orderedBackendKeys(apiKeys);
+  const wireUrl = backendChatUrl(settings, url);
+  const wirePayload = backendWirePayload(payload, settings);
   let lastError;
   for (let i = 0; i < ordered.length; i += 1) {
     let wroteResponse = false;
     let stopHeartbeat = null;
     try {
       const tokens = await withBackendKeySlot(ordered[i], async () => {
-        const resp = await fetchWithTimeout(url, {
+        const resp = await fetchWithTimeout(wireUrl, {
           method: "POST",
-          headers: backendHeaders(ordered[i]),
-          body: JSON.stringify(payload),
+          headers: backendWireHeaders(ordered[i], settings),
+          body: JSON.stringify(wirePayload),
           timeoutMs: backendStreamTimeoutMs,
         });
         if (obs) obs.final_backend_status = resp.status;
@@ -2833,7 +3166,9 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         wroteResponse = true;
         setSseHeaders(res);
         stopHeartbeat = startSseHeartbeat(res);
-        return pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages));
+        return settings && settings.apiStyle === "anthropic"
+          ? pipeAnthropicStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages))
+          : pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages));
       });
       if (stopHeartbeat) stopHeartbeat();
       // Trừ credit sau khi stream xong
@@ -2900,8 +3235,11 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
   throw chainErr;
 }
 
-async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth = 0) {
+async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings = null, retryDepth = 0) {
   const ordered = orderedBackendKeys(apiKeys);
+  const anthropicWire = !!(settings && settings.apiStyle === "anthropic");
+  const wireUrl = backendChatUrl(settings, url);
+  const wirePayload = backendWirePayload(payload, settings);
   let lastError;
   for (let i = 0; i < ordered.length; i += 1) {
     let wroteResponse = false;
@@ -2909,10 +3247,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
     try {
       let totalTokens = 0;
       await withBackendKeySlot(ordered[i], async () => {
-        const resp = await fetchWithTimeout(url, {
+        const resp = await fetchWithTimeout(wireUrl, {
           method: "POST",
-          headers: backendHeaders(ordered[i]),
-          body: JSON.stringify(payload),
+          headers: backendWireHeaders(ordered[i], settings),
+          body: JSON.stringify(wirePayload),
           timeoutMs: backendStreamTimeoutMs,
         });
         if (obs) obs.final_backend_status = resp.status;
@@ -2930,6 +3268,15 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         let hasAssistantOutput = false;
         let streamOpened = false;
         const hiddenReasoningState = { inThink: false };
+        const anthropicState = {
+          id: `chatcmpl_${Date.now()}`,
+          created: Math.floor(Date.now() / 1000),
+          model: publicModel,
+          inputTokens: 0,
+          outputTokens: 0,
+          nextToolIndex: 0,
+          toolIndexes: new Map(),
+        };
         const openStream = () => {
           if (streamOpened) return;
           if (!res.__responsesBridge) wroteResponse = true;
@@ -2951,12 +3298,12 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           buffer = lines.pop() || "";
           for (const line of lines) {
             if (!line.startsWith("data:")) {
-              outbound += `${line}\n`;
+              if (!anthropicWire) outbound += `${line}\n`;
               continue;
             }
             const dataStr = line.slice(5).trim();
             if (!dataStr || dataStr === "[DONE]") {
-              outbound += `${line}\n`;
+              if (!anthropicWire) outbound += `${line}\n`;
               continue;
             }
             let parsed;
@@ -2966,22 +3313,25 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
               outbound += `${sanitizeBackendText(line, backendModel, publicModel)}\n`;
               continue;
             }
-            const parsedChoice = (parsed.choices || [])[0] || {};
-            if (parsedChoice.delta && typeof parsedChoice.delta.content === "string") {
-              parsedChoice.delta.content = filterHiddenReasoningDelta(parsedChoice.delta.content, hiddenReasoningState);
-            }
             const payloadError = backendErrorFromPayload(parsed, resp.status || 502);
             if (payloadError && !hasAssistantOutput) throw payloadError;
-            assertNoMojibakeForSourceEdit(parsed, payload.messages);
-            normalizeOpenAIAssistantPayload(parsed, publicModel, backendModel);
-            if (parsed.usage && parsed.usage.total_tokens) {
-              totalTokens = parsed.usage.total_tokens;
+            const parsedItems = anthropicWire ? anthropicStreamEventToOpenAIChunks(parsed, anthropicState) : [parsed];
+            for (const parsedItem of parsedItems) {
+              const parsedChoice = (parsedItem.choices || [])[0] || {};
+              if (parsedChoice.delta && typeof parsedChoice.delta.content === "string") {
+                parsedChoice.delta.content = filterHiddenReasoningDelta(parsedChoice.delta.content, hiddenReasoningState);
+              }
+              assertNoMojibakeForSourceEdit(parsedItem, payload.messages);
+              normalizeOpenAIAssistantPayload(parsedItem, publicModel, backendModel);
+              if (parsedItem.usage && parsedItem.usage.total_tokens) {
+                totalTokens = parsedItem.usage.total_tokens;
+              }
+              if (hasOpenAIAssistantOutput(parsedItem)) {
+                hasAssistantOutput = true;
+                if (res.__responsesBridge) wroteResponse = true;
+              }
+              outbound += `data: ${JSON.stringify(parsedItem)}\n\n`;
             }
-            if (hasOpenAIAssistantOutput(parsed)) {
-              hasAssistantOutput = true;
-              if (res.__responsesBridge) wroteResponse = true;
-            }
-            outbound += `data: ${JSON.stringify(parsed)}\n`;
           }
           if (wasPending && outbound) pendingChunks.push(outbound);
           if (hasAssistantOutput) openStream();
@@ -2994,6 +3344,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.code = "empty_assistant_stream";
           throw err;
         }
+        if (anthropicWire) res.write("data: [DONE]\n\n");
       });
       if (stopHeartbeat) stopHeartbeat();
       // Trừ credit sau khi stream xong
@@ -3019,7 +3370,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
-          return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
+          return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, retryDepth + 1);
         }
         if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
@@ -3041,7 +3392,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} error=${err.name || "Error"}: ${err.message}`);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
-        return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, retryDepth + 1);
+        return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, retryDepth + 1);
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
@@ -3341,8 +3692,8 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   req.obs.backend_profile = settings.profileLabel || settings.profileId || "";
   req.obs.backend_model = settings.backendModel || "";
   req.obs.backend_base_url = settings.baseUrl || "";
-  addLog(`proxy anthropic->openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
-  printLog(`[proxy] anthropic->openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
+  addLog(`proxy anthropic->${settings.apiStyle} ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
+  printLog(`[proxy] anthropic->${settings.apiStyle} ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
   if (useStream) {
     // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
     for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
@@ -3360,7 +3711,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       applyBackendToolCompatibility(payload, chainSettings);
       const backendUrl = `${chainSettings.baseUrl}/chat/completions`;
       try {
-        await streamAnthropicWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+        await streamAnthropicWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId, chainSettings);
         return;
       } catch (streamErr) {
         if (res.headersSent || chainIdx >= settingsChain.length - 1) {
@@ -4313,7 +4664,7 @@ async function openAIChatCompletionsHandler(req, res) {
   req.obs.backend_profile = settings.profileLabel || settings.profileId || "";
   req.obs.backend_model = settings.backendModel || "";
   req.obs.backend_base_url = settings.baseUrl || "";
-  addLog(`proxy openai ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
+  addLog(`proxy openai->${settings.apiStyle} ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
   if (body.stream) {
     // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
     for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
@@ -4332,7 +4683,7 @@ async function openAIChatCompletionsHandler(req, res) {
       applyBackendToolCompatibility(payload, chainSettings);
       const backendUrl = `${chainSettings.baseUrl}/chat/completions`;
       try {
-        await streamOpenAIWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId);
+        await streamOpenAIWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId, chainSettings);
         return;
       } catch (streamErr) {
         if (res.headersSent || chainIdx >= settingsChain.length - 1) {
@@ -4940,6 +5291,7 @@ app.get("/api/config", (req, res) => {
       label: profile.label,
       base_url: profile.baseUrl,
       backend_model: profile.backendModel,
+      api_style: profile.apiStyle,
       max_tokens: profile.maxTokens || null,
       user_assistant_only: !!profile.userAssistantOnly,
       disable_tools: !!profile.disableTools,
