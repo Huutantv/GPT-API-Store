@@ -947,6 +947,30 @@ function isRetryableAcrossKeys(status) {
   return [408, 429, 500, 502, 503, 504, 524].includes(status);
 }
 
+function isBackendCompatibilityError(status, text = "", code = "") {
+  const numericStatus = Number(status) || 0;
+  const lower = `${text || ""} ${code || ""}`.toLowerCase();
+  if ([404, 405, 415, 422].includes(numericStatus)) return true;
+  if (numericStatus !== 400) return false;
+  return [
+    "invalid json body",
+    "invalid request body",
+    "invalid_request_error",
+    "unsupported parameter",
+    "unsupported field",
+    "unknown parameter",
+    "unknown field",
+    "malformed request",
+  ].some((marker) => lower.includes(marker));
+}
+
+function shouldFailoverBackend(err, hasNextBackend) {
+  if (!hasNextBackend) return false;
+  const status = Number(err && err.status) || 0;
+  if (!status || isRetryableStatus(status)) return true;
+  return isBackendCompatibilityError(status, err && (err.text || err.message), err && err.code);
+}
+
 function publicModelName(requestedModel, backendModel) {
   const value = String(requestedModel || "").trim();
   if (value) return value;
@@ -2131,7 +2155,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
           }
         }
 
-        const shouldTryNextBackend = (!err.status || isRetryableStatus(err.status)) && i < settingsChain.length - 1;
+        const shouldTryNextBackend = shouldFailoverBackend(err, i < settingsChain.length - 1);
         if (shouldTryNextBackend) {
           trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
           if (obs) {
@@ -2159,8 +2183,8 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
 
         // Auto-mode: track backend lỗi để tự ngắt
         trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
-        const canTryNext = !err.status || (isRetryableStatus(err.status) && i < settingsChain.length - 1);
-        if (canTryNext && i < settingsChain.length - 1) {
+        const canTryNext = shouldFailoverBackend(err, i < settingsChain.length - 1);
+        if (canTryNext) {
           if (obs) {
             obs.is_retry = true;
             obs.retry_count += 1;
@@ -2870,6 +2894,68 @@ function startSseHeartbeat(res) {
   return stop;
 }
 
+function incompleteBackendStreamError(message = "Backend stream ended before a completion marker") {
+  const err = new Error(message);
+  err.status = 502;
+  err.code = "incomplete_backend_stream";
+  err.text = JSON.stringify({ error: { message, type: "api_error", code: err.code } });
+  return err;
+}
+
+function safeStreamFailoverEnabled() {
+  return envFlag(process.env.DORO_SAFE_STREAM_FAILOVER, true);
+}
+
+function safeStreamBufferLimitBytes() {
+  const configured = optionalPositiveInt(process.env.DORO_SAFE_STREAM_MAX_BYTES);
+  return configured || (8 * 1024 * 1024);
+}
+
+function ssePayloadHasCompletionMarker(text, anthropicWire = false) {
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const raw = line.slice(5).trim();
+    if (!raw) continue;
+    if (raw === "[DONE]") return true;
+    let event;
+    try {
+      event = JSON.parse(raw);
+    } catch (_) {
+      continue;
+    }
+    if (anthropicWire) {
+      if (event.type === "message_stop") return true;
+      if (event.type === "message_delta" && event.delta && event.delta.stop_reason) return true;
+      continue;
+    }
+    const choice = (event.choices || [])[0] || {};
+    if (choice.finish_reason != null) return true;
+  }
+  return false;
+}
+
+async function bufferCompleteBackendStream(resp, anthropicWire = false) {
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    const chunk = Buffer.from(value);
+    totalBytes += chunk.length;
+    if (totalBytes > safeStreamBufferLimitBytes()) {
+      try { await reader.cancel(); } catch (_) {}
+      throw incompleteBackendStreamError("Backend stream exceeded the safe failover buffer limit");
+    }
+    chunks.push(chunk);
+  }
+  const body = Buffer.concat(chunks, totalBytes);
+  if (!ssePayloadHasCompletionMarker(body.toString("utf8"), anthropicWire)) {
+    throw incompleteBackendStreamError();
+  }
+  return new Response(body, { status: resp.status, headers: resp.headers });
+}
+
 function emitAnthropicBufferedStream(res, data, model, backendModel) {
   const response = openaiToAnthropic(data, model, backendModel);
   sseWrite(res, "message_start", {
@@ -2904,6 +2990,7 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
   let finishReason = null;
   let usage = {};
   let hasToolCalls = false;
+  let sawDone = false;
   const toolBlocks = new Map();
 
   const closeTextBlock = () => {
@@ -2948,7 +3035,11 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
     for (const line of lines) {
       if (!line.startsWith("data:")) continue;
       const dataStr = line.slice(5).trim();
-      if (!dataStr || dataStr === "[DONE]") continue;
+      if (!dataStr) continue;
+      if (dataStr === "[DONE]") {
+        sawDone = true;
+        continue;
+      }
       let chunk;
       try {
         chunk = JSON.parse(dataStr);
@@ -2975,6 +3066,8 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
     }
   }
 
+  if (finishReason == null && !sawDone) throw incompleteBackendStreamError();
+
   closeTextBlock();
   for (const block of toolBlocks.values()) {
     sseWrite(res, "content_block_stop", { type: "content_block_stop", index: block.blockIndex });
@@ -2992,6 +3085,7 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
   let buffer = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let sawStop = false;
 
   while (true) {
     const { value, done } = await reader.read();
@@ -3029,9 +3123,13 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
       if (event.type === "message_delta" && event.usage) {
         outputTokens = Number(event.usage.output_tokens || outputTokens || 0);
       }
+      if (event.type === "message_stop" || (event.type === "message_delta" && event.delta && event.delta.stop_reason)) {
+        sawStop = true;
+      }
       sseWrite(res, event.type || "message", event);
     }
   }
+  if (!sawStop) throw incompleteBackendStreamError();
   res.end();
   return inputTokens + outputTokens;
 }
@@ -3139,7 +3237,7 @@ async function collectOpenAIStream(resp) {
   };
 }
 
-async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings = null) {
+async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings = null, deferErrorToCaller = false) {
   const ordered = orderedBackendKeys(apiKeys);
   const wireUrl = backendChatUrl(settings, url);
   const wirePayload = backendWirePayload(payload, settings);
@@ -3149,7 +3247,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
     let stopHeartbeat = null;
     try {
       const tokens = await withBackendKeySlot(ordered[i], async () => {
-        const resp = await fetchWithTimeout(wireUrl, {
+        let resp = await fetchWithTimeout(wireUrl, {
           method: "POST",
           headers: backendWireHeaders(ordered[i], settings),
           body: JSON.stringify(wirePayload),
@@ -3199,6 +3297,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code);
         }
         if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
+        if (!wroteResponse && deferErrorToCaller && shouldFailoverBackend(err, true)) throw err;
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (wroteResponse) {
           sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
@@ -3221,6 +3320,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180);
       }
       if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
+      if (!wroteResponse && deferErrorToCaller) throw err;
       if (wroteResponse) {
         sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
         return res.end();
@@ -3235,7 +3335,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
   throw chainErr;
 }
 
-async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings = null, retryDepth = 0) {
+async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings = null, deferErrorToCaller = false, retryDepth = 0) {
   const ordered = orderedBackendKeys(apiKeys);
   const anthropicWire = !!(settings && settings.apiStyle === "anthropic");
   const wireUrl = backendChatUrl(settings, url);
@@ -3247,7 +3347,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
     try {
       let totalTokens = 0;
       await withBackendKeySlot(ordered[i], async () => {
-        const resp = await fetchWithTimeout(wireUrl, {
+        let resp = await fetchWithTimeout(wireUrl, {
           method: "POST",
           headers: backendWireHeaders(ordered[i], settings),
           body: JSON.stringify(wirePayload),
@@ -3261,12 +3361,18 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.text = text;
           throw err;
         }
+        const safeBuffered = deferErrorToCaller && !!res.__responsesBridge && safeStreamFailoverEnabled();
+        if (safeBuffered) {
+          resp = await bufferCompleteBackendStream(resp, anthropicWire);
+          addLog(`stream safely buffered for backend failover profile=${settings && settings.profileId || ""}`);
+        }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         const pendingChunks = [];
         let hasAssistantOutput = false;
         let streamOpened = false;
+        let sawCompletionMarker = safeBuffered;
         const hiddenReasoningState = { inThink: false };
         const anthropicState = {
           id: `chatcmpl_${Date.now()}`,
@@ -3303,6 +3409,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
             }
             const dataStr = line.slice(5).trim();
             if (!dataStr || dataStr === "[DONE]") {
+              if (dataStr === "[DONE]") sawCompletionMarker = true;
               if (!anthropicWire) outbound += `${line}\n`;
               continue;
             }
@@ -3315,6 +3422,14 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
             }
             const payloadError = backendErrorFromPayload(parsed, resp.status || 502);
             if (payloadError && !hasAssistantOutput) throw payloadError;
+            if (anthropicWire) {
+              if (parsed.type === "message_stop" || (parsed.type === "message_delta" && parsed.delta && parsed.delta.stop_reason)) {
+                sawCompletionMarker = true;
+              }
+            } else {
+              const terminalChoice = (parsed.choices || [])[0] || {};
+              if (terminalChoice.finish_reason != null) sawCompletionMarker = true;
+            }
             const parsedItems = anthropicWire ? anthropicStreamEventToOpenAIChunks(parsed, anthropicState) : [parsed];
             for (const parsedItem of parsedItems) {
               const parsedChoice = (parsedItem.choices || [])[0] || {};
@@ -3344,6 +3459,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.code = "empty_assistant_stream";
           throw err;
         }
+        if (!sawCompletionMarker) throw incompleteBackendStreamError();
         if (anthropicWire) res.write("data: [DONE]\n\n");
       });
       if (stopHeartbeat) stopHeartbeat();
@@ -3370,12 +3486,13 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} status=${err.status} body=${logPreview(err.text || err.message)}`);
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
-          return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, retryDepth + 1);
+          return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, deferErrorToCaller, retryDepth + 1);
         }
         if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           continue;
         }
+        if (!wroteResponse && deferErrorToCaller && shouldFailoverBackend(err, true)) throw err;
         if (obs) { obs.error_type = "backend"; obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code); }
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
@@ -3392,12 +3509,13 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} error=${err.name || "Error"}: ${err.message}`);
         await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
-        return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, retryDepth + 1);
+        return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, deferErrorToCaller, retryDepth + 1);
       }
       if (!wroteResponse && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         continue;
       }
+      if (!wroteResponse && deferErrorToCaller) throw err;
       if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
       if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
       if (!wroteResponse) {
@@ -3711,7 +3829,20 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       applyBackendToolCompatibility(payload, chainSettings);
       const backendUrl = `${chainSettings.baseUrl}/chat/completions`;
       try {
-        await streamAnthropicWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId, chainSettings);
+        await streamAnthropicWithFailover(
+          res,
+          backendUrl,
+          payload,
+          chainSettings.apiKeys,
+          publicModel,
+          chainSettings.backendModel,
+          req.obs,
+          auth.token,
+          originalModel,
+          req.reqId,
+          chainSettings,
+          chainIdx < settingsChain.length - 1,
+        );
         return;
       } catch (streamErr) {
         if (res.headersSent || chainIdx >= settingsChain.length - 1) {
@@ -4683,11 +4814,25 @@ async function openAIChatCompletionsHandler(req, res) {
       applyBackendToolCompatibility(payload, chainSettings);
       const backendUrl = `${chainSettings.baseUrl}/chat/completions`;
       try {
-        await streamOpenAIWithFailover(res, backendUrl, payload, chainSettings.apiKeys, publicModel, chainSettings.backendModel, req.obs, auth.token, originalModel, req.reqId, chainSettings);
+        await streamOpenAIWithFailover(
+          res,
+          backendUrl,
+          payload,
+          chainSettings.apiKeys,
+          publicModel,
+          chainSettings.backendModel,
+          req.obs,
+          auth.token,
+          originalModel,
+          req.reqId,
+          chainSettings,
+          chainIdx < settingsChain.length - 1,
+        );
         return;
       } catch (streamErr) {
-        if (res.headersSent || chainIdx >= settingsChain.length - 1) {
-          if (!res.headersSent) return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
+        const responseCommitted = res.headersSent && !res.__responsesBridge;
+        if (responseCommitted || chainIdx >= settingsChain.length - 1) {
+          if (!responseCommitted) return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
           return;
         }
         addLog(`stream openai backend-chain failover from backend ${chainSettings.profileId} to ${settingsChain[chainIdx+1].profileId} err=${streamErr.status||streamErr.message}`);
