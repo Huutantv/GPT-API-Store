@@ -1574,7 +1574,11 @@ function requestSummary(body, rawSize, apiStyle) {
     const content = msg && msg.content;
     if (Array.isArray(content)) {
       for (const block of content) {
-        if (block && block.type === "image") imageCount += 1;
+        if (
+          block &&
+          typeof block === "object" &&
+          (["image", "image_url", "input_image"].includes(block.type) || block.image_url || block.input_image)
+        ) imageCount += 1;
         textChars += countTextChars(block);
       }
     } else {
@@ -4188,33 +4192,48 @@ function responsesContentToChatContent(content) {
 function responsesInputToMessages(input) {
   const items = Array.isArray(input) ? input : [input];
   const messages = [];
+  let pendingToolCalls = [];
+  let pendingToolContent = [];
+
+  const flushPendingToolCalls = () => {
+    if (!pendingToolCalls.length) return;
+    messages.push({
+      role: "assistant",
+      content: pendingToolContent.filter(Boolean).join("\n"),
+      tool_calls: pendingToolCalls,
+    });
+    pendingToolCalls = [];
+    pendingToolContent = [];
+  };
 
   for (const item of items) {
     if (typeof item === "string") {
+      flushPendingToolCalls();
       messages.push({ role: "user", content: item });
       continue;
     }
     if (!item || typeof item !== "object") continue;
 
-    if (item.type === "function_call") {
-      const name = String(item.name || "").trim();
+    if (["function_call", "local_shell_call", "shell_call"].includes(item.type)) {
+      const fallbackName = item.type === "local_shell_call" ? "local_shell" : item.type === "shell_call" ? "shell" : "";
+      const name = String(item.name || fallbackName).trim();
       if (!name) continue;
-      messages.push({
-        role: "assistant",
-        content: item.content || "",
-        tool_calls: [{
-          id: item.call_id || item.id || `call_${messages.length}`,
-          type: "function",
-          function: {
-            name,
-            arguments: normalizeToolArgumentsJson(item.arguments),
-          },
-        }],
+      const rawArguments = item.arguments != null ? item.arguments : (item.action || {});
+      pendingToolCalls.push({
+        id: item.call_id || item.id || `call_${messages.length}_${pendingToolCalls.length}`,
+        type: "function",
+        function: {
+          name,
+          arguments: normalizeToolArgumentsJson(rawArguments),
+        },
       });
+      const callContent = responsesContentToText(item.content || "");
+      if (callContent) pendingToolContent.push(callContent);
       continue;
     }
 
     if (item.type === "function_call_output" || item.type === "local_shell_call_output" || item.type === "shell_call_output") {
+      flushPendingToolCalls();
       messages.push({
         role: "tool",
         tool_call_id: item.call_id,
@@ -4224,23 +4243,28 @@ function responsesInputToMessages(input) {
     }
 
     if (item.type === "input_image") {
+      flushPendingToolCalls();
       const content = responsesContentToChatContent(item);
       if (content) messages.push({ role: "user", content });
       continue;
     }
 
     if (item.type === "input_text") {
+      flushPendingToolCalls();
       const content = responsesContentToText(item);
       if (content) messages.push({ role: "user", content });
       continue;
     }
 
     if (item.type && item.type !== "message") continue;
+    flushPendingToolCalls();
     const role = item.role === "developer" ? "system" : (item.role || "user");
     const rawContent = item.content || item.text || item.input_text;
     const content = role === "user" ? responsesContentToChatContent(rawContent) : responsesContentToText(rawContent);
     if (content) messages.push({ role, content });
   }
+
+  flushPendingToolCalls();
 
   return messages.length ? messages : [{ role: "user", content: "" }];
 }
