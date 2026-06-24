@@ -497,7 +497,31 @@ function autoSwitchRecoveryMs() {
   return Number(process.env.DORO_AUTO_SWITCH_RECOVERY_MS || "60000") || 60000;
 }
 
-const _autoSwitchHealth = { mainDownSince: null, lastCheckAt: null, lastErrorAt: null, lastStatus: 0, lastReason: "", downCount: 0, usingBackup: false };
+const _autoSwitchHealth = { mainDownSince: null, lastCheckAt: null, lastErrorAt: null, lastStatus: 0, lastReason: "", downCount: 0, usingBackup: false, backupNoticeSent: false };
+
+function vnNowText() {
+  return new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+}
+
+function autoSwitchMainLabel() {
+  return activeBackendIds().map((id) => backendProfile(id).label).join(" + ") || "N/A";
+}
+
+function autoSwitchBackupLabel() {
+  return activeBackupBackendIds().map((id) => backendProfile(id).label).join(" + ") || "N/A";
+}
+
+function notifyAutoSwitch(message) {
+  notifyTelegram(
+    `<b>Auto Swicht</b>\n` +
+    `--------------------\n` +
+    `${message}\n` +
+    `<b>Main:</b> ${autoSwitchMainLabel()}\n` +
+    `<b>Backup:</b> ${autoSwitchBackupLabel()}\n` +
+    `<b>Recovery:</b> ${Math.round(autoSwitchRecoveryMs() / 1000)}s\n` +
+    `<b>Time:</b> ${vnNowText()}`
+  );
+}
 
 function resetAutoSwitchMain() {
   _autoSwitchHealth.mainDownSince = null;
@@ -505,6 +529,7 @@ function resetAutoSwitchMain() {
   _autoSwitchHealth.lastReason = "";
   _autoSwitchHealth.lastErrorAt = null;
   _autoSwitchHealth.usingBackup = false;
+  _autoSwitchHealth.backupNoticeSent = false;
 }
 
 function shouldProbeAutoSwitchMain() {
@@ -536,9 +561,14 @@ function getAutoSwitchSettingsChain(requestedModel) {
   }
   if (shouldProbeAutoSwitchMain()) {
     addLog("auto-swicht: probing main backend before backup");
+    notifyAutoSwitch(`<b>Status:</b> probing main backend again before backup`);
     return main.concat(backup);
   }
   _autoSwitchHealth.usingBackup = backup.length > 0;
+  if (_autoSwitchHealth.usingBackup && !_autoSwitchHealth.backupNoticeSent) {
+    _autoSwitchHealth.backupNoticeSent = true;
+    notifyAutoSwitch(`<b>Status:</b> routing requests to backup while main is down`);
+  }
   return backup.length ? backup : main;
 }
 
@@ -550,8 +580,20 @@ function trackAutoSwitchError(id, status, text = "", code = "") {
   if (!_autoSwitchHealth.mainDownSince) {
     _autoSwitchHealth.downCount += 1;
     addLog(`auto-swicht: main backend marked DOWN by backend ${id} reason=${signal.reason}`);
+    notifyAutoSwitch(
+      `<b>Status:</b> main backend DOWN, switching to backup\n` +
+      `<b>Failed backend:</b> ${backendProfile(id).label}\n` +
+      `<b>Reason:</b> ${signal.reason}\n` +
+      `<b>HTTP:</b> ${Number(status) || "network"}`
+    );
   } else {
     addLog(`auto-swicht: main backend probe failed by backend ${id} reason=${signal.reason}`);
+    notifyAutoSwitch(
+      `<b>Status:</b> main backend still failing, keep using backup\n` +
+      `<b>Failed backend:</b> ${backendProfile(id).label}\n` +
+      `<b>Reason:</b> ${signal.reason}\n` +
+      `<b>HTTP:</b> ${Number(status) || "network"}`
+    );
   }
   _autoSwitchHealth.mainDownSince = now;
   _autoSwitchHealth.lastCheckAt = now;
@@ -563,7 +605,13 @@ function trackAutoSwitchError(id, status, text = "", code = "") {
 
 function trackAutoSwitchSuccess(id) {
   if (!autoSwitchEnabled() || !BACKEND_IDS.includes(String(id))) return;
-  if (_autoSwitchHealth.mainDownSince) addLog(`auto-swicht: main backend recovered by backend ${id}`);
+  if (_autoSwitchHealth.mainDownSince) {
+    addLog(`auto-swicht: main backend recovered by backend ${id}`);
+    notifyAutoSwitch(
+      `<b>Status:</b> main backend recovered, backup disabled\n` +
+      `<b>Recovered backend:</b> ${backendProfile(id).label}`
+    );
+  }
   resetAutoSwitchMain();
 }
 
