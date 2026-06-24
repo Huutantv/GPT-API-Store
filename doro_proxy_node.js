@@ -76,6 +76,7 @@ function normalizeModelName(modelName) {
 }
 
 const BACKEND_IDS = ["1", "2", "3", "4", "5"];
+const BACKUP_BACKEND_IDS = ["backup1", "backup2"];
 
 function equalBackendWeights() {
   return Math.round(100 / BACKEND_IDS.length);
@@ -92,6 +93,25 @@ function activeBackendIds() {
 function activeBackendId() {
   const ids = activeBackendIds();
   return ids.length === BACKEND_IDS.length ? "all" : ids.join(",");
+}
+
+function activeBackupBackendIds() {
+  const value = String(process.env.DORO_BACKUP_ACTIVE_BACKEND || "backup1").trim().toLowerCase();
+  if (value === "all") return [...BACKUP_BACKEND_IDS];
+  const ids = value.split(",").map((item) => item.trim()).filter((item, index, list) => BACKUP_BACKEND_IDS.includes(item) && list.indexOf(item) === index);
+  return ids.length ? ids : ["backup1"];
+}
+
+function activeBackupBackendId() {
+  const ids = activeBackupBackendIds();
+  return ids.length === BACKUP_BACKEND_IDS.length ? "all" : ids.join(",");
+}
+
+function normalizeBackupBackendSelection(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "all") return "all";
+  const ids = normalized.split(",").map((item) => item.trim()).filter((item, index, list) => BACKUP_BACKEND_IDS.includes(item) && list.indexOf(item) === index);
+  return ids.length ? ids.join(",") : "";
 }
 
 function backendRouterMode() {
@@ -191,6 +211,27 @@ function normalizeBackendWeights(values = {}, fallback = backendWeights()) {
 }
 
 function backendProfile(id = activeBackendId()) {
+  const rawId = String(id).toLowerCase();
+  if (BACKUP_BACKEND_IDS.includes(rawId)) {
+    const backupNo = rawId.replace("backup", "");
+    const prefix = `DORO_BACKUP${backupNo}`;
+    const model = process.env[`${prefix}_MODEL`] || DEFAULT_BACKEND_MODEL;
+    const apiKeyRaw = process.env[`${prefix}_AUTH_TOKEN`] || "";
+    return {
+      id: rawId,
+      label: process.env[`${prefix}_NAME`] || `Backup ${backupNo}`,
+      apiKeyRaw,
+      apiKeys: splitEnvList(apiKeyRaw),
+      baseUrl: normalizeOpenAIBaseUrl(process.env[`${prefix}_BASE_URL`]),
+      backendModel: model,
+      maxTokens: optionalPositiveInt(process.env[`${prefix}_MAX_TOKENS`]),
+      userAssistantOnly: envFlag(process.env[`${prefix}_USER_ASSISTANT_ONLY`], defaultUserAssistantOnlyForModel(model)),
+      disableTools: envFlag(process.env[`${prefix}_DISABLE_TOOLS`], String(model || "").toLowerCase().includes("deepseek")),
+      apiStyle: normalizeApiStyle(process.env[`${prefix}_API_STYLE`]),
+      isVision: false,
+      isBackup: true,
+    };
+  }
   const backendId = BACKEND_IDS.includes(String(id)) ? String(id) : "1";
   if (backendId !== "1") {
     const prefix = `DORO_BACKEND${backendId}`;
@@ -228,7 +269,8 @@ function backendProfile(id = activeBackendId()) {
 }
 
 function backendAuthEnvField(id) {
-  const raw = String(id);
+  const raw = String(id).toLowerCase();
+  if (BACKUP_BACKEND_IDS.includes(raw)) return `DORO_BACKUP${raw.replace("backup", "")}_AUTH_TOKEN`;
   if (raw === "5v") return "DORO_BACKEND5_VISION_AUTH_TOKEN";
   const backendId = BACKEND_IDS.includes(raw) ? raw : "1";
   return backendId === "1" ? "ANTHROPIC_AUTH_TOKEN" : `DORO_BACKEND${backendId}_AUTH_TOKEN`;
@@ -408,6 +450,7 @@ function getSettings(requestedModel) {
 
 function getSettingsChain(requestedModel) {
   loadLocalEnv(true);
+  if (autoSwitchEnabled()) return getAutoSwitchSettingsChain(requestedModel);
   const activeIds = activeBackendIds();
   const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
   let ids = [...activeIds];
@@ -444,6 +487,84 @@ function getSettingsChain(requestedModel) {
   }
   return ids.map((id) => profileToSettings(backendProfile(id), requestedModel))
     .filter((settings) => settings.apiKeys.length);
+}
+
+function autoSwitchEnabled() {
+  return String(process.env.DORO_AUTO_SWITCH || "0") === "1";
+}
+
+function autoSwitchRecoveryMs() {
+  return Number(process.env.DORO_AUTO_SWITCH_RECOVERY_MS || "60000") || 60000;
+}
+
+const _autoSwitchHealth = { mainDownSince: null, lastCheckAt: null, lastErrorAt: null, lastStatus: 0, lastReason: "", downCount: 0, usingBackup: false };
+
+function resetAutoSwitchMain() {
+  _autoSwitchHealth.mainDownSince = null;
+  _autoSwitchHealth.lastStatus = 0;
+  _autoSwitchHealth.lastReason = "";
+  _autoSwitchHealth.lastErrorAt = null;
+  _autoSwitchHealth.usingBackup = false;
+}
+
+function shouldProbeAutoSwitchMain() {
+  if (!_autoSwitchHealth.mainDownSince) return false;
+  const now = Date.now();
+  if (now - (_autoSwitchHealth.lastCheckAt || _autoSwitchHealth.mainDownSince) < autoSwitchRecoveryMs()) return false;
+  _autoSwitchHealth.lastCheckAt = now;
+  return true;
+}
+
+function autoSwitchMainSettings(requestedModel) {
+  return activeBackendIds()
+    .map((id) => profileToSettings(backendProfile(id), requestedModel))
+    .filter((settings) => settings.apiKeys.length);
+}
+
+function autoSwitchBackupSettings(requestedModel) {
+  return activeBackupBackendIds()
+    .map((id) => profileToSettings(backendProfile(id), requestedModel))
+    .filter((settings) => settings.apiKeys.length);
+}
+
+function getAutoSwitchSettingsChain(requestedModel) {
+  const main = autoSwitchMainSettings(requestedModel);
+  const backup = autoSwitchBackupSettings(requestedModel);
+  if (!_autoSwitchHealth.mainDownSince) {
+    _autoSwitchHealth.usingBackup = false;
+    return main.length ? main.concat(backup) : backup;
+  }
+  if (shouldProbeAutoSwitchMain()) {
+    addLog("auto-swicht: probing main backend before backup");
+    return main.concat(backup);
+  }
+  _autoSwitchHealth.usingBackup = backup.length > 0;
+  return backup.length ? backup : main;
+}
+
+function trackAutoSwitchError(id, status, text = "", code = "") {
+  if (!autoSwitchEnabled() || !BACKEND_IDS.includes(String(id))) return;
+  const signal = backendFailureSignal(status, text, code);
+  if (!signal || !signal.track) return;
+  const now = Date.now();
+  if (!_autoSwitchHealth.mainDownSince) {
+    _autoSwitchHealth.downCount += 1;
+    addLog(`auto-swicht: main backend marked DOWN by backend ${id} reason=${signal.reason}`);
+  } else {
+    addLog(`auto-swicht: main backend probe failed by backend ${id} reason=${signal.reason}`);
+  }
+  _autoSwitchHealth.mainDownSince = now;
+  _autoSwitchHealth.lastCheckAt = now;
+  _autoSwitchHealth.lastErrorAt = now;
+  _autoSwitchHealth.lastStatus = Number(status) || 0;
+  _autoSwitchHealth.lastReason = signal.reason;
+  _autoSwitchHealth.usingBackup = true;
+}
+
+function trackAutoSwitchSuccess(id) {
+  if (!autoSwitchEnabled() || !BACKEND_IDS.includes(String(id))) return;
+  if (_autoSwitchHealth.mainDownSince) addLog(`auto-swicht: main backend recovered by backend ${id}`);
+  resetAutoSwitchMain();
 }
 
 // Chuẩn hoá một backend profile thành object settings dùng chung cho forward.
@@ -570,6 +691,7 @@ function isBackendHealthy(id) {
 }
 
 function trackBackendError(id, status, text = "", code = "") {
+  trackAutoSwitchError(id, status, text, code);
   if (!_backendHealth[id]) return;
   if (String(process.env.DORO_AUTO_MODE || "0") !== "1") return;
   const signal = backendFailureSignal(status, text, code);
@@ -603,6 +725,7 @@ function trackBackendError(id, status, text = "", code = "") {
 }
 
 function trackBackendSuccess(id) {
+  trackAutoSwitchSuccess(id);
   if (!_backendHealth[id]) return;
   const state = _backendHealth[id];
   if (state.downSince) {
@@ -5702,6 +5825,23 @@ app.get("/api/config", (req, res) => {
       last_error_at: state.lastErrorAt || null,
     }];
   }));
+  const backupProfiles = BACKUP_BACKEND_IDS.map((id) => {
+    const profile = backendProfile(id);
+    return {
+      id: profile.id,
+      label: profile.label,
+      base_url: profile.baseUrl,
+      backend_model: profile.backendModel,
+      api_style: profile.apiStyle,
+      max_tokens: profile.maxTokens || null,
+      user_assistant_only: !!profile.userAssistantOnly,
+      disable_tools: !!profile.disableTools,
+      backend_api_keys: profile.apiKeys.length,
+      backend_api_key_masks: profile.apiKeys.map(maskSecret),
+      backend_api_keys_full: profile.apiKeys,
+      api_key_masked: maskSecret(profile.apiKeys[0]),
+    };
+  });
   const visionProfile = backend5VisionProfile();
   const backend5Vision = {
     id: visionProfile.id,
@@ -5720,6 +5860,19 @@ app.get("/api/config", (req, res) => {
     active_backend: active,
     active_backend_label: activeLabel,
     auto_mode: String(process.env.DORO_AUTO_MODE || "0") === "1",
+    auto_switch: autoSwitchEnabled(),
+    auto_switch_recovery_ms: autoSwitchRecoveryMs(),
+    auto_switch_active_backup: activeBackupBackendId(),
+    auto_switch_health: {
+      main_healthy: !_autoSwitchHealth.mainDownSince,
+      using_backup: !!_autoSwitchHealth.usingBackup,
+      main_down_since: _autoSwitchHealth.mainDownSince,
+      last_check_at: _autoSwitchHealth.lastCheckAt,
+      last_error_at: _autoSwitchHealth.lastErrorAt,
+      last_status: _autoSwitchHealth.lastStatus || 0,
+      last_reason: _autoSwitchHealth.lastReason || "",
+      down_count: _autoSwitchHealth.downCount || 0,
+    },
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
     force_stream_nonstream: forceStreamNonstreamEnabled(),
     safe_stream_failover: safeStreamFailoverEnabled(),
@@ -5736,6 +5889,7 @@ app.get("/api/config", (req, res) => {
     backend_router_mode: backendRouterMode(),
     backend_weights: weights,
     backend_profiles: profiles,
+    backup_backend_profiles: backupProfiles,
     backend5_vision: backend5Vision,
     base_url: settings.baseUrl,
     backend_model: settings.backendModel,
@@ -5822,6 +5976,25 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND5_VISION_API_STYLE",
     "DORO_BACKEND_TIMEOUT",
     "DORO_AUTO_MODE",
+    "DORO_AUTO_SWITCH",
+    "DORO_AUTO_SWITCH_RECOVERY_MS",
+    "DORO_BACKUP_ACTIVE_BACKEND",
+    "DORO_BACKUP1_NAME",
+    "DORO_BACKUP1_BASE_URL",
+    "DORO_BACKUP1_AUTH_TOKEN",
+    "DORO_BACKUP1_MODEL",
+    "DORO_BACKUP1_MAX_TOKENS",
+    "DORO_BACKUP1_USER_ASSISTANT_ONLY",
+    "DORO_BACKUP1_DISABLE_TOOLS",
+    "DORO_BACKUP1_API_STYLE",
+    "DORO_BACKUP2_NAME",
+    "DORO_BACKUP2_BASE_URL",
+    "DORO_BACKUP2_AUTH_TOKEN",
+    "DORO_BACKUP2_MODEL",
+    "DORO_BACKUP2_MAX_TOKENS",
+    "DORO_BACKUP2_USER_ASSISTANT_ONLY",
+    "DORO_BACKUP2_DISABLE_TOOLS",
+    "DORO_BACKUP2_API_STYLE",
     "DORO_AUTO_RECOVERY_MS",
     "DORO_FORCE_STREAM_NONSTREAM",
     "DORO_MODEL_FALLBACK",
@@ -5844,6 +6017,9 @@ app.put("/api/config", (req, res) => {
     }
     if (field === "DORO_BACKEND_ROUTER_MODE") value = ["failover", "weighted", "round_robin"].includes(value) ? value : "";
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AUTO_SWITCH") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AUTO_SWITCH_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (field === "DORO_BACKUP_ACTIVE_BACKEND") value = normalizeBackupBackendSelection(value);
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-5]_WEIGHT$/.test(field)) {
@@ -5851,12 +6027,16 @@ app.put("/api/config", (req, res) => {
       continue;
     }
     if (/^DORO_BACKEND(?:[1-5]|5_VISION)_MAX_TOKENS$/.test(field)) value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (/^DORO_BACKUP[1-2]_MAX_TOKENS$/.test(field)) value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_TOKEN_PER_REQUEST") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "TELEGRAM_ALERTS_ENABLED") continue;
     if (/^DORO_BACKEND(?:[1-5]|5_VISION)_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND(?:[1-5]|5_VISION)_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
+    if (/^DORO_BACKUP[1-2]_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
+    if (/^DORO_BACKUP[1-2]_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND5(?:_VISION)?_API_STYLE$/.test(field)) value = normalizeApiStyle(value);
-    if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND(?:[2-5]|5_VISION)_AUTH_TOKEN$/.test(field)) {
+    if (/^DORO_BACKUP[1-2]_API_STYLE$/.test(field)) value = normalizeApiStyle(value);
+    if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND(?:[2-5]|5_VISION)_AUTH_TOKEN$/.test(field) || /^DORO_BACKUP[1-2]_AUTH_TOKEN$/.test(field)) {
       value = value.replace(/\n/g, ",").split(",").map((k) => k.trim()).filter(Boolean).join(",");
     }
     if (value) updates[field] = value;
@@ -5880,7 +6060,7 @@ app.post("/api/backend-keys", (req, res) => {
   const backend = String(body.backend || "1").trim();
   const key = String(body.key || "").trim();
   if (!key) return res.status(400).json({ detail: "Missing key" });
-  if (!BACKEND_IDS.includes(backend) && backend !== "5v") return res.status(400).json({ detail: "Invalid backend" });
+  if (!BACKEND_IDS.includes(backend) && backend !== "5v" && !BACKUP_BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
 
   const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");
@@ -5897,7 +6077,7 @@ app.delete("/api/backend-keys", (req, res) => {
   const body = req.body || {};
   const backend = String(body.backend || "1").trim();
   const key = String(body.key || "").trim();
-  if (!BACKEND_IDS.includes(backend) && backend !== "5v") return res.status(400).json({ detail: "Invalid backend" });
+  if (!BACKEND_IDS.includes(backend) && backend !== "5v" && !BACKUP_BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
 
   const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");

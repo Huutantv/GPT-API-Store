@@ -441,6 +441,11 @@ body{font-family:'Inter',sans-serif}
           <span class="text-sm font-medium">Auto Mode</span>
           <span class="text-xs text-gray-500">(t&#7921; ng&#7855;t/ph&#7909;c h&#7891;i)</span>
         </label>
+        <label class="flex items-center gap-2 bg-dark-900 border border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-cyan-500/50 transition">
+          <input type="checkbox" id="chkAutoSwitch" class="w-4 h-4 accent-cyan-500">
+          <span class="text-sm font-medium">Auto Swicht</span>
+          <span class="text-xs text-gray-500">(main/backup)</span>
+        </label>
         <span id="activeStatus" class="text-xs text-gray-500">&mdash;</span>
       </div>
       <button onclick="saveActiveBackend()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u l&#7921;a ch&#7885;n</button>
@@ -449,6 +454,27 @@ body{font-family:'Inter',sans-serif}
       <p><strong>Auto Mode:</strong> Khi b&#7853;t, n&#7871;u 1 backend l&#7895;i &#8805;3 l&#7847;n/ph&#250;t s&#7869; t&#7921; &#273;&#7897;ng ng&#7855;t v&#224; chuy&#7875;n sang backend c&#242;n l&#7841;i.</p>
       <p>Sau 2 ph&#250;t s&#7869; t&#7921; th&#7917; l&#7841;i backend l&#7895;i. N&#7871;u OK s&#7869; b&#7853;t l&#7841;i c&#7843; 2.</p>
       <p id="healthStatus"></p>
+    </div>
+    <div id="autoSwitchInfo" class="hidden bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3 text-xs text-cyan-300 space-y-3">
+      <div>
+        <p><strong>Auto Swicht:</strong> Ch&#7841;y backend ch&#237;nh &#273;&#227; ch&#7885;n. Khi backend ch&#237;nh l&#7895;i, request m&#7899;i chuy&#7875;n sang backup &#273;&#227; ch&#7885;n.</p>
+        <p>Sau 60s s&#7869; th&#7917; l&#7841;i backend ch&#237;nh. N&#7871;u OK s&#7869; t&#7921; quay v&#7873; backend ch&#237;nh v&#224; ng&#7915;ng d&#249;ng backup.</p>
+        <p id="autoSwitchStatus"></p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <label class="flex items-center gap-2 bg-dark-900 border border-white/10 rounded-lg px-3 py-2 cursor-pointer">
+          <input type="checkbox" id="chkBackup1" class="w-4 h-4 accent-cyan-500">
+          <span>Backup 1</span>
+        </label>
+        <label class="flex items-center gap-2 bg-dark-900 border border-white/10 rounded-lg px-3 py-2 cursor-pointer">
+          <input type="checkbox" id="chkBackup2" class="w-4 h-4 accent-cyan-500">
+          <span>Backup 2</span>
+        </label>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Recovery ms</label>
+          <input id="cfgAutoSwitchRecoveryMs" type="number" min="1000" step="1000" value="60000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        </div>
+      </div>
     </div>
   </div>
 
@@ -633,6 +659,77 @@ body{font-family:'Inter',sans-serif}
         <p id="backend5vMsg" class="text-xs text-gray-400 mt-1"></p>
       </div>
       <button onclick="saveBackend5VisionConfig()" class="w-full md:w-auto px-5 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5 Vision</button>
+    </div>
+  </div>
+
+  <!-- Auto Swicht Backup Backends -->
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+    <div class="bg-dark-700 border border-cyan-500/20 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-cyan-400 rounded-full"></span> Backup 1 <span class="text-xs font-normal text-gray-400">&middot; Auto Swicht</span></h3>
+        <span class="text-xs text-gray-500" id="backup1Status">&mdash;</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+          <input id="cfgBackup1BaseUrl" placeholder="https://backup1.example/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+          <input id="cfgBackup1Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">API Style</label>
+          <select id="cfgBackup1ApiStyle" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+            <option value="openai">OpenAI Chat Completions (/chat/completions)</option>
+            <option value="anthropic">Anthropic Messages (/messages)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+          <div id="backup1KeysList" class="space-y-2 mb-2"></div>
+          <div class="flex gap-2">
+            <input id="newBackendbackup1Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+            <button onclick="addBackendKey('backup1')" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+          </div>
+          <p id="backendbackup1Msg" class="text-xs text-gray-400 mt-1"></p>
+        </div>
+        <button onclick="saveBackupConfig('1')" class="w-full md:w-auto px-5 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition">L&#432;u Backup 1</button>
+      </div>
+    </div>
+
+    <div class="bg-dark-700 border border-cyan-500/20 rounded-xl p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-cyan-300 rounded-full"></span> Backup 2 <span class="text-xs font-normal text-gray-400">&middot; Auto Swicht</span></h3>
+        <span class="text-xs text-gray-500" id="backup2Status">&mdash;</span>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Base URL</label>
+          <input id="cfgBackup2BaseUrl" placeholder="https://backup2.example/v1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
+          <input id="cfgBackup2Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">API Style</label>
+          <select id="cfgBackup2ApiStyle" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+            <option value="openai">OpenAI Chat Completions (/chat/completions)</option>
+            <option value="anthropic">Anthropic Messages (/messages)</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">API Keys</label>
+          <div id="backup2KeysList" class="space-y-2 mb-2"></div>
+          <div class="flex gap-2">
+            <input id="newBackendbackup2Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+            <button onclick="addBackendKey('backup2')" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
+          </div>
+          <p id="backendbackup2Msg" class="text-xs text-gray-400 mt-1"></p>
+        </div>
+        <button onclick="saveBackupConfig('2')" class="w-full md:w-auto px-5 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition">L&#432;u Backup 2</button>
+      </div>
     </div>
   </div>
 
@@ -1702,10 +1799,43 @@ async function loadBackendConfig() {
     document.getElementById("healthStatus").textContent = statusText;
   }
 
+  var autoSwitch = !!data.auto_switch;
+  var autoSwitchEl = document.getElementById("chkAutoSwitch");
+  autoSwitchEl.checked = autoSwitch;
+  autoSwitchEl.dataset.loadedValue = autoSwitch ? "1" : "0";
+  autoSwitchEl.dataset.dirty = "0";
+  document.getElementById("autoSwitchInfo").classList.toggle("hidden", !autoSwitch);
+  document.getElementById("cfgAutoSwitchRecoveryMs").value = data.auto_switch_recovery_ms || 60000;
+  var backupActive = data.auto_switch_active_backup === "all" ? ["backup1", "backup2"] : String(data.auto_switch_active_backup || "backup1").split(",").map(function(s){ return s.trim(); });
+  var chkBackup1 = document.getElementById("chkBackup1");
+  var chkBackup2 = document.getElementById("chkBackup2");
+  if (chkBackup1) chkBackup1.checked = backupActive.indexOf("backup1") !== -1;
+  if (chkBackup2) chkBackup2.checked = backupActive.indexOf("backup2") !== -1;
+  var swHealth = data.auto_switch_health || {};
+  var swStatus = document.getElementById("autoSwitchStatus");
+  if (swStatus) {
+    var swReason = swHealth.last_reason ? " · " + swHealth.last_reason : "";
+    swStatus.textContent = "Main: " + (swHealth.main_healthy ? "OK" : "DOWN") + " | Route: " + (swHealth.using_backup ? "backup" : "main") + " | Down count: " + (swHealth.down_count || 0) + swReason;
+  }
+
   // Toggle router box + auto mode info
   document.getElementById("chkAutoMode").onchange = function() {
     this.dataset.dirty = "1";
     document.getElementById("autoModeInfo").classList.toggle("hidden", !this.checked);
+    if (this.checked) {
+      document.getElementById("chkAutoSwitch").checked = false;
+      document.getElementById("chkAutoSwitch").dataset.dirty = "1";
+      document.getElementById("autoSwitchInfo").classList.add("hidden");
+    }
+  };
+  document.getElementById("chkAutoSwitch").onchange = function() {
+    this.dataset.dirty = "1";
+    document.getElementById("autoSwitchInfo").classList.toggle("hidden", !this.checked);
+    if (this.checked) {
+      document.getElementById("chkAutoMode").checked = false;
+      document.getElementById("chkAutoMode").dataset.dirty = "1";
+      document.getElementById("autoModeInfo").classList.add("hidden");
+    }
   };
 
   // Backend profiles
@@ -1742,6 +1872,23 @@ async function loadBackendConfig() {
     ? ((vision.backend_api_keys || 0) + " keys · OK")
     : "Chưa cấu hình đủ";
   if (b5vKeyList) renderKeyList(b5vKeyList, vision.backend_api_keys_full || [], "5v");
+
+  var backupProfiles = data.backup_backend_profiles || [];
+  var backupById = {};
+  backupProfiles.forEach(function(profile) { backupById[profile.id] = profile; });
+  [1, 2].forEach(function(id) {
+    var profile = backupById["backup" + id] || {};
+    var baseUrl = document.getElementById("cfgBackup" + id + "BaseUrl");
+    var model = document.getElementById("cfgBackup" + id + "Model");
+    var apiStyle = document.getElementById("cfgBackup" + id + "ApiStyle");
+    var status = document.getElementById("backup" + id + "Status");
+    var keyList = document.getElementById("backup" + id + "KeysList");
+    if (baseUrl) baseUrl.value = profile.base_url || "";
+    if (model) model.value = profile.backend_model || "";
+    if (apiStyle) apiStyle.value = profile.api_style || "openai";
+    if (status) status.textContent = (profile.backend_api_keys || 0) + " keys · Model: " + (profile.backend_model || "—");
+    if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], "backup" + id);
+  });
   document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
 
   document.getElementById("cfgTokenPerRequestMin").value = data.token_per_request_min || 65000;
@@ -1827,6 +1974,19 @@ async function saveBackendConfig(backend) {
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
   if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend " + backend + ". C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
+  else alert(data.detail || "L\u1ed7i");
+}
+
+async function saveBackupConfig(backup) {
+  var updates = {};
+  updates["DORO_BACKUP" + backup + "_BASE_URL"] = document.getElementById("cfgBackup" + backup + "BaseUrl").value.trim();
+  updates["DORO_BACKUP" + backup + "_MODEL"] = document.getElementById("cfgBackup" + backup + "Model").value.trim();
+  updates["DORO_BACKUP" + backup + "_API_STYLE"] = document.getElementById("cfgBackup" + backup + "ApiStyle").value;
+  Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
+  if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backup " + backup + ". C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
 }
 
@@ -2271,13 +2431,27 @@ async function saveActiveBackend() {
   var active = selected.join(",");
   var autoModeEl = document.getElementById("chkAutoMode");
   var autoMode = autoModeEl.checked;
+  var autoSwitchEl = document.getElementById("chkAutoSwitch");
+  var autoSwitch = autoSwitchEl.checked;
+  var selectedBackups = ["backup1", "backup2"].filter(function(id) {
+    var el = document.getElementById("chk" + id.charAt(0).toUpperCase() + id.slice(1));
+    return el && el.checked;
+  });
+  if (autoSwitch && !selectedBackups.length) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backup khi b\u1eadt Auto Swicht"); return; }
   var updates = {
     DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
+    DORO_BACKUP_ACTIVE_BACKEND: selectedBackups.join(","),
+    DORO_AUTO_SWITCH_RECOVERY_MS: document.getElementById("cfgAutoSwitchRecoveryMs").value,
   };
   var nextAutoMode = autoMode ? "1" : "0";
+  if (autoSwitch) nextAutoMode = "0";
   if (autoModeEl.dataset.dirty === "1" || autoModeEl.dataset.loadedValue !== nextAutoMode) {
     updates.DORO_AUTO_MODE = nextAutoMode;
+  }
+  var nextAutoSwitch = autoSwitch ? "1" : "0";
+  if (autoSwitchEl.dataset.dirty === "1" || autoSwitchEl.dataset.loadedValue !== nextAutoSwitch) {
+    updates.DORO_AUTO_SWITCH = nextAutoSwitch;
   }
   if (selected.length > 1 && updates.DORO_BACKEND_ROUTER_MODE === "weighted") {
     [1, 2, 3, 4, 5].forEach(function(id) {
