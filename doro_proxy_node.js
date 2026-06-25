@@ -451,42 +451,45 @@ function getSettings(requestedModel) {
 function getSettingsChain(requestedModel) {
   loadLocalEnv(true);
   if (autoSwitchEnabled()) return getAutoSwitchSettingsChain(requestedModel);
-  const activeIds = activeBackendIds();
+  const ids = orderActiveBackendIds(activeBackendIds());
+  return ids.map((id) => profileToSettings(backendProfile(id), requestedModel))
+    .filter((settings) => settings.apiKeys.length);
+}
+// Sắp xếp backend id active theo auto-mode health filter + router mode
+// (round_robin/weighted/failover). Dùng chung cho getSettingsChain và Backend 5
+// text router để mọi backend active (kể cả 5) được load-balance đồng nhất.
+function orderActiveBackendIds(ids) {
+  let result = [...ids];
   const autoMode = String(process.env.DORO_AUTO_MODE || "0") === "1";
-  let ids = [...activeIds];
-
   // Auto mode: lọc backend đang trong trạng thái "down"
-  if (autoMode && ids.length > 1) {
-    const healthy = ids.filter(id => isBackendHealthy(id));
-    if (healthy.length > 0) ids = healthy;
-    // Nếu tất cả đều down, vẫn thử cả 2
+  if (autoMode && result.length > 1) {
+    const healthy = result.filter((id) => isBackendHealthy(id));
+    if (healthy.length > 0) result = healthy;
+    // Nếu tất cả đều down, vẫn thử danh sách gốc
   }
-
-  const configuredIds = ids.filter((id) => backendProfile(id).apiKeys.length);
-  if (configuredIds.length > 0) ids = configuredIds;
-
-  if (ids.length > 1) {
+  const configuredIds = result.filter((id) => backendProfile(id).apiKeys.length);
+  if (configuredIds.length > 0) result = configuredIds;
+  if (result.length > 1) {
     const mode = backendRouterMode();
     if (mode === "round_robin") {
-      const offset = backendRouterCounter++ % ids.length;
-      ids = [...ids.slice(offset), ...ids.slice(0, offset)];
+      const offset = backendRouterCounter++ % result.length;
+      result = [...result.slice(offset), ...result.slice(0, offset)];
     } else if (mode === "weighted") {
       const weights = backendWeights();
-      const total = ids.reduce((sum, id) => sum + Math.max(0, Number(weights[`backend${id}`] || 0)), 0);
-      let pick = Math.random() * (total || ids.length);
-      let first = ids[0];
-      for (const id of ids) {
+      const total = result.reduce((sum, id) => sum + Math.max(0, Number(weights[`backend${id}`] || 0)), 0);
+      let pick = Math.random() * (total || result.length);
+      let first = result[0];
+      for (const id of result) {
         pick -= total ? Math.max(0, Number(weights[`backend${id}`] || 0)) : 1;
         if (pick <= 0) {
           first = id;
           break;
         }
       }
-      ids = [first, ...ids.filter((id) => id !== first)];
+      result = [first, ...result.filter((id) => id !== first)];
     }
   }
-  return ids.map((id) => profileToSettings(backendProfile(id), requestedModel))
-    .filter((settings) => settings.apiKeys.length);
+  return result;
 }
 
 function autoSwitchEnabled() {
@@ -639,7 +642,8 @@ function profileToSettings(profile, requestedModel) {
 // Trả về { chain, requestType, imageCount, historicalImageCount, routeTarget,
 //          routeReason } hoặc { error: { status, message, code } }.
 // Chỉ được gọi khi Backend 5 đang active. Quyết định dựa trên tin nhắn user
-// MỚI NHẤT: có ảnh -> Vision (5v); chỉ chữ -> context (5) và loại ảnh lịch sử.
+// MỚI NHẤT: có ảnh -> Vision (5v); chỉ chữ -> load-balance mọi backend active
+// (kể cả 5) theo DORO_BACKEND_ROUTER_MODE và loại ảnh lịch sử.
 function resolveBackend5Pair(messages, requestedModel) {
   const imageCount = latestUserImageCount(messages);
   const historicalImageCount = totalImageCount(messages);
@@ -666,18 +670,20 @@ function resolveBackend5Pair(messages, requestedModel) {
     };
   }
 
-  // Text/context: dùng Backend 5 (+ failover text khai báo trong DORO_ACTIVE_BACKEND).
+  // Text/context: load-balance trên TẤT cả backend active (kể cả 5) theo
+  // DORO_BACKEND_ROUTER_MODE (round_robin/weighted/failover), đồng nhất với
+  // getSettingsChain. Backend 5 chỉ giữ route riêng cho request có ảnh (Vision).
   // Loại ảnh lịch sử trước khi forward.
-  const textIds = activeBackendIds().filter((id) => id !== "5");
-  const chain = [profileToSettings(backendProfile("5"), requestedModel)]
-    .concat(textIds.map((id) => profileToSettings(backendProfile(id), requestedModel)))
+  const orderedIds = orderActiveBackendIds(activeBackendIds());
+  const chain = orderedIds
+    .map((id) => profileToSettings(backendProfile(id), requestedModel))
     .filter((settings) => settings.apiKeys.length);
   return {
     chain,
     requestType: "text",
     imageCount: 0,
     historicalImageCount,
-    routeTarget: backendProfile("5").label,
+    routeTarget: orderedIds.length ? backendProfile(orderedIds[0]).label : backendProfile("5").label,
     routeReason: "latest user message is text/context",
     messages: historicalImageCount > 0 ? stripHistoricalImages(messages) : messages,
   };
@@ -4115,6 +4121,7 @@ app.get(["/v1/models", "/models"], (_req, res) => res.json(modelList()));
 // - handled=false: Backend 5 không active, dùng getSettingsChain như cũ.
 // - sent=true: đã gửi response lỗi (vision chưa cấu hình), handler phải return.
 function maybeBackend5Chain(req, res, messages, originalModel, errPayloadFn) {
+  loadLocalEnv(true);
   if (!activeBackendIds().includes("5")) return { handled: false };
   const r = resolveBackend5Pair(messages, originalModel);
   if (r.error) {
