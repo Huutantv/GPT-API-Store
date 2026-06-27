@@ -845,6 +845,18 @@ const RESPONSE_CACHE_MAX_BODY_BYTES = Number(process.env.DORO_CACHE_MAX_BODY_BYT
 const responseCache = new ResponseCache(RESPONSE_CACHE_MAX_ENTRIES, RESPONSE_CACHE_TTL_MS, RESPONSE_CACHE_MAX_BODY_BYTES);
 let responseCacheEnabled = RESPONSE_CACHE_ENABLED;
 
+// ── Input token optimization (strip thinking + truncate history) ─────────────
+// Strip <think>/<tool_call> blocks khỏi assistant messages cũ trong history.
+// An toàn: thinking cũ là reasoning internal, model không cần đọc lại để trả lời.
+// Mặc định ON cho model có thinking (deepseek/minimax), OFF cho model khác.
+const STRIP_THINKING_INPUT = envFlag(process.env.DORO_STRIP_THINKING_INPUT, null);
+// Truncate history khi quá dài (chỉ cắt khi > ngưỡng, giữ system + N cuối).
+// Bảo toàn cặp tool_call/result. OFF mặc định để an toàn.
+const TRUNCATE_HISTORY_ENABLED = envFlag(process.env.DORO_TRUNCATE_HISTORY, false);
+const TRUNCATE_HISTORY_MAX = Math.max(8, Number(process.env.DORO_TRUNCATE_HISTORY_MAX || "80") || 80);
+const TRUNCATE_HISTORY_KEEP = Math.max(4, Number(process.env.DORO_TRUNCATE_HISTORY_KEEP || "40") || 40);
+const inputOptStats = { thinking_stripped: 0, chars_removed: 0, histories_truncated: 0, messages_dropped: 0 };
+
 function logTs() {
   const now = new Date();
   const offsetMinutes = -now.getTimezoneOffset();
@@ -2549,8 +2561,114 @@ function normalizeUserAssistantOnlyMessages(messages) {
   return normalized;
 }
 
+// ── Input token optimization helpers ─────────────────────────────────────────
+// Strip thinking/<tag> blocks khỏi assistant messages cũ trong history.
+// An toàn: thinking cũ là reasoning internal, model không cần đọc lại để trả lời
+// message mới. Chỉ strip role=assistant (user/system giữ nguyên).
+function stripThinkingFromMessages(messages, enabled) {
+  if (!enabled || !Array.isArray(messages)) return { messages, stripped: 0, charsRemoved: 0 };
+  let stripped = 0;
+  let charsRemoved = 0;
+  const next = messages.map((message) => {
+    if (!message || message.role !== "assistant") return message;
+    const content = message.content;
+    if (typeof content === "string") {
+      const cleaned = stripHiddenReasoningText(content, { preserveLeadingWhitespace: true });
+      if (cleaned !== content) {
+        stripped += 1;
+        charsRemoved += Math.max(0, content.length - cleaned.length);
+        return { ...message, content: cleaned };
+      }
+      return message;
+    }
+    if (Array.isArray(content)) {
+      let changed = false;
+      let partChars = 0;
+      const newContent = content.map((part) => {
+        if (!part || typeof part !== "object") return part;
+        if (part.type === "text" && typeof part.text === "string") {
+          const cleaned = stripHiddenReasoningText(part.text, { preserveLeadingWhitespace: true });
+          if (cleaned !== part.text) {
+            changed = true;
+            partChars += Math.max(0, part.text.length - cleaned.length);
+            return { ...part, text: cleaned };
+          }
+        }
+        return part;
+      });
+      if (changed) {
+        stripped += 1;
+        charsRemoved += partChars;
+        return { ...message, content: newContent };
+      }
+    }
+    return message;
+  });
+  return { messages: next, stripped, charsRemoved };
+}
+
+// Truncate history khi quá dài. Giữ system messages đầu + N message cuối.
+// Bảo toàn cặp tool_call(assistant) + tool_result(tool/user): điểm cắt không để
+// tool result mồ côi (tool message mà không có assistant tool_calls trước đó).
+function truncateHistorySafe(messages, maxMessages, keepTail) {
+  if (!Array.isArray(messages)) return { messages, truncated: false, dropped: 0 };
+  const total = messages.length;
+  if (total <= maxMessages || total <= keepTail) return { messages, truncated: false, dropped: 0 };
+  // Tách system block đầu (các message role=system liên tiếp ở đầu).
+  let sysEnd = 0;
+  while (sysEnd < total && messages[sysEnd] && messages[sysEnd].role === "system") sysEnd += 1;
+  const systemBlock = messages.slice(0, sysEnd);
+  const rest = messages.slice(sysEnd);
+  if (rest.length <= keepTail) return { messages, truncated: false, dropped: 0 };
+  // Cắt: giữ keepTail message cuối của rest. Tìm điểm cắt an toàn.
+  let cutStart = rest.length - keepTail;
+  // Lùi tới điểm an toàn: message đầu được giữ KHÔNG được là tool result mồ côi
+  // (role tool/user chứa tool_result mà không có assistant tool_calls đi kèm).
+  // Lùi cho tới khi first kept không phải tool result → đảm bảo assistant(tool_calls)
+  // sinh ra nó cũng được giữ.
+  while (cutStart > 0) {
+    const first = rest[cutStart];
+    const isFirstToolResult = !!(first && (first.role === "tool" || (first.role === "user" && Array.isArray(first.content) && first.content.some((b) => b && b.type === "tool_result"))));
+    if (!isFirstToolResult) break;
+    cutStart -= 1;
+  }
+  const kept = rest.slice(cutStart);
+  const dropped = rest.length - kept.length;
+  const result = systemBlock.concat(kept);
+  return { messages: result, truncated: true, dropped };
+}
+
+function resolveStripThinkingEnabled(settings) {
+  if (STRIP_THINKING_INPUT === true) return true;
+  if (STRIP_THINKING_INPUT === false) return false;
+  // Auto: bật cho model có thinking (deepseek/minimax) để tiết kiệm token lớn.
+  const model = normalizeModelName(settings && (settings.backendModel || settings.requestedModel));
+  return model.includes("deepseek") || model.includes("minimax");
+}
+
 function applyBackendMessageCompatibility(payload, settings) {
-  if (!payload || !Array.isArray(payload.messages) || !settings || !backendRequiresFlattenedToolHistory(settings)) return payload;
+  if (!payload || !Array.isArray(payload.messages) || !settings) return payload;
+  // ── Input token optimization (chạy cho mọi backend) ──
+  const stripEnabled = resolveStripThinkingEnabled(settings);
+  if (stripEnabled) {
+    const r = stripThinkingFromMessages(payload.messages, true);
+    if (r.stripped) {
+      payload.messages = r.messages;
+      inputOptStats.thinking_stripped += r.stripped;
+      inputOptStats.chars_removed += r.charsRemoved;
+      addLog(`input-opt strip-thinking ${settings.profileLabel} msgs=${r.stripped} chars=-${r.charsRemoved}`);
+    }
+  }
+  if (TRUNCATE_HISTORY_ENABLED) {
+    const r = truncateHistorySafe(payload.messages, TRUNCATE_HISTORY_MAX, TRUNCATE_HISTORY_KEEP);
+    if (r.truncated) {
+      payload.messages = r.messages;
+      inputOptStats.histories_truncated += 1;
+      inputOptStats.messages_dropped += r.dropped;
+      addLog(`input-opt truncate ${settings.profileLabel} dropped=${r.dropped} kept=${r.messages.length}`);
+    }
+  }
+  if (!backendRequiresFlattenedToolHistory(settings)) return payload;
   payload.messages = normalizeUserAssistantOnlyMessages(payload.messages);
   addLog(`message roles normalized for ${settings.profileLabel}: user/assistant only`);
   return payload;
@@ -6355,6 +6473,32 @@ app.post("/api/cache/toggle", (req, res) => {
   responseCacheEnabled = want;
   addLog(`cache ${want ? "enabled" : "disabled"} by admin`);
   res.json({ ok: true, enabled: responseCacheEnabled });
+});
+
+// ── Input optimization admin endpoints ───────────────────────────────────────
+app.get("/api/input-opt/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({
+    strip_thinking_enabled: STRIP_THINKING_INPUT,
+    strip_thinking_auto: STRIP_THINKING_INPUT == null,
+    truncate_enabled: TRUNCATE_HISTORY_ENABLED,
+    truncate_max: TRUNCATE_HISTORY_MAX,
+    truncate_keep: TRUNCATE_HISTORY_KEEP,
+    est_tokens_saved: Math.ceil(inputOptStats.chars_removed / 4),
+    ...inputOptStats,
+  });
+});
+
+app.post("/api/input-opt/reset", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const snapshot = { ...inputOptStats };
+  inputOptStats.thinking_stripped = 0;
+  inputOptStats.chars_removed = 0;
+  inputOptStats.histories_truncated = 0;
+  inputOptStats.messages_dropped = 0;
+  res.json({ ok: true, before: snapshot });
 });
 
 app.get("/api/requests/recent", (req, res) => {
