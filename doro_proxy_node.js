@@ -4239,7 +4239,15 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/", (_req, res) => res.sendFile(path.join(ROOT_DIR, "index.html")));
+function sendNoCacheHtml(res, fileName) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  return res.sendFile(path.join(ROOT_DIR, fileName));
+}
+
+app.get("/", (_req, res) => sendNoCacheHtml(res, "index.html"));
 app.get("/health", (_req, res) => res.json({ status: "ok", proxy: "doro", runtime: "node", virtual_keys: validProxyKeys.length, time: Date.now() / 1000 }));
 
 function modelList() {
@@ -5650,23 +5658,23 @@ const ADMIN_PANEL_PATH = (() => {
 })();
 
 app.get(DASHBOARD_PATH, (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "dashboard.html"));
+  return sendNoCacheHtml(res, "dashboard.html");
 });
 
 app.get("/portal", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "portal.html"));
+  return sendNoCacheHtml(res, "portal.html");
 });
 
 app.get("/lookup", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "lookup.html"));
+  return sendNoCacheHtml(res, "lookup.html");
 });
 
 app.get("/key-check", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "key-check.html"));
+  return sendNoCacheHtml(res, "key-check.html");
 });
 
 app.get(ADMIN_PANEL_PATH, (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "admin.html"));
+  return sendNoCacheHtml(res, "admin.html");
 });
 
 app.get("/admin", (_req, res) => {
@@ -5674,15 +5682,15 @@ app.get("/admin", (_req, res) => {
 });
 
 app.get("/customers", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "customers.html"));
+  return sendNoCacheHtml(res, "customers.html");
 });
 
 app.get("/checkout", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "checkout.html"));
+  return sendNoCacheHtml(res, "checkout.html");
 });
 
 app.get("/guides/codex", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "codex-guide.html"));
+  return sendNoCacheHtml(res, "codex-guide.html");
 });
 
 // ── Orders API (public) ───────────────────────────────────────────────────────
