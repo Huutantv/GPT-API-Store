@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 
 const ROOT_DIR = __dirname;
 const ENV_FILE = path.join(ROOT_DIR, ".env");
@@ -40,6 +41,7 @@ const {
   getPackageTokenQuota,
   getTokenPerRequest,
 } = require("./package_quotas");
+const { ResponseCache } = require("./cache");
 
 const orderRateMap = new Map();
 
@@ -833,6 +835,15 @@ const requestOwnerCache = new Map();
 const REQUEST_OWNER_CACHE_TTL_MS = Number(process.env.DORO_REQUEST_OWNER_CACHE_TTL_MS || "60000");
 let reqCounter = 0;
 let lastLogCleanupDay = "";
+
+// ── Response Cache (giảm token backend cho request lặp) ──────────────────────
+const RESPONSE_CACHE_ENABLED = envFlag(process.env.DORO_RESPONSE_CACHE, false);
+const RESPONSE_CACHE_STREAM = envFlag(process.env.DORO_CACHE_STREAM, true);
+const RESPONSE_CACHE_TTL_MS = Number(process.env.DORO_CACHE_TTL_MS || "600000") || 600000;
+const RESPONSE_CACHE_MAX_ENTRIES = Number(process.env.DORO_CACHE_MAX_ENTRIES || "1000") || 1000;
+const RESPONSE_CACHE_MAX_BODY_BYTES = Number(process.env.DORO_CACHE_MAX_BODY_BYTES || String(2 * 1024 * 1024)) || (2 * 1024 * 1024);
+const responseCache = new ResponseCache(RESPONSE_CACHE_MAX_ENTRIES, RESPONSE_CACHE_TTL_MS, RESPONSE_CACHE_MAX_BODY_BYTES);
+let responseCacheEnabled = RESPONSE_CACHE_ENABLED;
 
 function logTs() {
   const now = new Date();
@@ -4039,6 +4050,7 @@ app.use((req, res, next) => {
     is_retry: false,
     retry_count: 0,
     final_backend_status: null,
+    cache_hit: false,
   };
   res.setHeader("X-Request-Id", reqId);
   const originalWrite = res.write.bind(res);
@@ -4098,6 +4110,7 @@ app.use((req, res, next) => {
       is_retry: !!req.obs.is_retry,
       retry_count: req.obs.retry_count || 0,
       final_backend_status: req.obs.final_backend_status || null,
+      cache_hit: !!req.obs.cache_hit,
     };
     if (shouldPrint) recordAccess(entry);
     if (shouldPrint) {
@@ -4140,6 +4153,127 @@ function maybeBackend5Chain(req, res, messages, originalModel, errPayloadFn) {
   return { handled: true, sent: false, chain: r.chain, messages: r.messages };
 }
 
+// ── Response Cache helpers ───────────────────────────────────────────────────
+// Cache key chỉ bao gồm các field ảnh hưởng đến output. Bỏ qua user/metadata/n.
+// Bỏ qua request chứa ảnh (base64 lớn, giá trị cache thấp).
+function responseCacheKey(body, publicModel, isStream) {
+  if (!body || typeof body !== "object") return "";
+  const fields = {
+    m: String(publicModel || body.model || ""),
+    s: !!isStream,
+    msg: body.messages,
+    sys: body.system,
+    tools: body.tools,
+    tc: body.tool_choice,
+    ptc: body.parallel_tool_calls,
+    temp: body.temperature,
+    top_p: body.top_p,
+    max: body.max_tokens != null ? body.max_tokens : body.max_output_tokens,
+    pp: body.presence_penalty,
+    fp: body.frequency_penalty,
+    seed: body.seed,
+    rf: body.response_format,
+    reasoning: body.reasoning,
+  };
+  let json;
+  try { json = JSON.stringify(fields); } catch (_) { return ""; }
+  return crypto.createHash("sha1").update(json).digest("hex");
+}
+
+function requestHasImageContent(messages) {
+  if (!Array.isArray(messages)) return false;
+  for (const msg of messages) {
+    const content = msg && msg.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      if (part.type === "image_url" || part.type === "image" || part.type === "input_image" || part.type === "input_file" || part.source || part.image_url) return true;
+    }
+  }
+  return false;
+}
+
+function responseCacheable(body, isStream) {
+  if (!responseCacheEnabled) return false;
+  if (!body || typeof body !== "object") return false;
+  if (isStream && !RESPONSE_CACHE_STREAM) return false;
+  const n = Number(body.n);
+  if (n > 1) return false;
+  if (requestHasImageContent(body.messages)) return false;
+  return true;
+}
+
+// Phục vụ từ cache nếu có hit. Trả true khi đã gửi response (handler phải return).
+function maybeServeResponseFromCache(req, res, body, publicModel, isStream) {
+  if (!responseCacheable(body, isStream)) return false;
+  const key = responseCacheKey(body, publicModel, isStream);
+  if (!key) return false;
+  const hit = responseCache.get(key);
+  if (!hit) return false;
+  req.obs.cache_hit = true;
+  req.obs.backend_id = "cache";
+  req.obs.backend_profile = "cache";
+  req.obs.backend_model = "cache";
+  req.obs.backend_base_url = "cache";
+  req.obs.final_backend_status = 200;
+  res.statusCode = hit.status || 200;
+  if (hit.isStream) {
+    setSseHeaders(res);
+  } else if (hit.contentType) {
+    try { res.setHeader("content-type", hit.contentType); } catch (_) {}
+  }
+  try { res.write(hit.body); } catch (_) {}
+  res.end();
+  addLog(`cache HIT key=${key.slice(0, 10)} stream=${hit.isStream} bytes=${hit.body.length}`);
+  return true;
+}
+
+// Wrap res.write/res.end để capture raw output. Khi kết thúc thành công
+// (status < 400, không retry, không error) thì lưu vào cache.
+function installResponseCacheCapture(req, res, body, publicModel, isStream) {
+  if (!responseCacheable(body, isStream)) return null;
+  const key = responseCacheKey(body, publicModel, isStream);
+  if (!key) return null;
+  const chunks = [];
+  const origWrite = res.write.bind(res);
+  const origEnd = res.end.bind(res);
+  const origStatus = res.status ? res.status.bind(res) : null;
+  let errorSent = false;
+  if (origStatus) {
+    res.status = (code) => { if (Number(code) >= 400) errorSent = true; return origStatus(code); };
+  }
+  res.write = (chunk, ...args) => {
+    if (chunk) { try { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))); } catch (_) {} }
+    return origWrite(chunk, ...args);
+  };
+  res.end = (chunk, ...args) => {
+    if (chunk) { try { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))); } catch (_) {} }
+    try {
+      const retry = Number(req.obs && req.obs.retry_count) || 0;
+      const errType = req.obs && req.obs.error_type;
+      if (!errorSent && res.statusCode < 400 && retry === 0 && !errType) {
+        const bodyBuf = Buffer.concat(chunks);
+        if (bodyBuf.length <= RESPONSE_CACHE_MAX_BODY_BYTES) {
+          const ct = res.getHeader("content-type");
+          responseCache.set(key, { isStream, status: res.statusCode, contentType: ct, body: bodyBuf, storedAt: Date.now() }, bodyBuf.length);
+        }
+      }
+    } catch (_) {}
+    return origEnd(chunk, ...args);
+  };
+  return key;
+}
+
+// Dùng chung cho cả 3 path. Tránh install 2 lần (responses -> chat handler).
+// Trả true khi đã phục vụ từ cache (handler phải return ngay).
+function ensureResponseCache(req, res, body, publicModel, isStream) {
+  if (req.__doroCacheHandled) return false;
+  req.__doroCacheHandled = true;
+  if (maybeServeResponseFromCache(req, res, body, publicModel, isStream)) return true;
+  installResponseCacheCapture(req, res, body, publicModel, isStream);
+  return false;
+}
+
 app.post(["/v1/messages", "/messages"], async (req, res) => {
   const auth = checkAuth(req);
   req.obs.api_key_masked = maskSecret(auth.token || extractToken(req));
@@ -4172,6 +4306,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  if (ensureResponseCache(req, res, body, publicModel, useStream)) return;
   const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
   if (!settings) {
@@ -5135,6 +5270,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     parallel_tool_calls: original.parallel_tool_calls,
     stream: wantsStream,
   };
+  if (ensureResponseCache(req, res, req.body, publicModel, wantsStream)) return;
   if (wantsStream) {
     res.statusCode = 200;
     setSseHeaders(res);
@@ -5193,6 +5329,7 @@ async function openAIChatCompletionsHandler(req, res) {
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  if (ensureResponseCache(req, res, body, publicModel, !!body.stream)) return;
   const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
   if (!settings) {
@@ -6195,6 +6332,30 @@ function monitorDebugCopyText(item) {
     `Error: ${errorText}`,
   ].join("\n");
 }
+
+// ── Response Cache admin endpoints ───────────────────────────────────────────
+app.get("/api/cache/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ ...responseCache.snapshot(), enabled: responseCacheEnabled, stream_enabled: RESPONSE_CACHE_STREAM });
+});
+
+app.post("/api/cache/clear", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const removed = responseCache.clear();
+  addLog(`cache cleared entries=${removed} by admin`);
+  res.json({ ok: true, cleared: removed });
+});
+
+app.post("/api/cache/toggle", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const want = req.body && typeof req.body.enabled === "boolean" ? req.body.enabled : !responseCacheEnabled;
+  responseCacheEnabled = want;
+  addLog(`cache ${want ? "enabled" : "disabled"} by admin`);
+  res.json({ ok: true, enabled: responseCacheEnabled });
+});
 
 app.get("/api/requests/recent", (req, res) => {
   const admin = checkAdminAuth(req);
