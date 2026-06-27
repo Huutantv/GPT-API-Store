@@ -91,6 +91,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .top-row strong{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .logs-output{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;font-size:12.5px;font-family:'Cascadia Code','Fira Code',Consolas,monospace;height:calc(100vh - 190px);overflow:auto;white-space:pre-wrap;line-height:1.65;word-break:break-word}
 .logs-output:empty::before{content:'No logs yet.';color:var(--dim);font-family:inherit}
+.ovw-second-row{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px;margin-bottom:16px}
+.ovw-charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.ovw-chart-box{min-height:200px}
+.ovw-bar-chart{display:flex;align-items:flex-end;gap:4px;height:140px;padding-top:8px;overflow-x:auto}
+.ovw-bar{flex:1;min-width:18px;background:linear-gradient(180deg,var(--accent),#4f46e5);border-radius:4px 4px 0 0;position:relative;cursor:default;transition:filter .15s}
+.ovw-bar:hover{filter:brightness(1.25)}
+.ovw-bar-label{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--dim);white-space:nowrap}
+.ovw-bar-val{position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9px;color:var(--text);white-space:nowrap;opacity:0;transition:opacity .15s}
+.ovw-bar:hover .ovw-bar-val{opacity:1}
+.ovw-users{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.ovw-user-box{overflow:auto}
+.ovw-empty{color:var(--dim);font-size:13px;padding:16px 0;text-align:center}
+.ovw-tab-row{display:flex;gap:8px;margin-bottom:12px}
+.ovw-tab{padding:6px 14px;border-radius:8px;font-size:13px;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--dim)}
+.ovw-tab.active{background:rgba(99,102,241,.15);color:var(--accent);font-weight:600;border-color:var(--accent)}
 .auth-locked>.sidebar,.auth-locked>.main{visibility:hidden}
 .auth-overlay{position:fixed;inset:0;z-index:50;background:var(--bg);display:none;align-items:center;justify-content:center;padding:20px}
 .auth-overlay.show{display:flex}
@@ -127,6 +142,10 @@ html{-webkit-text-size-adjust:100%}
   .metric-value{font-size:20px}
   .monitor-layout{grid-template-columns:1fr}
   .monitor-filters{gap:6px}
+  .ovw-second-row{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .ovw-charts{grid-template-columns:1fr}
+  .ovw-users{grid-template-columns:1fr}
+  .ovw-bar-chart{height:110px}
   .monitor-filters .cfg-input,.monitor-filters .model-select{flex:1 1 140px;min-width:0;max-width:none!important}
   .monitor-table-wrap{max-height:55vh}
   .monitor-table{font-size:11px;min-width:760px}
@@ -189,8 +208,9 @@ html{-webkit-text-size-adjust:100%}
     <p id="version">v1.4.2-keygen</p>
   </div>
   <div class="sidebar-nav">
-    <div class="nav-item active" data-panel="monitor"><span class="nav-icon">Live</span> Monitor</div>
-    <div class="nav-item active" data-panel="chat"><span class="nav-icon">💬</span> Chat Test</div>
+    <div class="nav-item active" data-panel="overview"><span class="nav-icon">📊</span> Tổng quan</div>
+    <div class="nav-item" data-panel="monitor"><span class="nav-icon">Live</span> Monitor</div>
+    <div class="nav-item" data-panel="chat"><span class="nav-icon">💬</span> Chat Test</div>
     <div class="nav-item" data-panel="keys"><span class="nav-icon">🔑</span> API Keys</div>
     <div class="nav-item" data-panel="config"><span class="nav-icon">⚙️</span> Config</div>
     <div class="nav-item" data-panel="logs"><span class="nav-icon">📋</span> Logs</div>
@@ -223,7 +243,52 @@ html{-webkit-text-size-adjust:100%}
     </div>
   </div>
   <div class="content">
-    <div class="panel active" id="panel-monitor">
+    <div class="panel active" id="panel-overview">
+      <div class="metrics-grid">
+        <div class="metric-tile"><div class="metric-value" id="ovwTokensToday">—</div><div class="metric-label">Tokens hôm nay</div></div>
+        <div class="metric-tile"><div class="metric-value" id="ovwTokensMonth">—</div><div class="metric-label">Tokens tháng này</div></div>
+        <div class="metric-tile"><div class="metric-value" id="ovwReqToday">—</div><div class="metric-label">Requests hôm nay</div></div>
+        <div class="metric-tile"><div class="metric-value" id="ovwReqMonth">—</div><div class="metric-label">Requests tháng này</div></div>
+      </div>
+      <div class="ovw-second-row">
+        <div class="metric-tile"><div class="metric-value" id="ovwTokensTotal">—</div><div class="metric-label">Tổng tokens (toàn pool)</div></div>
+        <div class="metric-tile"><div class="metric-value" id="ovwReqTotal">—</div><div class="metric-label">Tổng requests</div></div>
+        <div class="metric-tile"><div class="metric-value" id="ovwCreditToday">—</div><div class="metric-label">Credit tiêu hôm nay</div></div>
+        <div class="metric-tile"><div class="metric-value" id="ovwCreditMonth">—</div><div class="metric-label">Credit tiêu tháng này</div></div>
+      </div>
+      <div class="ovw-charts">
+        <div class="side-panel ovw-chart-box">
+          <h3>Token theo ngày (14 ngày)</h3>
+          <div id="ovwDailyChart" class="ovw-bar-chart"></div>
+        </div>
+        <div class="side-panel ovw-chart-box">
+          <h3>Token theo tháng (12 tháng)</h3>
+          <div id="ovwMonthlyChart" class="ovw-bar-chart"></div>
+        </div>
+      </div>
+      <div class="ovw-users">
+        <div class="side-panel ovw-user-box">
+          <h3>Top user tiêu token nhiều nhất (tháng này)</h3>
+          <div class="monitor-table-wrap" style="max-height:none">
+            <table class="monitor-table" style="min-width:0">
+              <thead><tr><th>#</th><th>Khách hàng</th><th>Email</th><th>Gói</th><th>Tokens</th><th>Requests</th></tr></thead>
+              <tbody id="ovwTopUsersMonth"><tr><td colspan="6" class="empty-state">Đang tải...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="side-panel ovw-user-box">
+          <h3>Top user tiêu token nhiều nhất (tất cả)</h3>
+          <div class="monitor-table-wrap" style="max-height:none">
+            <table class="monitor-table" style="min-width:0">
+              <thead><tr><th>#</th><th>Khách hàng</th><th>Email</th><th>Gói</th><th>Tokens</th><th>Requests</th></tr></thead>
+              <tbody id="ovwTopUsersAll"><tr><td colspan="6" class="empty-state">Đang tải...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" onclick="loadOverview()">↻ Làm mới</button> <span id="ovwUpdated" style="font-size:12px;color:var(--dim)"></span></div>
+    </div>
+    <div class="panel" id="panel-monitor">
       <div class="metrics-grid">
         <div class="metric-tile"><div class="metric-value" id="metricRpm">0</div><div class="metric-label">RPM 1m</div></div>
         <div class="metric-tile"><div class="metric-value" id="metricSuccess">100%</div><div class="metric-label">Success rate 1m</div></div>
@@ -406,6 +471,7 @@ async function unlockDashboard(e){
     input.value='';
     hideAuth();
     var active=document.querySelector('.panel.active');
+    if(active&&active.id==='panel-overview')loadOverview();
     if(active&&active.id==='panel-monitor')loadMonitor();
     if(active&&active.id==='panel-config')loadConfig();
     if(active&&active.id==='panel-keys')loadKeys();
@@ -420,9 +486,9 @@ async function unlockDashboard(e){
 }
 document.getElementById('authForm').addEventListener('submit',unlockDashboard);
 if(!ADMIN_KEY)showAuth();else hideAuth();
-document.getElementById('panelTitle').textContent='Monitor';
+document.getElementById('panelTitle').textContent='Tổng quan';
 document.querySelectorAll('.nav-item').forEach(function(item){
-  item.classList.toggle('active',item.dataset.panel==='monitor');
+  item.classList.toggle('active',item.dataset.panel==='overview');
 });
 
 // Nav
@@ -434,6 +500,7 @@ document.querySelectorAll('.nav-item').forEach(function(item){
     document.querySelectorAll('.panel').forEach(function(px){px.classList.remove('active')});
     document.getElementById('panel-'+p).classList.add('active');
     document.getElementById('panelTitle').textContent=this.textContent;
+    if(p==='overview')loadOverview();
     if(p==='monitor')loadMonitor();
     if(p==='config')loadConfig();
     if(p==='keys')loadKeys();
@@ -511,6 +578,70 @@ function renderMonitorTable(){
     '</tr>';
   }).join('');
 }
+// ── Overview: tổng pool token theo ngày/tháng + top user ──
+function fmtTokens(n){
+  n=Number(n)||0;
+  if(n>=1e9)return (n/1e9).toFixed(2)+'B';
+  if(n>=1e6)return (n/1e6).toFixed(2)+'M';
+  if(n>=1e3)return (n/1e3).toFixed(1)+'K';
+  return String(n);
+}
+function fmtNum(n){return (Number(n)||0).toLocaleString('vi-VN');}
+function renderBarChart(elId,data,valKey,labelKey){
+  var el=document.getElementById(elId);
+  if(!el)return;
+  if(!data||!data.length){el.innerHTML='<div class="ovw-empty">Chưa có dữ liệu</div>';return;}
+  var max=Math.max.apply(null,data.map(function(d){return Number(d[valKey])||0;}))||1;
+  el.innerHTML=data.map(function(d){
+    var v=Number(d[valKey])||0;
+    var h=Math.max(2,Math.round((v/max)*100));
+    var lbl=String(d[labelKey]||'').slice(5);
+    return '<div class="ovw-bar" style="height:'+h+'%" title="'+escapeHtml(d[labelKey])+': '+fmtNum(v)+' tokens">'
+      +'<span class="ovw-bar-val">'+fmtTokens(v)+'</span>'
+      +'<span class="ovw-bar-label">'+escapeHtml(lbl)+'</span></div>';
+  }).join('');
+}
+function renderTopUsers(tbodyId,users){
+  var el=document.getElementById(tbodyId);
+  if(!el)return;
+  if(!users||!users.length){el.innerHTML='<tr><td colspan="6" class="ovw-empty">Chưa có dữ liệu</td></tr>';return;}
+  el.innerHTML=users.map(function(u,i){
+    var name=u.customer_name||u.customer_email||u.key_masked||'(không rõ)';
+    return '<tr>'
+      +'<td>'+(i+1)+'</td>'
+      +'<td>'+escapeHtml(name)+'</td>'
+      +'<td style="color:var(--dim)">'+escapeHtml(u.customer_email||'—')+'</td>'
+      +'<td>'+escapeHtml(u.package_id||'—')+'</td>'
+      +'<td><strong>'+fmtNum(u.tokens)+'</strong></td>'
+      +'<td>'+fmtNum(u.requests)+'</td>'
+      +'</tr>';
+  }).join('');
+}
+async function loadOverview(){
+  if(!document.getElementById('panel-overview').classList.contains('active'))return;
+  try{
+    var r=await fetch(API+'/api/dashboard/token-usage');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    var d=await r.json();
+    document.getElementById('ovwTokensToday').textContent=fmtTokens(d.totals.tokens_today);
+    document.getElementById('ovwTokensMonth').textContent=fmtTokens(d.totals.tokens_month);
+    document.getElementById('ovwTokensTotal').textContent=fmtTokens(d.totals.tokens_total);
+    document.getElementById('ovwReqToday').textContent=fmtNum(d.totals.requests_today);
+    document.getElementById('ovwReqMonth').textContent=fmtNum(d.totals.requests_month);
+    document.getElementById('ovwReqTotal').textContent=fmtNum(d.totals.requests_total);
+    document.getElementById('ovwCreditToday').textContent=fmtNum(d.totals.credit_spent_today);
+    document.getElementById('ovwCreditMonth').textContent=fmtNum(d.totals.credit_spent_month);
+    renderBarChart('ovwDailyChart',d.daily,'tokens','day');
+    renderBarChart('ovwMonthlyChart',d.monthly,'tokens','month');
+    renderTopUsers('ovwTopUsersMonth',d.top_users_month);
+    renderTopUsers('ovwTopUsersAll',d.top_users_all);
+    document.getElementById('ovwUpdated').textContent='Cập nhật: '+new Date().toLocaleTimeString('vi-VN');
+  }catch(e){
+    document.getElementById('ovwUpdated').textContent='Lỗi: '+e.message;
+  }
+}
+setInterval(function(){if(document.getElementById('panel-overview')&&document.getElementById('panel-overview').classList.contains('active'))loadOverview();},30000);
+
 async function loadMonitor(){
   if(!ADMIN_KEY||!document.getElementById('panel-monitor').classList.contains('active'))return;
   try{

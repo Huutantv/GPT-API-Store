@@ -6049,6 +6049,78 @@ app.get("/api/dashboard/analytics", (req, res) => {
   });
 });
 
+// ── Token usage overview (tổng pool token theo ngày/tháng + top user) ─────────
+// Nguồn: credit_txns (delta<0 = usage). tokens = tokens_in + tokens_out.
+// created_at lưu UTC (datetime('now')); nhóm theo ngày VN qua +7h.
+app.get("/api/dashboard/token-usage", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const month = today.slice(0, 7);
+  // VN day/month từ created_at UTC: datetime(created_at,'+7 hours')
+  const vnDayExpr = "substr(datetime(created_at, '+7 hours'), 1, 10)";
+  const vnMonthExpr = "substr(datetime(created_at, '+7 hours'), 1, 7)";
+  const usageWhere = "delta < 0";
+
+  const totals = db.prepare(`SELECT
+    SUM(CASE WHEN ${vnDayExpr}=? THEN (tokens_in + tokens_out) ELSE 0 END) AS tokens_today,
+    SUM(CASE WHEN ${vnMonthExpr}=? THEN (tokens_in + tokens_out) ELSE 0 END) AS tokens_month,
+    SUM(tokens_in + tokens_out) AS tokens_total,
+    SUM(CASE WHEN ${vnDayExpr}=? THEN 1 ELSE 0 END) AS requests_today,
+    SUM(CASE WHEN ${vnMonthExpr}=? THEN 1 ELSE 0 END) AS requests_month,
+    COUNT(*) AS requests_total,
+    SUM(CASE WHEN ${vnDayExpr}=? THEN ABS(delta) ELSE 0 END) AS credit_spent_today,
+    SUM(CASE WHEN ${vnMonthExpr}=? THEN ABS(delta) ELSE 0 END) AS credit_spent_month
+    FROM credit_txns WHERE ${usageWhere}`).get(today, month, today, month, today, month);
+
+  const dailyRows = db.prepare(`SELECT ${vnDayExpr} AS day,
+    SUM(tokens_in + tokens_out) AS tokens, COUNT(*) AS requests
+    FROM credit_txns WHERE ${usageWhere}
+      AND date(datetime(created_at, '+7 hours')) >= date('now', '-13 day', '+7 hours')
+    GROUP BY day ORDER BY day ASC`).all();
+
+  const monthlyRows = db.prepare(`SELECT ${vnMonthExpr} AS month,
+    SUM(tokens_in + tokens_out) AS tokens, COUNT(*) AS requests
+    FROM credit_txns WHERE ${usageWhere}
+      AND date(datetime(created_at, '+7 hours')) >= date('now', '-11 month', '+7 hours')
+    GROUP BY month ORDER BY month ASC`).all();
+
+  // Top user theo token: join orders để lấy customer info (qualify t.created_at).
+  const topUsersMonth = db.prepare(`SELECT t.key,
+    SUM(t.tokens_in + t.tokens_out) AS tokens, COUNT(*) AS requests,
+    o.customer_name, o.customer_email, o.package_id
+    FROM credit_txns t LEFT JOIN orders o ON o.api_key = t.key
+    WHERE t.${usageWhere} AND substr(datetime(t.created_at, '+7 hours'), 1, 7)=?
+    GROUP BY t.key ORDER BY tokens DESC LIMIT 10`).all(month);
+
+  const topUsersAll = db.prepare(`SELECT t.key,
+    SUM(t.tokens_in + t.tokens_out) AS tokens, COUNT(*) AS requests,
+    o.customer_name, o.customer_email, o.package_id
+    FROM credit_txns t LEFT JOIN orders o ON o.api_key = t.key
+    WHERE t.${usageWhere} AND t.delta < 0
+    GROUP BY t.key ORDER BY tokens DESC LIMIT 10`).all();
+
+  const mask = (k) => (k ? (k.length > 16 ? k.slice(0, 10) + "..." + k.slice(-4) : k.slice(0, 4) + "...") : "");
+  res.json({
+    today, month,
+    totals: {
+      tokens_today: Number(totals.tokens_today || 0),
+      tokens_month: Number(totals.tokens_month || 0),
+      tokens_total: Number(totals.tokens_total || 0),
+      requests_today: Number(totals.requests_today || 0),
+      requests_month: Number(totals.requests_month || 0),
+      requests_total: Number(totals.requests_total || 0),
+      credit_spent_today: Number(totals.credit_spent_today || 0),
+      credit_spent_month: Number(totals.credit_spent_month || 0),
+    },
+    daily: dailyRows.map((r) => ({ day: r.day, tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+    monthly: monthlyRows.map((r) => ({ month: r.month, tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+    top_users_month: topUsersMonth.map((r) => ({ key_masked: mask(r.key), customer_name: r.customer_name || "", customer_email: r.customer_email || "", package_id: r.package_id || "", tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+    top_users_all: topUsersAll.map((r) => ({ key_masked: mask(r.key), customer_name: r.customer_name || "", customer_email: r.customer_email || "", package_id: r.package_id || "", tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+  });
+});
+
 app.post("/api/orders/manual-confirm", async (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
