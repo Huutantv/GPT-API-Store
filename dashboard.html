@@ -490,6 +490,8 @@ document.getElementById('panelTitle').textContent='Tổng quan';
 document.querySelectorAll('.nav-item').forEach(function(item){
   item.classList.toggle('active',item.dataset.panel==='overview');
 });
+// Auto-load overview khi đã authed (tránh tile hiển thị "—" khi vào trang)
+if(ADMIN_KEY)loadOverview();
 
 // Nav
 document.querySelectorAll('.nav-item').forEach(function(item){
