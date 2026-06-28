@@ -2,6 +2,7 @@ const express = require("express");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const crypto = require("crypto");
 
 const ROOT_DIR = __dirname;
 const ENV_FILE = path.join(ROOT_DIR, ".env");
@@ -40,6 +41,7 @@ const {
   getPackageTokenQuota,
   getTokenPerRequest,
 } = require("./package_quotas");
+const { ResponseCache } = require("./cache");
 
 const orderRateMap = new Map();
 
@@ -833,6 +835,27 @@ const requestOwnerCache = new Map();
 const REQUEST_OWNER_CACHE_TTL_MS = Number(process.env.DORO_REQUEST_OWNER_CACHE_TTL_MS || "60000");
 let reqCounter = 0;
 let lastLogCleanupDay = "";
+
+// ── Response Cache (giảm token backend cho request lặp) ──────────────────────
+const RESPONSE_CACHE_ENABLED = envFlag(process.env.DORO_RESPONSE_CACHE, false);
+const RESPONSE_CACHE_STREAM = envFlag(process.env.DORO_CACHE_STREAM, true);
+const RESPONSE_CACHE_TTL_MS = Number(process.env.DORO_CACHE_TTL_MS || "600000") || 600000;
+const RESPONSE_CACHE_MAX_ENTRIES = Number(process.env.DORO_CACHE_MAX_ENTRIES || "1000") || 1000;
+const RESPONSE_CACHE_MAX_BODY_BYTES = Number(process.env.DORO_CACHE_MAX_BODY_BYTES || String(2 * 1024 * 1024)) || (2 * 1024 * 1024);
+const responseCache = new ResponseCache(RESPONSE_CACHE_MAX_ENTRIES, RESPONSE_CACHE_TTL_MS, RESPONSE_CACHE_MAX_BODY_BYTES);
+let responseCacheEnabled = RESPONSE_CACHE_ENABLED;
+
+// ── Input token optimization (strip thinking + truncate history) ─────────────
+// Strip <think>/<tool_call> blocks khỏi assistant messages cũ trong history.
+// An toàn: thinking cũ là reasoning internal, model không cần đọc lại để trả lời.
+// Mặc định ON cho model có thinking (deepseek/minimax), OFF cho model khác.
+const STRIP_THINKING_INPUT = envFlag(process.env.DORO_STRIP_THINKING_INPUT, null);
+// Truncate history khi quá dài (chỉ cắt khi > ngưỡng, giữ system + N cuối).
+// Bảo toàn cặp tool_call/result. OFF mặc định để an toàn.
+const TRUNCATE_HISTORY_ENABLED = envFlag(process.env.DORO_TRUNCATE_HISTORY, false);
+const TRUNCATE_HISTORY_MAX = Math.max(8, Number(process.env.DORO_TRUNCATE_HISTORY_MAX || "80") || 80);
+const TRUNCATE_HISTORY_KEEP = Math.max(4, Number(process.env.DORO_TRUNCATE_HISTORY_KEEP || "40") || 40);
+const inputOptStats = { thinking_stripped: 0, chars_removed: 0, histories_truncated: 0, messages_dropped: 0 };
 
 function logTs() {
   const now = new Date();
@@ -2538,8 +2561,114 @@ function normalizeUserAssistantOnlyMessages(messages) {
   return normalized;
 }
 
+// ── Input token optimization helpers ─────────────────────────────────────────
+// Strip thinking/<tag> blocks khỏi assistant messages cũ trong history.
+// An toàn: thinking cũ là reasoning internal, model không cần đọc lại để trả lời
+// message mới. Chỉ strip role=assistant (user/system giữ nguyên).
+function stripThinkingFromMessages(messages, enabled) {
+  if (!enabled || !Array.isArray(messages)) return { messages, stripped: 0, charsRemoved: 0 };
+  let stripped = 0;
+  let charsRemoved = 0;
+  const next = messages.map((message) => {
+    if (!message || message.role !== "assistant") return message;
+    const content = message.content;
+    if (typeof content === "string") {
+      const cleaned = stripHiddenReasoningText(content, { preserveLeadingWhitespace: true });
+      if (cleaned !== content) {
+        stripped += 1;
+        charsRemoved += Math.max(0, content.length - cleaned.length);
+        return { ...message, content: cleaned };
+      }
+      return message;
+    }
+    if (Array.isArray(content)) {
+      let changed = false;
+      let partChars = 0;
+      const newContent = content.map((part) => {
+        if (!part || typeof part !== "object") return part;
+        if (part.type === "text" && typeof part.text === "string") {
+          const cleaned = stripHiddenReasoningText(part.text, { preserveLeadingWhitespace: true });
+          if (cleaned !== part.text) {
+            changed = true;
+            partChars += Math.max(0, part.text.length - cleaned.length);
+            return { ...part, text: cleaned };
+          }
+        }
+        return part;
+      });
+      if (changed) {
+        stripped += 1;
+        charsRemoved += partChars;
+        return { ...message, content: newContent };
+      }
+    }
+    return message;
+  });
+  return { messages: next, stripped, charsRemoved };
+}
+
+// Truncate history khi quá dài. Giữ system messages đầu + N message cuối.
+// Bảo toàn cặp tool_call(assistant) + tool_result(tool/user): điểm cắt không để
+// tool result mồ côi (tool message mà không có assistant tool_calls trước đó).
+function truncateHistorySafe(messages, maxMessages, keepTail) {
+  if (!Array.isArray(messages)) return { messages, truncated: false, dropped: 0 };
+  const total = messages.length;
+  if (total <= maxMessages || total <= keepTail) return { messages, truncated: false, dropped: 0 };
+  // Tách system block đầu (các message role=system liên tiếp ở đầu).
+  let sysEnd = 0;
+  while (sysEnd < total && messages[sysEnd] && messages[sysEnd].role === "system") sysEnd += 1;
+  const systemBlock = messages.slice(0, sysEnd);
+  const rest = messages.slice(sysEnd);
+  if (rest.length <= keepTail) return { messages, truncated: false, dropped: 0 };
+  // Cắt: giữ keepTail message cuối của rest. Tìm điểm cắt an toàn.
+  let cutStart = rest.length - keepTail;
+  // Lùi tới điểm an toàn: message đầu được giữ KHÔNG được là tool result mồ côi
+  // (role tool/user chứa tool_result mà không có assistant tool_calls đi kèm).
+  // Lùi cho tới khi first kept không phải tool result → đảm bảo assistant(tool_calls)
+  // sinh ra nó cũng được giữ.
+  while (cutStart > 0) {
+    const first = rest[cutStart];
+    const isFirstToolResult = !!(first && (first.role === "tool" || (first.role === "user" && Array.isArray(first.content) && first.content.some((b) => b && b.type === "tool_result"))));
+    if (!isFirstToolResult) break;
+    cutStart -= 1;
+  }
+  const kept = rest.slice(cutStart);
+  const dropped = rest.length - kept.length;
+  const result = systemBlock.concat(kept);
+  return { messages: result, truncated: true, dropped };
+}
+
+function resolveStripThinkingEnabled(settings) {
+  if (STRIP_THINKING_INPUT === true) return true;
+  if (STRIP_THINKING_INPUT === false) return false;
+  // Auto: bật cho model có thinking (deepseek/minimax) để tiết kiệm token lớn.
+  const model = normalizeModelName(settings && (settings.backendModel || settings.requestedModel));
+  return model.includes("deepseek") || model.includes("minimax");
+}
+
 function applyBackendMessageCompatibility(payload, settings) {
-  if (!payload || !Array.isArray(payload.messages) || !settings || !backendRequiresFlattenedToolHistory(settings)) return payload;
+  if (!payload || !Array.isArray(payload.messages) || !settings) return payload;
+  // ── Input token optimization (chạy cho mọi backend) ──
+  const stripEnabled = resolveStripThinkingEnabled(settings);
+  if (stripEnabled) {
+    const r = stripThinkingFromMessages(payload.messages, true);
+    if (r.stripped) {
+      payload.messages = r.messages;
+      inputOptStats.thinking_stripped += r.stripped;
+      inputOptStats.chars_removed += r.charsRemoved;
+      addLog(`input-opt strip-thinking ${settings.profileLabel} msgs=${r.stripped} chars=-${r.charsRemoved}`);
+    }
+  }
+  if (TRUNCATE_HISTORY_ENABLED) {
+    const r = truncateHistorySafe(payload.messages, TRUNCATE_HISTORY_MAX, TRUNCATE_HISTORY_KEEP);
+    if (r.truncated) {
+      payload.messages = r.messages;
+      inputOptStats.histories_truncated += 1;
+      inputOptStats.messages_dropped += r.dropped;
+      addLog(`input-opt truncate ${settings.profileLabel} dropped=${r.dropped} kept=${r.messages.length}`);
+    }
+  }
+  if (!backendRequiresFlattenedToolHistory(settings)) return payload;
   payload.messages = normalizeUserAssistantOnlyMessages(payload.messages);
   addLog(`message roles normalized for ${settings.profileLabel}: user/assistant only`);
   return payload;
@@ -4039,6 +4168,7 @@ app.use((req, res, next) => {
     is_retry: false,
     retry_count: 0,
     final_backend_status: null,
+    cache_hit: false,
   };
   res.setHeader("X-Request-Id", reqId);
   const originalWrite = res.write.bind(res);
@@ -4098,6 +4228,7 @@ app.use((req, res, next) => {
       is_retry: !!req.obs.is_retry,
       retry_count: req.obs.retry_count || 0,
       final_backend_status: req.obs.final_backend_status || null,
+      cache_hit: !!req.obs.cache_hit,
     };
     if (shouldPrint) recordAccess(entry);
     if (shouldPrint) {
@@ -4108,7 +4239,15 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/", (_req, res) => res.sendFile(path.join(ROOT_DIR, "index.html")));
+function sendNoCacheHtml(res, fileName) {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  return res.sendFile(path.join(ROOT_DIR, fileName));
+}
+
+app.get("/", (_req, res) => sendNoCacheHtml(res, "index.html"));
 app.get("/health", (_req, res) => res.json({ status: "ok", proxy: "doro", runtime: "node", virtual_keys: validProxyKeys.length, time: Date.now() / 1000 }));
 
 function modelList() {
@@ -4138,6 +4277,127 @@ function maybeBackend5Chain(req, res, messages, originalModel, errPayloadFn) {
   req.obs.route_reason = r.routeReason;
   addLog(`backend5 route ${r.requestType} -> ${r.routeTarget} images=${r.imageCount} history_images=${r.historicalImageCount}`);
   return { handled: true, sent: false, chain: r.chain, messages: r.messages };
+}
+
+// ── Response Cache helpers ───────────────────────────────────────────────────
+// Cache key chỉ bao gồm các field ảnh hưởng đến output. Bỏ qua user/metadata/n.
+// Bỏ qua request chứa ảnh (base64 lớn, giá trị cache thấp).
+function responseCacheKey(body, publicModel, isStream) {
+  if (!body || typeof body !== "object") return "";
+  const fields = {
+    m: String(publicModel || body.model || ""),
+    s: !!isStream,
+    msg: body.messages,
+    sys: body.system,
+    tools: body.tools,
+    tc: body.tool_choice,
+    ptc: body.parallel_tool_calls,
+    temp: body.temperature,
+    top_p: body.top_p,
+    max: body.max_tokens != null ? body.max_tokens : body.max_output_tokens,
+    pp: body.presence_penalty,
+    fp: body.frequency_penalty,
+    seed: body.seed,
+    rf: body.response_format,
+    reasoning: body.reasoning,
+  };
+  let json;
+  try { json = JSON.stringify(fields); } catch (_) { return ""; }
+  return crypto.createHash("sha1").update(json).digest("hex");
+}
+
+function requestHasImageContent(messages) {
+  if (!Array.isArray(messages)) return false;
+  for (const msg of messages) {
+    const content = msg && msg.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      if (part.type === "image_url" || part.type === "image" || part.type === "input_image" || part.type === "input_file" || part.source || part.image_url) return true;
+    }
+  }
+  return false;
+}
+
+function responseCacheable(body, isStream) {
+  if (!responseCacheEnabled) return false;
+  if (!body || typeof body !== "object") return false;
+  if (isStream && !RESPONSE_CACHE_STREAM) return false;
+  const n = Number(body.n);
+  if (n > 1) return false;
+  if (requestHasImageContent(body.messages)) return false;
+  return true;
+}
+
+// Phục vụ từ cache nếu có hit. Trả true khi đã gửi response (handler phải return).
+function maybeServeResponseFromCache(req, res, body, publicModel, isStream) {
+  if (!responseCacheable(body, isStream)) return false;
+  const key = responseCacheKey(body, publicModel, isStream);
+  if (!key) return false;
+  const hit = responseCache.get(key);
+  if (!hit) return false;
+  req.obs.cache_hit = true;
+  req.obs.backend_id = "cache";
+  req.obs.backend_profile = "cache";
+  req.obs.backend_model = "cache";
+  req.obs.backend_base_url = "cache";
+  req.obs.final_backend_status = 200;
+  res.statusCode = hit.status || 200;
+  if (hit.isStream) {
+    setSseHeaders(res);
+  } else if (hit.contentType) {
+    try { res.setHeader("content-type", hit.contentType); } catch (_) {}
+  }
+  try { res.write(hit.body); } catch (_) {}
+  res.end();
+  addLog(`cache HIT key=${key.slice(0, 10)} stream=${hit.isStream} bytes=${hit.body.length}`);
+  return true;
+}
+
+// Wrap res.write/res.end để capture raw output. Khi kết thúc thành công
+// (status < 400, không retry, không error) thì lưu vào cache.
+function installResponseCacheCapture(req, res, body, publicModel, isStream) {
+  if (!responseCacheable(body, isStream)) return null;
+  const key = responseCacheKey(body, publicModel, isStream);
+  if (!key) return null;
+  const chunks = [];
+  const origWrite = res.write.bind(res);
+  const origEnd = res.end.bind(res);
+  const origStatus = res.status ? res.status.bind(res) : null;
+  let errorSent = false;
+  if (origStatus) {
+    res.status = (code) => { if (Number(code) >= 400) errorSent = true; return origStatus(code); };
+  }
+  res.write = (chunk, ...args) => {
+    if (chunk) { try { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))); } catch (_) {} }
+    return origWrite(chunk, ...args);
+  };
+  res.end = (chunk, ...args) => {
+    if (chunk) { try { chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk))); } catch (_) {} }
+    try {
+      const retry = Number(req.obs && req.obs.retry_count) || 0;
+      const errType = req.obs && req.obs.error_type;
+      if (!errorSent && res.statusCode < 400 && retry === 0 && !errType) {
+        const bodyBuf = Buffer.concat(chunks);
+        if (bodyBuf.length <= RESPONSE_CACHE_MAX_BODY_BYTES) {
+          const ct = res.getHeader("content-type");
+          responseCache.set(key, { isStream, status: res.statusCode, contentType: ct, body: bodyBuf, storedAt: Date.now() }, bodyBuf.length);
+        }
+      }
+    } catch (_) {}
+    return origEnd(chunk, ...args);
+  };
+  return key;
+}
+
+// Dùng chung cho cả 3 path. Tránh install 2 lần (responses -> chat handler).
+// Trả true khi đã phục vụ từ cache (handler phải return ngay).
+function ensureResponseCache(req, res, body, publicModel, isStream) {
+  if (req.__doroCacheHandled) return false;
+  req.__doroCacheHandled = true;
+  if (maybeServeResponseFromCache(req, res, body, publicModel, isStream)) return true;
+  installResponseCacheCapture(req, res, body, publicModel, isStream);
+  return false;
 }
 
 app.post(["/v1/messages", "/messages"], async (req, res) => {
@@ -4172,6 +4432,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  if (ensureResponseCache(req, res, body, publicModel, useStream)) return;
   const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
   if (!settings) {
@@ -5135,6 +5396,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     parallel_tool_calls: original.parallel_tool_calls,
     stream: wantsStream,
   };
+  if (ensureResponseCache(req, res, req.body, publicModel, wantsStream)) return;
   if (wantsStream) {
     res.statusCode = 200;
     setSseHeaders(res);
@@ -5193,6 +5455,7 @@ async function openAIChatCompletionsHandler(req, res) {
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  if (ensureResponseCache(req, res, body, publicModel, !!body.stream)) return;
   const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
   if (!settings) {
@@ -5395,23 +5658,23 @@ const ADMIN_PANEL_PATH = (() => {
 })();
 
 app.get(DASHBOARD_PATH, (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "dashboard.html"));
+  return sendNoCacheHtml(res, "dashboard.html");
 });
 
 app.get("/portal", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "portal.html"));
+  return sendNoCacheHtml(res, "portal.html");
 });
 
 app.get("/lookup", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "lookup.html"));
+  return sendNoCacheHtml(res, "lookup.html");
 });
 
 app.get("/key-check", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "key-check.html"));
+  return sendNoCacheHtml(res, "key-check.html");
 });
 
 app.get(ADMIN_PANEL_PATH, (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "admin.html"));
+  return sendNoCacheHtml(res, "admin.html");
 });
 
 app.get("/admin", (_req, res) => {
@@ -5419,15 +5682,15 @@ app.get("/admin", (_req, res) => {
 });
 
 app.get("/customers", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "customers.html"));
+  return sendNoCacheHtml(res, "customers.html");
 });
 
 app.get("/checkout", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "checkout.html"));
+  return sendNoCacheHtml(res, "checkout.html");
 });
 
 app.get("/guides/codex", (_req, res) => {
-  return res.sendFile(path.join(ROOT_DIR, "codex-guide.html"));
+  return sendNoCacheHtml(res, "codex-guide.html");
 });
 
 // ── Orders API (public) ───────────────────────────────────────────────────────
@@ -5791,6 +6054,78 @@ app.get("/api/dashboard/analytics", (req, res) => {
     monthly: monthlyRows.map((r) => ({ month: r.month, revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
     by_package: byPackage.map((r) => ({ package_id: r.package_id || "unknown", revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
     recent_paid: recentPaid.map((r) => ({ ...r, key_masked: r.api_key ? r.api_key.slice(0, 10) + "..." + r.api_key.slice(-4) : "" })),
+  });
+});
+
+// ── Token usage overview (tổng pool token theo ngày/tháng + top user) ─────────
+// Nguồn: credit_txns (delta<0 = usage). tokens = tokens_in + tokens_out.
+// created_at lưu UTC (datetime('now')); nhóm theo ngày VN qua +7h.
+app.get("/api/dashboard/token-usage", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const month = today.slice(0, 7);
+  // VN day/month từ created_at UTC: datetime(created_at,'+7 hours')
+  const vnDayExpr = "substr(datetime(created_at, '+7 hours'), 1, 10)";
+  const vnMonthExpr = "substr(datetime(created_at, '+7 hours'), 1, 7)";
+  const usageWhere = "delta < 0";
+
+  const totals = db.prepare(`SELECT
+    SUM(CASE WHEN ${vnDayExpr}=? THEN (tokens_in + tokens_out) ELSE 0 END) AS tokens_today,
+    SUM(CASE WHEN ${vnMonthExpr}=? THEN (tokens_in + tokens_out) ELSE 0 END) AS tokens_month,
+    SUM(tokens_in + tokens_out) AS tokens_total,
+    SUM(CASE WHEN ${vnDayExpr}=? THEN 1 ELSE 0 END) AS requests_today,
+    SUM(CASE WHEN ${vnMonthExpr}=? THEN 1 ELSE 0 END) AS requests_month,
+    COUNT(*) AS requests_total,
+    SUM(CASE WHEN ${vnDayExpr}=? THEN ABS(delta) ELSE 0 END) AS credit_spent_today,
+    SUM(CASE WHEN ${vnMonthExpr}=? THEN ABS(delta) ELSE 0 END) AS credit_spent_month
+    FROM credit_txns WHERE ${usageWhere}`).get(today, month, today, month, today, month);
+
+  const dailyRows = db.prepare(`SELECT ${vnDayExpr} AS day,
+    SUM(tokens_in + tokens_out) AS tokens, COUNT(*) AS requests
+    FROM credit_txns WHERE ${usageWhere}
+      AND date(datetime(created_at, '+7 hours')) >= date('now', '-13 day', '+7 hours')
+    GROUP BY day ORDER BY day ASC`).all();
+
+  const monthlyRows = db.prepare(`SELECT ${vnMonthExpr} AS month,
+    SUM(tokens_in + tokens_out) AS tokens, COUNT(*) AS requests
+    FROM credit_txns WHERE ${usageWhere}
+      AND date(datetime(created_at, '+7 hours')) >= date('now', '-11 month', '+7 hours')
+    GROUP BY month ORDER BY month ASC`).all();
+
+  // Top user theo token: join orders để lấy customer info (qualify t.created_at).
+  const topUsersMonth = db.prepare(`SELECT t.key,
+    SUM(t.tokens_in + t.tokens_out) AS tokens, COUNT(*) AS requests,
+    o.customer_name, o.customer_email, o.package_id
+    FROM credit_txns t LEFT JOIN orders o ON o.api_key = t.key
+    WHERE t.${usageWhere} AND substr(datetime(t.created_at, '+7 hours'), 1, 7)=?
+    GROUP BY t.key ORDER BY tokens DESC LIMIT 10`).all(month);
+
+  const topUsersAll = db.prepare(`SELECT t.key,
+    SUM(t.tokens_in + t.tokens_out) AS tokens, COUNT(*) AS requests,
+    o.customer_name, o.customer_email, o.package_id
+    FROM credit_txns t LEFT JOIN orders o ON o.api_key = t.key
+    WHERE t.${usageWhere} AND t.delta < 0
+    GROUP BY t.key ORDER BY tokens DESC LIMIT 10`).all();
+
+  const mask = (k) => (k ? (k.length > 16 ? k.slice(0, 10) + "..." + k.slice(-4) : k.slice(0, 4) + "...") : "");
+  res.json({
+    today, month,
+    totals: {
+      tokens_today: Number(totals.tokens_today || 0),
+      tokens_month: Number(totals.tokens_month || 0),
+      tokens_total: Number(totals.tokens_total || 0),
+      requests_today: Number(totals.requests_today || 0),
+      requests_month: Number(totals.requests_month || 0),
+      requests_total: Number(totals.requests_total || 0),
+      credit_spent_today: Number(totals.credit_spent_today || 0),
+      credit_spent_month: Number(totals.credit_spent_month || 0),
+    },
+    daily: dailyRows.map((r) => ({ day: r.day, tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+    monthly: monthlyRows.map((r) => ({ month: r.month, tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+    top_users_month: topUsersMonth.map((r) => ({ key_masked: mask(r.key), customer_name: r.customer_name || "", customer_email: r.customer_email || "", package_id: r.package_id || "", tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
+    top_users_all: topUsersAll.map((r) => ({ key_masked: mask(r.key), customer_name: r.customer_name || "", customer_email: r.customer_email || "", package_id: r.package_id || "", tokens: Number(r.tokens || 0), requests: Number(r.requests || 0) })),
   });
 });
 
@@ -6195,6 +6530,56 @@ function monitorDebugCopyText(item) {
     `Error: ${errorText}`,
   ].join("\n");
 }
+
+// ── Response Cache admin endpoints ───────────────────────────────────────────
+app.get("/api/cache/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ ...responseCache.snapshot(), enabled: responseCacheEnabled, stream_enabled: RESPONSE_CACHE_STREAM });
+});
+
+app.post("/api/cache/clear", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const removed = responseCache.clear();
+  addLog(`cache cleared entries=${removed} by admin`);
+  res.json({ ok: true, cleared: removed });
+});
+
+app.post("/api/cache/toggle", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const want = req.body && typeof req.body.enabled === "boolean" ? req.body.enabled : !responseCacheEnabled;
+  responseCacheEnabled = want;
+  addLog(`cache ${want ? "enabled" : "disabled"} by admin`);
+  res.json({ ok: true, enabled: responseCacheEnabled });
+});
+
+// ── Input optimization admin endpoints ───────────────────────────────────────
+app.get("/api/input-opt/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({
+    strip_thinking_enabled: STRIP_THINKING_INPUT,
+    strip_thinking_auto: STRIP_THINKING_INPUT == null,
+    truncate_enabled: TRUNCATE_HISTORY_ENABLED,
+    truncate_max: TRUNCATE_HISTORY_MAX,
+    truncate_keep: TRUNCATE_HISTORY_KEEP,
+    est_tokens_saved: Math.ceil(inputOptStats.chars_removed / 4),
+    ...inputOptStats,
+  });
+});
+
+app.post("/api/input-opt/reset", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const snapshot = { ...inputOptStats };
+  inputOptStats.thinking_stripped = 0;
+  inputOptStats.chars_removed = 0;
+  inputOptStats.histories_truncated = 0;
+  inputOptStats.messages_dropped = 0;
+  res.json({ ok: true, before: snapshot });
+});
 
 app.get("/api/requests/recent", (req, res) => {
   const admin = checkAdminAuth(req);
