@@ -249,7 +249,7 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
   const packageDescription = (p) => {
     if (p.id === "starter") return "30,000,000 token";
     if (p.id === "pro") return "900,000,000 token / 30 ngày · 30M token / ngày";
-    if (p.id === "pro_v2") return "900,000,000 token / 30 ngày";
+    if (p.id === "pro_v2") return "1,000,000,000 token / 30 ngày";
     return p.description;
   };
   const packageBadges = (p) => {
@@ -260,7 +260,7 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
       return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">900,000,000 token</span><span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">30M token / ngày</span>`;
     }
     if (p.id === "pro_v2") {
-      return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">900,000,000 token</span>`;
+      return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">1,000,000,000 token</span>`;
     }
     return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">${Number(p.credit).toLocaleString()} credit</span>`;
   };
