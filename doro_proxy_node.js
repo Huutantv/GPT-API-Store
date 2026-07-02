@@ -6803,7 +6803,8 @@ app.post("/api/credit/keys", (req, res) => {
     if (durationRaw && (!durationDays || durationDays > 3650)) {
       return res.status(400).json({ detail: "duration_days must be between 1 and 3650" });
     }
-    const expiresAt = durationDays > 0 ? vnDateTimeAfterDays(durationDays) : null;
+    const startFromFirstUse = !!(body.start_from_first_use);
+    const expiresAt = (!startFromFirstUse && durationDays > 0) ? vnDateTimeAfterDays(durationDays) : null;
     const manualKey = String(body.manual_key || "").trim();
     const createPayload = {
       label: String(body.label || ""),
@@ -6811,6 +6812,7 @@ app.post("/api/credit/keys", (req, res) => {
       rpmLimit: Number(body.rpm_limit || 10),
       expiresAt,
       tokenRemaining,
+      durationDays: startFromFirstUse ? durationDays : 0,
     };
     const row = manualKey
       ? credit.createManualKey({ ...createPayload, key: manualKey })

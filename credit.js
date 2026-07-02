@@ -65,11 +65,15 @@ db.exec(`
 // Migration: thêm cột token_remaining nếu chưa có
 try { db.exec("ALTER TABLE api_keys ADD COLUMN token_remaining INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 
+// Migration: thêm cột duration_days và first_used_at
+try { db.exec("ALTER TABLE api_keys ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE api_keys ADD COLUMN first_used_at TEXT"); } catch (_) {}
+
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
   getKey:       db.prepare("SELECT * FROM api_keys WHERE key = ?"),
-  listKeys:     db.prepare("SELECT key, label, credit, rpm_limit, created_at, expires_at, active, token_remaining FROM api_keys ORDER BY created_at DESC"),
-  insertKey:    db.prepare("INSERT INTO api_keys (key, label, credit, rpm_limit, expires_at, token_remaining) VALUES (?, ?, ?, ?, ?, ?)"),
+  listKeys:     db.prepare("SELECT key, label, credit, rpm_limit, created_at, expires_at, active, token_remaining, duration_days, first_used_at FROM api_keys ORDER BY created_at DESC"),
+  insertKey:    db.prepare("INSERT INTO api_keys (key, label, credit, rpm_limit, expires_at, token_remaining, duration_days) VALUES (?, ?, ?, ?, ?, ?, ?)"),
   updateCredit: db.prepare("UPDATE api_keys SET credit = credit + ? WHERE key = ?"),
   updateTokenRemaining: db.prepare("UPDATE api_keys SET token_remaining = token_remaining + ? WHERE key = ?"),
   setCredit:    db.prepare("UPDATE api_keys SET credit = ? WHERE key = ?"),
@@ -185,6 +189,24 @@ function checkCreditAuth(apiKey) {
   const row = stmts.getKey.get(apiKey);
   if (!row) return { ok: false, status: 403, message: "Invalid API key" };
   if (!row.active) return { ok: false, status: 403, message: "API key is disabled" };
+
+  // Kích hoạt first-use: nếu key có duration_days nhưng chưa có expires_at và chưa dùng lần nào
+  if (Number(row.duration_days || 0) > 0 && !row.expires_at) {
+    const now = new Date();
+    const vnNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
+    vnNow.setDate(vnNow.getDate() + Number(row.duration_days));
+    const yyyy = vnNow.getFullYear();
+    const mm = String(vnNow.getMonth() + 1).padStart(2, "0");
+    const dd = String(vnNow.getDate()).padStart(2, "0");
+    const hh = String(vnNow.getHours()).padStart(2, "0");
+    const mi = String(vnNow.getMinutes()).padStart(2, "0");
+    const ss = String(vnNow.getSeconds()).padStart(2, "0");
+    const newExpiresAt = `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+    db.prepare("UPDATE api_keys SET expires_at = ?, first_used_at = datetime('now') WHERE key = ?").run(newExpiresAt, apiKey);
+    row.expires_at = newExpiresAt;
+    row.first_used_at = new Date().toISOString();
+  }
+
   const expiresAt = parseExpiryTime(row.expires_at);
   if (expiresAt && expiresAt < new Date()) {
     return {
@@ -322,18 +344,19 @@ function topupCredit(apiKey, amount, reason = "topup", tokenAmount = 0) {
 /**
  * Tạo key mới
  */
-function createKey({ label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0 } = {}) {
+function createKey({ label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const key = generateKey();
-  return createManualKey({ key, label, credit, rpmLimit, expiresAt, tokenRemaining });
+  return createManualKey({ key, label, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
 }
 
-function createManualKey({ key, label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0 } = {}) {
+function createManualKey({ key, label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const apiKey = String(key || "").trim();
   if (!apiKey) throw new Error("Manual key is required");
   if (/\s/.test(apiKey)) throw new Error("Manual key must not contain spaces");
   if (apiKey.length < 8 || apiKey.length > 160) throw new Error("Manual key length must be between 8 and 160 characters");
   if (stmts.getKey.get(apiKey)) throw new Error("Key already exists");
-  stmts.insertKey.run(apiKey, label, credit, rpmLimit, expiresAt, Number(tokenRemaining || 0));
+  const dur = Math.max(0, Number(durationDays || 0));
+  stmts.insertKey.run(apiKey, label, credit, rpmLimit, expiresAt, Number(tokenRemaining || 0), dur);
   if (credit > 0) {
     stmts.insertTxn.run(apiKey, credit, "initial", 0, 0, "", "");
   }
