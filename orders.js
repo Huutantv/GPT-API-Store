@@ -60,7 +60,7 @@ const seedPkgs = [
   { id: "starter", name: "Starter", price: 20000,  credit: getPackageRequestQuota("starter"), rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
   { id: "pro",     name: "Pro",     price: 270000, credit: getPackageRequestQuota("pro"),     rpm_limit: 10, description: "900,000,000 token / 30 ngày, 30M token/ngày", active: 1 },
   { id: "pro_v2",  name: "Pro v2",  price: 350000, credit: getPackageRequestQuota("pro_v2"),  rpm_limit: 10, description: "1,000,000,000 token / 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 299000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
+  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
   INSERT OR IGNORE INTO packages (id, name, price, credit, rpm_limit, description, active)
@@ -73,7 +73,7 @@ const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description
 updatePkg.run(20000,  getPackageRequestQuota("starter"), "30,000,000 token, 10 RPM, 1 ngày",    1, "starter");
 updatePkg.run(270000, getPackageRequestQuota("pro"),     "900,000,000 token / 30 ngày, 30M token/ngày", 1, "pro");
 updatePkg.run(350000, getPackageRequestQuota("pro_v2"),  "1,000,000,000 token / 30 ngày", 1, "pro_v2");
-updatePkg.run(299000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
+updatePkg.run(450000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
