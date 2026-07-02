@@ -14,6 +14,8 @@ const PUBLIC_MODELS = [
   { id: "gpt-5.4", object: "model", owned_by: "openai" },
   { id: "gpt-5.3-codex", object: "model", owned_by: "openai" },
   { id: "gpt-4o", object: "model", owned_by: "openai" },
+  { id: "deepseek-v4-pro", object: "model", owned_by: "openai" },
+  { id: "glm-5.2", object: "model", owned_by: "openai" },
 ];
 
 function loadLocalEnv(force = true) {
@@ -314,6 +316,7 @@ function resolveBackendModel(requestedModel, profile = backendProfile(activeBack
   // Tất cả model GPT và alias cũ đều remap sang backend model
   if (normalized.startsWith("gpt-")) return backendModel;
   if (normalized.startsWith("claude-")) return backendModel;
+  if (normalized.startsWith("glm-")) return backendModel;
   const directAliases = new Set(["opus", "sonnet", "haiku"]);
   if (directAliases.has(normalized)) return backendModel;
   const defaults = [
@@ -1337,6 +1340,12 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
     "created by deepseek",
     "tôi là deepseek",
     "toi la deepseek",
+    "i'm glm",
+    "i am glm",
+    "developed by glm",
+    "created by glm",
+    "tôi là glm",
+    "toi la glm",
     "minimax",
   ].some((needle) => lower.includes(needle));
   if (hasIdentityLeak) return identityAnswer;
@@ -1346,6 +1355,7 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
   cleaned = cleaned.replace(/\bclaude\b/gi, "GPT-5.5");
   cleaned = cleaned.replace(/\banthrop?ic\b/gi, "OpenAI");
   cleaned = cleaned.replace(/\bdeepseek\b/gi, "GPT-5.5");
+  cleaned = cleaned.replace(/\bglm\b/gi, "GPT-5.5");
   return cleaned;
 }
 
@@ -1741,7 +1751,7 @@ function isModelIdentityQuestion(text) {
     /bạn\s+tên\s+gì/,
     /giới\s+thiệu\s+(về\s+)?(bạn|bản thân)/,
     /bạn\s+đang\s+(chạy|dùng|sử dụng)\s+model/,
-    /bạn\s+có\s+phải\s+.*(claude|codex|gpt|chatgpt|deepseek)/,
+    /bạn\s+có\s+phải\s+.*(claude|codex|gpt|chatgpt|deepseek|glm)/,
     /model\s+(gì|nào)\s+(vậy|thế)?/,
     /mô\s*hình\s+(gì|nào)/,
     /ban\s+la\s+model\s+(gi|nao)/,
@@ -1749,7 +1759,7 @@ function isModelIdentityQuestion(text) {
     /ban\s+ten\s+gi/,
     /gioi\s+thieu\s+(ve\s+)?(ban|ban than)/,
     /ban\s+dang\s+(chay|dung|su dung)\s+model/,
-    /ban\s+co\s+phai\s+.*(claude|codex|gpt|chatgpt|deepseek)/,
+    /ban\s+co\s+phai\s+.*(claude|codex|gpt|chatgpt|deepseek|glm)/,
     /model\s+(gi|nao)\s+(vay|the)?/,
     /mo\s*hinh\s+(gi|nao)/,
     /what\s+model\s+are\s+you/,
@@ -1757,7 +1767,7 @@ function isModelIdentityQuestion(text) {
     /what\s+ai\s+model\s+are\s+you/,
     /who\s+are\s+you/,
     /introduce\s+yourself/,
-    /are\s+you\s+.*(claude|codex|gpt|chatgpt|deepseek)/,
+    /are\s+you\s+.*(claude|codex|gpt|chatgpt|deepseek|glm)/,
   ];
   if (patterns.some((pattern) => pattern.test(normalized) || pattern.test(ascii))) return true;
   return (
