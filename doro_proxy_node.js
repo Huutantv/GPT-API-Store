@@ -1318,8 +1318,73 @@ function modelIdentityAnswer(publicModel) {
   return `I'm ${publicModel}, a large language model created by OpenAI. How can I help you today?`;
 }
 
+/**
+ * Sửa mojibake — chuyển text bị encode sai (UTF-8 bytes đọc như Latin-1/Windows-1252)
+ * trở lại UTF-8 đúng. Ví dụ: "S\u00d3" → "SỐ", "Kh\u00f4ng" → "Không".
+ *
+ * Cơ chế: tìm các ký tự Unicode Private Use Area (U+E000–U+F8FF) thường xuất hiện
+ * khi backend proxy trả về UTF-8 bytes bị decode sai thành Windows-1252/Latin-1,
+ * rồi chuyển ngược lại thành UTF-8 hợp lệ.
+ */
+function repairVietnameseMojibake(text) {
+  const value = String(text || "");
+  if (!value) return value;
+
+  // Chỉ xử lý khi text chứa ký tự Unicode cao (trên U+00FF) — dấu hiệu của mojibake.
+  // Text tiếng Việt hợp lệ sẽ không có các ký tự này.
+  if (!/[^\u0000-\u00FF]/.test(value)) return value;
+
+  try {
+    // Cách 1: Chuyển về bytes Latin-1 rồi decode lại là UTF-8
+    // Ví dụ: "S\u00d3" (Latin-1) → bytes [53, C3 93] → UTF-8 → "SỐ"
+    let repaired = value;
+    const bytes = [];
+    for (let i = 0; i < repaired.length; i++) {
+      bytes.push(repaired.charCodeAt(i) & 0xFF);
+    }
+    const utf8String = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(bytes));
+    // Kiểm tra kết quả có chứa ký tự tiếng Việt hợp lệ không
+    if (/[\u0102-\u1EF9]/.test(utf8String)) return utf8String;
+  } catch (_) {
+    // fatal decoder throw nếu bytes không hợp lệ UTF-8 → bỏ qua
+  }
+
+  // Cách 2: Regex thay thế các pattern phổ biến
+  const replacements = [
+    // Dấu thanh bị encode sai (Windows-1252 / Latin-1)
+    [/Ã³/g, "ó"], [/Ã´/g, "ô"], [/Ãª/g, "ê"], [/Ã´/g, "ô"],
+    [/Ã¡/g, "á"], [/Ã¢/g, "â"], [/Ã£/g, "ã"], [/Ã¨/g, "è"],
+    [/Ã©/g, "é"], [/Ã¬/g, "ì"], [/Ã­/g, "í"], [/Ã²/g, "ò"],
+    [/Ã³/g, "ó"], [/Ãµ/g, "õ"], [/Ã¹/g, "ù"], [/Ãº/g, "ú"],
+    [/Ã¿/g, "ý"], [/À/g, "À"], [/Á/g, "Á"], [/Â/g, "Â"],
+    [/Ã/g, "Ã"], [/Ä/g, "Ä"], [/Å/g, "Å"], [/Æ/g, "Æ"],
+    // Các pattern khác
+    [/á»'/g, "ố"], [/á»"/g, "ồ"], [/á»"/g, "ộ"], [/á»"/g, "ộ"],
+    [/Æ°/g, "ư"], [/Æ¡/g, "ư"], [/áº¡/g, "ớ"], [/áº£/g, "ợ"],
+    [/áº¥/g, "ử"], [/áº§/g, "ự"],
+    // Cụm từ phổ biến
+    [/Kh(Ã|Â)[óòọỏõ]/gi, "Khóa"],
+    [/Kh(Ã|Â)[ô]ng/gi, "Không"],
+    [/S(á|A)(?=[^a-z])/gi, "Số"],
+    [/Vi(á|A)(?:(?![a-z])|[o])/gi, "Việt"],
+    [/Ti(á|A)[?]?[?]?ng/gi, "Tiếng"],
+    [/Gi(á|A)/gi, "Giá"],
+    [/H(à|A)m/gi, "Hàm"],
+    [/Đ(à|A)ng/gi, "Đang"],
+    [/B(à|A)i/gi, "Bài"],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    repaired = repaired.replace(pattern, replacement);
+  }
+
+  return repaired;
+}
+
 function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
   let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel), options);
+  // Sửa mojibake trước khi sanitize identity — đảm bảo tiếng Việt hiển thị đúng
+  cleaned = repairVietnameseMojibake(cleaned);
   const identityAnswer = modelIdentityAnswer(publicModel);
   const lower = cleaned.toLowerCase();
   const hasIdentityLeak = [
@@ -1494,8 +1559,14 @@ function prependEncodingGuard(messages) {
   ];
 }
 
-const MOJIBAKE_VI_RE = /(?:Ã|Â|Æ|Ä|áº|á»|â€|�)/;
-const SOURCE_EDIT_RE = /\b(code|source|file|patch|diff|edit|write|rewrite|replace|refactor|java|js|ts|html|css|php|py|go|cpp|cs|xml|json|yaml|yml|properties)\b|(?:sửa|sua|fix|lỗi|loi|ghi|đè|de|thay|file|mã nguồn|ma nguon)/i;
+// Mojibake detection patterns — chỉ match byte sequence UTF-8 bị decode sai thành Latin-1/Windows-1252.
+// Ví dụ: "Số" (UTF-8: S \xc3\x93) nếu decode bằng Latin-1 sẽ thành "S\u00d3" → hiển thị "S\u00d3".
+// Pattern phải đủ dài và đặc trưng để tránh false positive với văn bản tiếng Việt hợp lệ.
+const MOJIBAKE_VI_RE = /(?:Ã³|Ã´|Ãª|Ã¡|Ã¢|Ã£|Ã¨|Ã©|Ã¬|Ã­|Ã²|Ã³|Ãµ|Ã¹|Ãº|Ã¿|á»‘|á»“|á»£|á»‹|áº¡|áº£|áº¥|áº§|Æ°|Æ¡|KhÃ³a|KhÃ´ng|Sá»‘|PhÆ°Æ¡ng|Trang|GiÃ¡|Tiáº¿ng|Viá»7t|HÃ m|ĐÃ ng|BÃ i)/iu;
+
+// Chỉ kích hoạt mojibake check khi user thực sự yêu cầu sửa code/file.
+// Loại trừ các từ chung chung như "fix", "file" đơn thuần — cần cụm từ đặc trưng hơn.
+const SOURCE_EDIT_RE = /\b(patch|diff|edit\s+code|rewrite\s+(?:the\s+)?(?:file|code|source)|refactor\b|\.(?:js|ts|jsx|tsx|py|java|go|cpp|cs|html|css|php|rb|rs|vue|svelte)\b)/i;
 
 function contentToSearchableText(content) {
   if (typeof content === "string") return content;
@@ -1516,13 +1587,38 @@ function messagesLookLikeSourceEdit(messages) {
   });
 }
 
+/**
+ * Phát hiện mojibake trong text phản hồi từ backend.
+ * Chỉ trigger khi tìm thấy ít nhất 2 pattern khác nhau để giảm false positive.
+ */
 function looksLikeVietnameseMojibake(text) {
   const value = String(text || "");
-  if (!MOJIBAKE_VI_RE.test(value)) return false;
-  return [
-    /(?:Kh|KhÃ|KhÃƒ|S|SÃ|Sá|Ph|PhÆ|Trang|M|MÃ|Má|Linh|B|BÃ|Bá|N|NÃ|Ná|Ch|ChÆ|Th|Thá|lÆ|Æ°|Æ¡|á»|áº)/i,
-    /(?:Ã³|Ã´|Ãª|Ã |Ã¡|Ã¢|Ã£|Ãª|Ã¹|Ãº|á»‘|á»“|á»£|á»‹|áº¡|áº£|áº¥|áº§|Æ°|Æ¡)/i,
-  ].some((pattern) => pattern.test(value));
+  if (value.length < 4) return false; // quá ngắn thì bỏ qua
+
+  // Pattern dài và đặc trưng — chỉ match khi có nhiều ký tự bị encode sai liên tiếp.
+  // Mỗi pattern phải có ít nhất 2 ký tự bất thường liên tiếp để tránh trùng với text hợp lệ.
+  const patterns = [
+    // Dấu thanh bị encode sai: ó→Ã³, ô→Ã´, ê→Ãª, á→Ã¡, â→Ã¢, ã→Ã£, è→Ã¨, é→Ã©, ì→Ã¬, í→Ã­, ò→Ã², ú→Ãº, ý→Ã½
+    /[A-Za-z]Ã[óôúùàảãáèéìíòóõúý]/iu,
+    // Dấu nặng/bỏ dấu: ố→á»'ề→á»"ộ→á»"ư→Æ°ư→Æ¡...
+    /[A-Za-z]á»['".,!?\u0000-\u007F]/iu,
+    // Unicode cao cấp bị encode sai: số→á»', phƣơng→PhÆ°Æ¡ng, tiáº¿ng viá»7t...
+    /[A-Za-z]áº['".,!?\u0000-\u007F]/iu,
+    // Cụm từ phổ biến bị mojibake
+    /Kh(Ã|Â)[óòọỏõ]a/giu,   // Khóa/Khóa bị lỗi
+    /Kh(Ã|Â)[ô]ng/giu,       // Không bị lỗi
+    /S(á|A)(í|i)(?![a-z])/giu, // Số/Số bị lỗi (S + dấu thanh)
+    /Vi(á|A)(?:(?![a-z])|[o])/giu, // Việt bị lỗi
+  ];
+
+  let matchCount = 0;
+  for (const pattern of patterns) {
+    if (pattern.test(value)) {
+      matchCount++;
+      if (matchCount >= 2) return true; // Cần ít nhất 2 pattern khác nhau để tránh false positive
+    }
+  }
+  return false;
 }
 
 function findMojibakeInOpenAIResponse(data) {
