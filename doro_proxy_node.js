@@ -317,6 +317,7 @@ function resolveBackendModel(requestedModel, profile = backendProfile(activeBack
   if (normalized.startsWith("gpt-")) return backendModel;
   if (normalized.startsWith("claude-")) return backendModel;
   if (normalized.startsWith("glm-")) return backendModel;
+  if (normalized.startsWith("deepseek-")) return backendModel;
   const directAliases = new Set(["opus", "sonnet", "haiku"]);
   if (directAliases.has(normalized)) return backendModel;
   const defaults = [
