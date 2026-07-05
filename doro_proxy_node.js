@@ -16,6 +16,11 @@ const PUBLIC_MODELS = [
   { id: "gpt-4o", object: "model", owned_by: "openai" },
   { id: "deepseek-v4-pro", object: "model", owned_by: "openai" },
   { id: "glm-5.2", object: "model", owned_by: "openai" },
+  { id: "claude-opus-4-8", object: "model", owned_by: "openai" },
+  { id: "claude-opus-4-7", object: "model", owned_by: "openai" },
+  { id: "claude-opus-4-6", object: "model", owned_by: "openai" },
+  { id: "claude-sonnet-5", object: "model", owned_by: "openai" },
+  { id: "qwen-3.6", object: "model", owned_by: "openai" },
 ];
 
 function loadLocalEnv(force = true) {
@@ -318,6 +323,7 @@ function resolveBackendModel(requestedModel, profile = backendProfile(activeBack
   if (normalized.startsWith("claude-")) return backendModel;
   if (normalized.startsWith("glm-")) return backendModel;
   if (normalized.startsWith("deepseek-")) return backendModel;
+  if (normalized.startsWith("qwen-")) return backendModel;
   const directAliases = new Set(["opus", "sonnet", "haiku"]);
   if (directAliases.has(normalized)) return backendModel;
   const defaults = [

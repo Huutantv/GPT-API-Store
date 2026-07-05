@@ -30,6 +30,13 @@ Bạn có thể chọn một trong các model sau:
 * `gpt-5.5-turbo`
 * `gpt-5.4`
 * `gpt-4o`
+* `deepseek-v4-pro`
+* `glm-5.2`
+* `claude-opus-4-8`
+* `claude-opus-4-7`
+* `claude-opus-4-6`
+* `claude-sonnet-5`
+* `qwen-3.6`
 
 > **Lưu ý:** Nếu muốn phản hồi nhanh hơn, có thể thử `gpt-5.5-turbo`.
 
