@@ -832,6 +832,74 @@ const backendQueue = [];
 let backendKeyCounter = 0;
 let backendRouterCounter = 0;
 const backendKeyInflight = new Map();
+// ── Per-backend-key health tracking ──────────────────────────────────────────
+// Ping định kỳ từng API key của mỗi backend, đánh dấu key hỏng (down) để tạm
+// loại khỏi vòng load-balancing trong orderedBackendKeys. Key tự phục hồi khi
+// một lần ping sau đó thành công.
+// State keyed theo chuỗi apiKey (đồng bộ với backendKeyInflight):
+//   { healthy, lastStatus, lastCheckAt, lastLatencyMs, lastReason, consecutiveFail, downSince }
+const _backendKeyHealth = new Map();
+const BACKEND_KEY_HEALTH_ENABLED = envFlag(process.env.DORO_KEY_HEALTHCHECK, true);
+// Số lần ping fail liên tiếp trước khi mark down (tránh loại nhầm do nhiễu mạng)
+const BACKEND_KEY_HEALTH_FAIL_THRESHOLD = Math.max(1, Number(process.env.DORO_KEY_HEALTHCHECK_FAILS || "2") || 2);
+// Chu kỳ ping (ms)
+const BACKEND_KEY_HEALTH_INTERVAL_MS = Math.max(15000, Number(process.env.DORO_KEY_HEALTHCHECK_INTERVAL_MS || "60000") || 60000);
+// Timeout mỗi lần ping (ms)
+const BACKEND_KEY_HEALTH_TIMEOUT_MS = Math.max(2000, Number(process.env.DORO_KEY_HEALTHCHECK_TIMEOUT_MS || "10000") || 10000);
+let _backendKeyHealthRunning = false;
+let _backendKeyHealthLastRunAt = null;
+
+function keyHealthState(apiKey) {
+  let state = _backendKeyHealth.get(apiKey);
+  if (!state) {
+    state = { healthy: true, lastStatus: 0, lastCheckAt: null, lastLatencyMs: null, lastReason: "", consecutiveFail: 0, downSince: null };
+    _backendKeyHealth.set(apiKey, state);
+  }
+  return state;
+}
+
+// Key bị coi là "down" (loại khỏi load-balancing) khi đã ping fail đủ ngưỡng.
+function isBackendKeyDown(apiKey) {
+  if (!BACKEND_KEY_HEALTH_ENABLED) return false;
+  const state = _backendKeyHealth.get(apiKey);
+  return !!(state && state.downSince);
+}
+
+function markBackendKeyHealthy(apiKey, status, latencyMs) {
+  const state = keyHealthState(apiKey);
+  const wasDown = !!state.downSince;
+  state.healthy = true;
+  state.lastStatus = Number(status) || 0;
+  state.lastCheckAt = Date.now();
+  state.lastLatencyMs = Number(latencyMs) || null;
+  state.lastReason = "";
+  state.consecutiveFail = 0;
+  state.downSince = null;
+  if (wasDown) addLog(`key-health: ${maskSecret(apiKey)} RECOVERED (status=${state.lastStatus})`);
+  return wasDown;
+}
+
+function markBackendKeyFailure(apiKey, status, reason) {
+  const state = keyHealthState(apiKey);
+  state.lastStatus = Number(status) || 0;
+  state.lastCheckAt = Date.now();
+  state.lastReason = reason || "";
+  state.consecutiveFail += 1;
+  if (!state.downSince && state.consecutiveFail >= BACKEND_KEY_HEALTH_FAIL_THRESHOLD) {
+    state.healthy = false;
+    state.downSince = Date.now();
+    addLog(`key-health: ${maskSecret(apiKey)} DOWN reason=${reason} status=${state.lastStatus} fails=${state.consecutiveFail}`);
+    notifyTelegram(
+      `\ud83d\udd34 <b>Backend key t\u1ea1m ng\u1eaft</b>\n` +
+      `\ud83d\udd11 Key: <code>${maskSecret(apiKey)}</code>\n` +
+      `\ud83d\udcca L\u00fd do: ${reason} (HTTP ${state.lastStatus || "network"})\n` +
+      `\ud83d\udd04 T\u1ef1 \u0111\u1ed9ng lo\u1ea1i kh\u1ecfi load-balancing, th\u1eed l\u1ea1i m\u1ed7i chu k\u1ef3 ping\n` +
+      `\ud83d\udd52 ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}`
+    );
+  }
+  return !!state.downSince;
+}
+
 const stats = { requests: 0, tokens: 0 };
 const logs = [];
 let validProxyKeys = splitEnvList(firstEnv("DORO_PROXY_KEYS", { default: "" }));
@@ -1114,15 +1182,21 @@ function isValidProxyKeyFormat(value) {
 function orderedBackendKeys(apiKeys) {
   if (!apiKeys.length) return [];
   const start = backendKeyCounter++ % apiKeys.length;
-  return apiKeys
+  const ranked = apiKeys
     .map((key, index) => ({
       key,
       index,
+      down: isBackendKeyDown(key),
       load: backendKeyInflight.get(key) || 0,
       turn: (index - start + apiKeys.length) % apiKeys.length,
     }))
-    .sort((a, b) => (a.load - b.load) || (a.turn - b.turn))
-    .map((entry) => entry.key);
+    // Key healthy đứng trước key down; sau đó ưu tiên ít inflight rồi round-robin.
+    .sort((a, b) => (Number(a.down) - Number(b.down)) || (a.load - b.load) || (a.turn - b.turn));
+  const healthy = ranked.filter((entry) => !entry.down).map((entry) => entry.key);
+  // Nếu còn key healthy → chỉ dùng chúng (loại hẳn key hỏng khỏi vòng LB).
+  // Nếu TẤT CẢ đều down → vẫn trả full danh sách (đã sắp xếp) làm last resort,
+  // tránh khoá cứng backend khi health-check nhầm/backend tạm chập chờn.
+  return healthy.length ? healthy : ranked.map((entry) => entry.key);
 }
 
 function backendHeaders(apiKey, extra = {}) {
@@ -6196,6 +6270,76 @@ app.delete("/api/keys", (req, res) => {
   res.json({ ok: true, removed: key, count: validProxyKeys.length });
 });
 
+// Trạng thái health per-backend-key cho dashboard (live xanh/đỏ).
+function backendKeyHealthReport() {
+  const buildKeyEntry = (apiKey, index) => {
+    const state = _backendKeyHealth.get(apiKey);
+    const checked = !!(state && state.lastCheckAt);
+    return {
+      index: index + 1,
+      key_masked: maskSecret(apiKey),
+      // Chưa ping lần nào => coi như healthy (unknown-but-up) để không báo đỏ oan.
+      healthy: state ? !state.downSince : true,
+      checked,
+      status: state ? (state.lastStatus || 0) : 0,
+      reason: state ? (state.lastReason || "") : "",
+      latency_ms: state ? (state.lastLatencyMs || null) : null,
+      consecutive_fail: state ? state.consecutiveFail : 0,
+      down_since: state ? state.downSince : null,
+      last_check_at: state ? state.lastCheckAt : null,
+      inflight: backendKeyInflight.get(apiKey) || 0,
+    };
+  };
+  const buildProfile = (profile) => {
+    const keys = profile.apiKeys.map(buildKeyEntry);
+    return {
+      id: profile.id,
+      label: profile.label,
+      base_url: profile.baseUrl,
+      api_style: profile.apiStyle,
+      total: keys.length,
+      up: keys.filter((k) => k.healthy).length,
+      down: keys.filter((k) => !k.healthy).length,
+      keys,
+    };
+  };
+  const backends = BACKEND_IDS.map((id) => buildProfile(backendProfile(id))).filter((p) => p.total);
+  const backups = BACKUP_BACKEND_IDS.map((id) => buildProfile(backendProfile(id))).filter((p) => p.total);
+  const vision = backend5VisionProfile();
+  const visionReport = vision.configured ? buildProfile(vision) : null;
+  const allProfiles = [...backends, ...backups, ...(visionReport ? [visionReport] : [])];
+  return {
+    enabled: BACKEND_KEY_HEALTH_ENABLED,
+    interval_ms: BACKEND_KEY_HEALTH_INTERVAL_MS,
+    fail_threshold: BACKEND_KEY_HEALTH_FAIL_THRESHOLD,
+    running: _backendKeyHealthRunning,
+    last_run_at: _backendKeyHealthLastRunAt,
+    summary: {
+      total: allProfiles.reduce((s, p) => s + p.total, 0),
+      up: allProfiles.reduce((s, p) => s + p.up, 0),
+      down: allProfiles.reduce((s, p) => s + p.down, 0),
+    },
+    backends,
+    backups,
+    vision: visionReport,
+  };
+}
+
+app.get("/api/backend-key-health", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json(backendKeyHealthReport());
+});
+
+// Kích hoạt ping thủ công (dùng nút "Ping now" trên dashboard).
+app.post("/api/backend-key-health/check", async (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  if (!BACKEND_KEY_HEALTH_ENABLED) return res.status(400).json({ detail: "Key health check disabled (DORO_KEY_HEALTHCHECK=0)" });
+  await pingAllBackendKeys();
+  res.json(backendKeyHealthReport());
+});
+
 app.get("/api/config", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
@@ -7293,3 +7437,81 @@ async function checkBackendQuota() {
 setInterval(checkBackendQuota, 60 * 60 * 1000);
 // Check ngay khi khởi động (sau 10s)
 setTimeout(checkBackendQuota, 10000);
+
+// ── Per-backend-key health check ─────────────────────────────────────────────
+// Ping 1 key với payload tối thiểu để xác định key còn sống. 401/403/402 =>
+// down ngay (immediate); các lỗi khác đếm ngưỡng consecutiveFail.
+async function pingBackendKey(settings, apiKey) {
+  const url = backendChatUrl(settings);
+  const payload = settings.apiStyle === "anthropic"
+    ? { model: settings.backendModel, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }
+    : { model: settings.backendModel, max_tokens: 1, stream: false, messages: [{ role: "user", content: "ping" }] };
+  const started = Date.now();
+  try {
+    const resp = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: backendWireHeaders(apiKey, settings),
+      body: JSON.stringify(payload),
+      timeoutMs: BACKEND_KEY_HEALTH_TIMEOUT_MS,
+    });
+    const latency = Date.now() - started;
+    // 2xx = khoẻ. 400/404/422 = request test không hợp lệ với backend nhưng key
+    // vẫn xác thực được (auth qua) => coi là khoẻ. Chỉ auth/billing/5xx/429 mới fail.
+    const status = resp.status;
+    if (status >= 200 && status < 300) return markBackendKeyHealthy(apiKey, status, latency), { ok: true, status, latency };
+    if ([400, 404, 405, 415, 422].includes(status)) return markBackendKeyHealthy(apiKey, status, latency), { ok: true, status, latency };
+    let bodyText = "";
+    try { bodyText = (await resp.text()).slice(0, 200); } catch (_) {}
+    const signal = backendFailureSignal(status, bodyText, "");
+    const reason = (signal && signal.reason) || `http_${status}`;
+    markBackendKeyFailure(apiKey, status, reason);
+    return { ok: false, status, reason };
+  } catch (err) {
+    markBackendKeyFailure(apiKey, 0, "network");
+    return { ok: false, status: 0, reason: "network", error: err.message };
+  }
+}
+
+async function pingAllBackendKeys() {
+  if (!BACKEND_KEY_HEALTH_ENABLED || _backendKeyHealthRunning) return;
+  _backendKeyHealthRunning = true;
+  try {
+    const seen = new Set();
+    const ids = [...BACKEND_IDS, ...BACKUP_BACKEND_IDS];
+    for (const id of ids) {
+      const profile = backendProfile(id);
+      if (!profile.apiKeys.length) continue;
+      const settings = profileToSettings(profile);
+      for (const apiKey of profile.apiKeys) {
+        // Cùng 1 key có thể xuất hiện ở nhiều backend; chỉ ping 1 lần/chu kỳ.
+        if (seen.has(apiKey)) continue;
+        seen.add(apiKey);
+        await pingBackendKey(settings, apiKey);
+      }
+    }
+    // Ping cả Backend 5 Vision nếu đã cấu hình.
+    const vision = backend5VisionProfile();
+    if (vision.configured) {
+      const vSettings = profileToSettings(vision);
+      for (const apiKey of vision.apiKeys) {
+        if (seen.has(apiKey)) continue;
+        seen.add(apiKey);
+        await pingBackendKey(vSettings, apiKey);
+      }
+    }
+    _backendKeyHealthLastRunAt = Date.now();
+    // Dọn state của key không còn trong cấu hình.
+    for (const key of _backendKeyHealth.keys()) {
+      if (!seen.has(key)) _backendKeyHealth.delete(key);
+    }
+  } catch (err) {
+    addLog(`key-health: ping cycle error=${err.message}`);
+  } finally {
+    _backendKeyHealthRunning = false;
+  }
+}
+
+if (BACKEND_KEY_HEALTH_ENABLED) {
+  setInterval(pingAllBackendKeys, BACKEND_KEY_HEALTH_INTERVAL_MS);
+  setTimeout(pingAllBackendKeys, 5000);
+}
