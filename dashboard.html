@@ -44,23 +44,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .model-select{padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;cursor:pointer}
 .model-select optgroup{background:var(--bg);color:var(--dim);font-size:11px;font-style:normal;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .model-select option{background:var(--surface);color:var(--text);font-size:13px;font-weight:400;text-transform:none;letter-spacing:normal;padding:6px 8px}
-.health-summary{font-size:13px;font-weight:500;color:var(--dim)}
-.health-auto{font-size:12px;color:var(--dim);display:flex;align-items:center;gap:6px;cursor:pointer}
-.health-group{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
-.health-group-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
-.health-group-title{font-weight:600;font-size:14px}
-.health-group-sub{font-size:12px;color:var(--dim)}
-.health-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.03em}
-.health-badge.up{background:rgba(34,197,94,.15);color:var(--green)}
-.health-badge.down{background:rgba(239,68,68,.15);color:var(--red)}
-.health-key-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:8px;font-size:13px}
-.health-key-row+.health-key-row{border-top:1px solid var(--border)}
-.health-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 3px transparent}
-.health-dot.up{background:var(--green);box-shadow:0 0 0 3px rgba(34,197,94,.2)}
-.health-dot.down{background:var(--red);box-shadow:0 0 0 3px rgba(239,68,68,.2)}
-.health-dot.unknown{background:var(--dim)}
-.health-key-mask{font-family:'Cascadia Code','Fira Code',monospace;min-width:150px}
-.health-key-meta{color:var(--dim);font-size:12px;flex:1;text-align:right}
 .keys-list{display:flex;flex-direction:column;gap:8px;max-width:600px}
 .key-row{display:flex;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);gap:12px}
 .key-text{flex:1;font-family:'Cascadia Code','Fira Code',monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -231,7 +214,6 @@ html{-webkit-text-size-adjust:100%}
     <div class="nav-item" data-panel="monitor"><span class="nav-icon">Live</span> Monitor</div>
     <div class="nav-item" data-panel="chat"><span class="nav-icon">💬</span> Chat Test</div>
     <div class="nav-item" data-panel="keys"><span class="nav-icon">🔑</span> API Keys</div>
-    <div class="nav-item" data-panel="health"><span class="nav-icon">🩺</span> Backend Health</div>
     <div class="nav-item" data-panel="config"><span class="nav-icon">⚙️</span> Config</div>
     <div class="nav-item" data-panel="logs"><span class="nav-icon">📋</span> Logs</div>
   </div>
@@ -393,19 +375,6 @@ html{-webkit-text-size-adjust:100%}
       </div>
     </div>
 
-    <div class="panel" id="panel-health">
-      <div class="section-title" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <span>🩺 Backend Key Health</span>
-        <span id="healthSummary" class="health-summary"></span>
-        <span style="flex:1"></span>
-        <label class="health-auto"><input type="checkbox" id="healthAuto" checked> Auto-refresh</label>
-        <button class="btn btn-ghost btn-sm" onclick="loadHealth()">🔄 Reload</button>
-        <button class="btn btn-primary btn-sm" id="healthPingBtn" onclick="pingHealthNow()">📡 Ping now</button>
-      </div>
-      <div class="hint" id="healthMeta" style="margin-bottom:12px"></div>
-      <div id="healthContent"><div class="empty-state">Loading…</div></div>
-    </div>
-
     <div class="panel" id="panel-config">
       <div class="section-title">📋 Current Config</div>
       <div id="configInfo" style="max-width:600px"></div>
@@ -524,7 +493,6 @@ async function unlockDashboard(e){
     if(active&&active.id==='panel-monitor')loadMonitor();
     if(active&&active.id==='panel-config')loadConfig();
     if(active&&active.id==='panel-keys')loadKeys();
-    if(active&&active.id==='panel-health')loadHealth();
     if(active&&active.id==='panel-logs')loadLogs();
   }catch(err){
     ADMIN_KEY='';
@@ -556,7 +524,6 @@ document.querySelectorAll('.nav-item').forEach(function(item){
     if(p==='monitor')loadMonitor();
     if(p==='config')loadConfig();
     if(p==='keys')loadKeys();
-    if(p==='health')loadHealth();
     if(p==='logs')loadLogs();
     if(window.matchMedia('(max-width: 900px)').matches)toggleSidebar(false);
   });
@@ -910,71 +877,6 @@ async function deleteBackendKey(k){
     loadConfig();
   }catch(e){alert('Error: '+e.message);}
 }
-
-// Backend key health
-function fmtHealthTime(ts){if(!ts)return '—';try{return new Date(ts).toLocaleTimeString('vi-VN');}catch(e){return '—';}}
-function renderHealthGroup(g,kind){
-  var badge=g.down>0?'<span class="health-badge down">'+g.down+' down</span>':'<span class="health-badge up">all up</span>';
-  var head='<div class="health-group-head">'+
-    '<span class="health-group-title">'+escapeHtml(g.label||g.id)+'</span>'+
-    '<span class="health-group-sub">'+escapeHtml(kind)+' · '+escapeHtml(g.api_style||'')+' · '+escapeHtml(g.base_url||'')+'</span>'+
-    '<span style="flex:1"></span>'+badge+
-    '<span class="health-group-sub">'+g.up+'/'+g.total+' up</span></div>';
-  var rows=(g.keys||[]).map(function(k){
-    var cls=!k.checked?'unknown':(k.healthy?'up':'down');
-    var meta=[];
-    if(k.checked){meta.push('HTTP '+(k.status||'—'));if(k.latency_ms!=null)meta.push(k.latency_ms+'ms');}
-    else meta.push('chưa ping');
-    if(!k.healthy&&k.reason)meta.push(escapeHtml(k.reason));
-    if(!k.healthy&&k.down_since)meta.push('down từ '+fmtHealthTime(k.down_since));
-    if(k.inflight)meta.push(k.inflight+' inflight');
-    meta.push(fmtHealthTime(k.last_check_at));
-    return '<div class="health-key-row">'+
-      '<span class="health-dot '+cls+'" title="'+cls+'"></span>'+
-      '<span class="health-key-mask">'+escapeHtml(k.key_masked||'')+'</span>'+
-      '<span class="health-key-meta">'+meta.join(' · ')+'</span></div>';
-  }).join('')||'<div class="empty-state" style="padding:8px 0">No keys.</div>';
-  return '<div class="health-group">'+head+rows+'</div>';
-}
-function renderHealth(d){
-  var s=d.summary||{total:0,up:0,down:0};
-  var sumEl=document.getElementById('healthSummary');
-  sumEl.innerHTML='<span style="color:var(--green)">● '+s.up+' up</span> · <span style="color:'+(s.down>0?'var(--red)':'var(--dim)')+'">● '+s.down+' down</span> · '+s.total+' keys';
-  var meta=[];
-  meta.push(d.enabled?'Health-check: ON':'Health-check: OFF (DORO_KEY_HEALTHCHECK=0)');
-  if(d.interval_ms)meta.push('mỗi '+Math.round(d.interval_ms/1000)+'s');
-  if(d.fail_threshold)meta.push('ngưỡng '+d.fail_threshold+' fail');
-  meta.push('lần chạy cuối: '+fmtHealthTime(d.last_run_at));
-  if(d.running)meta.push('đang ping…');
-  document.getElementById('healthMeta').textContent=meta.join(' · ');
-  var groups=[];
-  (d.backends||[]).forEach(function(g){groups.push(renderHealthGroup(g,'Backend'));});
-  (d.backups||[]).forEach(function(g){groups.push(renderHealthGroup(g,'Backup'));});
-  if(d.vision)groups.push(renderHealthGroup(d.vision,'Vision'));
-  document.getElementById('healthContent').innerHTML=groups.join('')||'<div class="empty-state">Chưa có backend key nào được cấu hình.</div>';
-}
-async function loadHealth(){
-  if(!ADMIN_KEY)return;
-  try{
-    var r=await fetch(API+'/api/backend-key-health');
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    renderHealth(await r.json());
-  }catch(e){document.getElementById('healthContent').innerHTML='<div class="empty-state">Không tải được health: '+escapeHtml(e.message)+'</div>';}
-}
-async function pingHealthNow(){
-  var btn=document.getElementById('healthPingBtn');
-  var old=btn.textContent;btn.disabled=true;btn.innerHTML='<span class="spinner"></span>';
-  try{
-    var r=await fetch(API+'/api/backend-key-health/check',{method:'POST'});
-    if(!r.ok){var d=await r.json().catch(function(){return{};});throw new Error(d.detail||('HTTP '+r.status));}
-    renderHealth(await r.json());
-  }catch(e){alert('Ping error: '+e.message);}
-  finally{btn.disabled=false;btn.textContent=old;}
-}
-setInterval(function(){
-  var el=document.getElementById('healthAuto');
-  if(ADMIN_KEY&&el&&el.checked&&document.getElementById('panel-health').classList.contains('active'))loadHealth();
-},10000);
 
 // Logs
 function loadLogs(){
