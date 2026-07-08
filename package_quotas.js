@@ -3,7 +3,7 @@ const DEFAULT_TOKEN_PER_REQUEST = 85000;
 const PACKAGE_TOKEN_QUOTAS = Object.freeze({
   starter: 30000000,
   pro: 900000000,
-  pro_v2: 800000000,
+  pro_v2: 900000000,
 });
 
 const PACKAGE_DURATION_DAYS = Object.freeze({
