@@ -44,10 +44,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .model-select{padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;cursor:pointer}
 .model-select optgroup{background:var(--bg);color:var(--dim);font-size:11px;font-style:normal;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
 .model-select option{background:var(--surface);color:var(--text);font-size:13px;font-weight:400;text-transform:none;letter-spacing:normal;padding:6px 8px}
-.model-capability{padding:5px 8px;border:1px solid rgba(245,158,11,.35);border-radius:999px;color:var(--yellow);background:rgba(245,158,11,.1);font-size:11px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
-.model-capability.vision{border-color:rgba(34,197,94,.35);color:var(--green);background:rgba(34,197,94,.1)}
-.model-notice{display:none;margin:0 0 12px;padding:9px 12px;border:1px solid rgba(245,158,11,.25);border-radius:8px;color:#fcd34d;background:rgba(245,158,11,.08);font-size:12px;line-height:1.45}
-.model-notice.show{display:block}
 .keys-list{display:flex;flex-direction:column;gap:8px;max-width:600px}
 .key-row{display:flex;align-items:center;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);gap:12px}
 .key-text{flex:1;font-family:'Cascadia Code','Fira Code',monospace;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -236,9 +232,8 @@ html{-webkit-text-size-adjust:100%}
       <h2 id="panelTitle">Monitor</h2>
     </div>
     <div class="toolbar-actions">
-      <span class="model-capability" id="modelCapability">Text chat</span>
       <select class="model-select" id="chatModel">
-        <optgroup label="GPT-5.6 | Text only">
+        <optgroup label="GPT-5.6">
           <option value="gpt-5.6-terra">GPT-5.6 Terra</option>
           <option value="gpt-5.6-luna">GPT-5.6 Luna</option>
           <option value="gpt-5.6-sol">GPT-5.6 Sol</option>
@@ -364,7 +359,6 @@ html{-webkit-text-size-adjust:100%}
 
     <div class="panel" id="panel-chat">
       <div class="chat-container">
-        <div class="model-notice" id="modelNotice">GPT-5.6 Terra, Luna, and Sol are configured for text requests. Use a vision-enabled backend profile for image analysis.</div>
         <div class="chat-messages" id="chatMessages">
           <div class="msg assistant"><div class="msg-bubble"><div class="msg-label">Doro Proxy</div>Hello! Select a model and start chatting.</div></div>
         </div>
@@ -729,17 +723,7 @@ checkStatus();setInterval(checkStatus,5000);
 loadMonitor();setInterval(loadMonitor,2000);
 
 // Chat
-function updateModelCapability(){
-  var model=document.getElementById('chatModel').value;
-  var textOnly=model.indexOf('gpt-5.6-')===0;
-  var badge=document.getElementById('modelCapability');
-  var notice=document.getElementById('modelNotice');
-  badge.textContent=textOnly?'Text only':'General chat';
-  badge.className='model-capability'+(textOnly?'':' vision');
-  notice.className='model-notice'+(textOnly?' show':'');
-}
-document.getElementById('chatModel').addEventListener('change',function(e){selectedModel=e.target.value;updateModelCapability();});
-updateModelCapability();
+document.getElementById('chatModel').addEventListener('change',function(e){selectedModel=e.target.value;});
 function handleChatKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}}
 function escapeHtml(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 var monitorModalRow=null;
