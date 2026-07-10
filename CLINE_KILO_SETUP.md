@@ -26,6 +26,9 @@ Chọn provider là **OpenAI Compatible** và nhập các thông tin sau:
 ## 4. Model có thể sử dụng
 Bạn có thể chọn một trong các model sau:
 
+* `gpt-5.6-terra`
+* `gpt-5.6-luna`
+* `gpt-5.6-sol`
 * `gpt-5.5` *(khuyến nghị mặc định)*
 * `gpt-5.5-turbo`
 * `gpt-5.4`

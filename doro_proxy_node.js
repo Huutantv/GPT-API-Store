@@ -9,6 +9,9 @@ const ENV_FILE = path.join(ROOT_DIR, ".env");
 const DEFAULT_BASE_URL = "https://doro.lol/v1";
 const DEFAULT_BACKEND_MODEL = "deepseek-v4-pro";
 const PUBLIC_MODELS = [
+  { id: "gpt-5.6-terra", object: "model", owned_by: "openai" },
+  { id: "gpt-5.6-luna", object: "model", owned_by: "openai" },
+  { id: "gpt-5.6-sol", object: "model", owned_by: "openai" },
   { id: "gpt-5.5", object: "model", owned_by: "openai" },
   { id: "gpt-5.5-turbo", object: "model", owned_by: "openai" },
   { id: "gpt-5.4", object: "model", owned_by: "openai" },
