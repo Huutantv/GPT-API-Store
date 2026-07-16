@@ -2288,18 +2288,15 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       if (isRetryableStatus(resp.status) && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
       addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
-        uptimeTrackError(resp.status);
-      await new Promise(r => setTimeout(r, retryDelayMs(i + 1))); // exponential backoff + jitter
+        await new Promise(r => setTimeout(r, retryDelayMs(i + 1))); // exponential backoff + jitter
         continue;
       }
       if (!resp.ok) {
-        uptimeTrackError(resp.status);
         const err = new Error(`Backend HTTP ${resp.status}: ${logPreview(text)}`);
         err.status = resp.status;
         err.text = text;
         throw err;
       }
-      uptimeTrackSuccess();
       return { status: resp.status, text, apiKey: ordered[i] };
     } catch (err) {
       lastError = err;
@@ -3262,19 +3259,16 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
       if (isRetryableAcrossKeys(resp.status) && i < orderedKeys.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
         addLog(`backend retry(stream) status=${resp.status} key=${i + 1}/${orderedKeys.length}`);
-        uptimeTrackError(resp.status);
         await new Promise((r) => setTimeout(r, retryDelayMs(i + 1)));
         continue;
       }
       if (!resp.ok) {
         const text = await resp.text();
-        uptimeTrackError(resp.status);
         const err = new Error(`Backend HTTP ${resp.status}: ${logPreview(text)}`);
         err.status = resp.status;
         err.text = text;
         throw err;
       }
-      uptimeTrackSuccess();
       return { resp, apiKey: orderedKeys[i] };
     } catch (err) {
       lastError = err;
@@ -3781,7 +3775,6 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         credit.deductCredit(apiKeyToken, tokensIn, tokensOut, modelName, reqId || "");
       }
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
-      uptimeTrackSuccess();
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
       return;
     } catch (err) {
@@ -4250,7 +4243,12 @@ app.use((req, res, next) => {
       final_backend_status: req.obs.final_backend_status || null,
       cache_hit: !!req.obs.cache_hit,
     };
-    if (shouldPrint) recordAccess(entry);
+    if (shouldPrint) {
+      recordAccess(entry);
+      // Alert on the final client-visible result so Monitor and Telegram agree.
+      if (res.statusCode >= 500) uptimeTrackError(res.statusCode, entry);
+      else if (res.statusCode >= 200 && res.statusCode < 400) uptimeTrackSuccess();
+    }
     if (shouldPrint) {
       printLog(`[res] ${reqId} ${req.method} ${p} status=${res.statusCode} ${latency}ms`);
       addLog(`RES ${reqId} ${req.method} ${p} status=${res.statusCode} ${latency}ms`);
@@ -5827,23 +5825,26 @@ async function notifyTelegram(message) {
     addLog("telegram notify skipped: missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID");
     return false;
   }
-  try {
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
-    });
-    if (!response.ok) {
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
+        timeoutMs: 10000,
+      });
+      if (response.ok) {
+        addLog("telegram notify sent");
+        return true;
+      }
       const detail = await response.text().catch(() => "");
-      addLog(`telegram notify failed: status=${response.status} detail=${detail.slice(0, 200)}`);
-      return false;
+      addLog(`telegram notify failed: attempt=${attempt} status=${response.status} detail=${detail.slice(0, 200)}`);
+    } catch (err) {
+      addLog(`telegram notify error: attempt=${attempt} ${err.message}`);
     }
-    addLog("telegram notify sent");
-    return true;
-  } catch (err) {
-    addLog(`telegram notify error: ${err.message}`);
-    return false;
+    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1000));
   }
+  return false;
 }
 
 // ── Uptime Monitor — tự động cảnh báo Telegram ───────────────────────────────
@@ -5855,19 +5856,19 @@ const _uptimeState = {
   recoveryPending: false, // đang chờ xác nhận phục hồi
   successAfterAlert: 0,   // số request thành công sau khi alert
 };
-const UPTIME_ERROR_THRESHOLD = 3;    // ≥3 lỗi/phút → alert
+const UPTIME_ERROR_THRESHOLD = 5;    // ≥5 lỗi 5xx liên tiếp → alert
 const UPTIME_WINDOW_MS = 60 * 1000;  // cửa sổ 1 phút
 const UPTIME_RECOVERY_COUNT = 3;     // 3 request thành công liên tiếp → báo phục hồi
 const UPTIME_ALERT_COOLDOWN = 5 * 60 * 1000; // không spam alert trong 5 phút
 
-function uptimeTrackError(status) {
+function uptimeTrackError(status, entry = null) {
   const now = Date.now();
   // Reset cửa sổ nếu đã qua 1 phút
   if (now - _uptimeState.windowStart > UPTIME_WINDOW_MS) {
     _uptimeState.errorCount = 0;
     _uptimeState.windowStart = now;
   }
-  if (status === 502 || status === 503 || status === 504) {
+  if (status >= 500 && status <= 599) {
     _uptimeState.errorCount += 1;
     _uptimeState.successAfterAlert = 0; // reset recovery counter
     // Gửi alert nếu vượt ngưỡng và chưa spam
@@ -5883,8 +5884,8 @@ function uptimeTrackError(status) {
       notifyTelegram(
         `\u26a0\ufe0f <b>C\u1ea3nh b\u00e1o: Backend c\u00f3 v\u1ea5n \u0111\u1ec1</b>\n` +
         `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
-        `\ud83d\udea8 <b>L\u1ed7i:</b> ${_uptimeState.errorCount} l\u1ed7i ${status} trong 1 ph\u00fat\n` +
-        `\ud83c\udf10 <b>Backend:</b> ${process.env.ANTHROPIC_BASE_URL || "N/A"}\n` +
+        `\ud83d\udea8 <b>L\u1ed7i:</b> ${_uptimeState.errorCount} l\u1ed7i 5xx trong 1 ph\u00fat (g\u1ea7n nh\u1ea5t: ${status})\n` +
+        `\ud83c\udf10 <b>Backend:</b> ${(entry && entry.backend_base_url) || process.env.ANTHROPIC_BASE_URL || "N/A"}\n` +
         `\ud83d\udd52 <b>Th\u1eddi gian:</b> ${new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" })}\n` +
         `\ud83d\udd17 <b>Monitor:</b> ${baseUrl}${ADMIN_PANEL_PATH}`
       );
@@ -5894,7 +5895,12 @@ function uptimeTrackError(status) {
 }
 
 function uptimeTrackSuccess() {
-  if (!_uptimeState.recoveryPending) return;
+  if (!_uptimeState.recoveryPending) {
+    // A successful request breaks an error streak before an alert is raised.
+    _uptimeState.errorCount = 0;
+    _uptimeState.windowStart = Date.now();
+    return;
+  }
   _uptimeState.successAfterAlert += 1;
   if (_uptimeState.successAfterAlert >= UPTIME_RECOVERY_COUNT) {
     _uptimeState.alertSent = false;
