@@ -4671,11 +4671,14 @@ function responsesInputToMessages(input) {
     }
     if (!item || typeof item !== "object") continue;
 
-    if (["function_call", "local_shell_call", "shell_call"].includes(item.type)) {
+    if (["function_call", "custom_tool_call", "local_shell_call", "shell_call"].includes(item.type)) {
       const fallbackName = item.type === "local_shell_call" ? "local_shell" : item.type === "shell_call" ? "shell" : "";
       const name = String(item.name || fallbackName).trim();
       if (!name) continue;
-      const rawArguments = item.arguments != null ? item.arguments : (item.action || {});
+      // Custom tools carry a raw text input, unlike JSON-schema function tools.
+      const rawArguments = item.type === "custom_tool_call"
+        ? { input: item.input != null ? item.input : "" }
+        : (item.arguments != null ? item.arguments : (item.action || {}));
       pendingToolCalls.push({
         id: item.call_id || item.id || `call_${messages.length}_${pendingToolCalls.length}`,
         type: "function",
@@ -4689,7 +4692,7 @@ function responsesInputToMessages(input) {
       continue;
     }
 
-    if (item.type === "function_call_output" || item.type === "local_shell_call_output" || item.type === "shell_call_output") {
+    if (["function_call_output", "custom_tool_call_output", "local_shell_call_output", "shell_call_output"].includes(item.type)) {
       flushPendingToolCalls();
       messages.push({
         role: "tool",
@@ -4770,6 +4773,27 @@ function responsesToolsToChatTools(tools) {
       });
       continue;
     }
+    if (tool.type === "custom") {
+      const name = String(tool.name || "").trim();
+      if (!name) continue;
+      // OpenAI-compatible chat backends do not understand Responses custom tools.
+      // Transport the raw input through a single string argument and restore its
+      // native custom_tool_call shape before returning the response to Codex.
+      normalized.push({
+        type: "function",
+        function: {
+          name,
+          description: String(tool.description || ""),
+          parameters: {
+            type: "object",
+            properties: { input: { type: "string", description: "Raw custom tool input." } },
+            required: ["input"],
+            additionalProperties: false,
+          },
+        },
+      });
+      continue;
+    }
     if (tool.type !== "function") continue;
     const source = tool.function && typeof tool.function === "object" ? tool.function : tool;
     const name = String(source.name || "").trim();
@@ -4786,6 +4810,15 @@ function responsesToolsToChatTools(tools) {
     });
   }
   return normalized.length ? normalized : undefined;
+}
+
+function responsesToolChoiceToChatToolChoice(choice, customToolNames) {
+  if (!choice || typeof choice !== "object") return choice;
+  const name = String(choice.name || (choice.function && choice.function.name) || "").trim();
+  if (!name || !customToolNames.has(name)) return choice;
+  // The backend sees custom tools as functions, so a forced custom-tool choice
+  // must use the equivalent Chat Completions function-choice shape as well.
+  return { type: "function", function: { name } };
 }
 
 function parseToolArguments(raw) {
@@ -4820,16 +4853,18 @@ function rememberResponsesState(response) {
   for (const item of Array.isArray(response.output) ? response.output : []) {
     if (!item || typeof item !== "object") continue;
     const type = String(item.type || "");
-    if (!["function_call", "local_shell_call", "shell_call"].includes(type)) continue;
+    if (!["function_call", "custom_tool_call", "local_shell_call", "shell_call"].includes(type)) continue;
     const callId = String(item.call_id || item.id || "").trim();
     if (!callId) continue;
     toolCalls.set(callId, {
       id: String(item.id || callId),
       call_id: callId,
       name: String(item.name || (type === "local_shell_call" ? "local_shell" : type === "shell_call" ? "shell" : "")).trim(),
-      arguments: typeof item.arguments === "string"
-        ? item.arguments
-        : JSON.stringify(item.arguments && typeof item.arguments === "object" ? item.arguments : {}),
+      arguments: type === "custom_tool_call"
+        ? JSON.stringify({ input: item.input != null ? item.input : "" })
+        : (typeof item.arguments === "string"
+          ? item.arguments
+          : JSON.stringify(item.arguments && typeof item.arguments === "object" ? item.arguments : {})),
     });
   }
   responsesState.set(String(response.id), { toolCalls, ts: Date.now() });
@@ -4891,10 +4926,20 @@ function hydrateResponsesContinuation(previousResponseId, messages) {
   return changed ? hydrated : messages;
 }
 
-function responsesOutputItemFromToolCall({ id, callId, name, args, status = "completed" }) {
+function responsesOutputItemFromToolCall({ id, callId, name, args, status = "completed", customToolNames = new Set() }) {
   const normalizedName = String(name || "").trim();
   const parsed = parseToolArguments(args);
   const fallbackId = id || callId || `call_${Date.now()}`;
+  if (customToolNames.has(normalizedName)) {
+    return {
+      id: fallbackId,
+      type: "custom_tool_call",
+      status,
+      call_id: callId || fallbackId,
+      name: normalizedName,
+      input: String(parsed.input != null ? parsed.input : args || ""),
+    };
+  }
   if (normalizedName === "local_shell") {
     return {
       id: fallbackId,
@@ -4949,7 +4994,7 @@ function countResponsesImages(value) {
   return (self ? 1 : 0) + countResponsesImages(value.content || value.output);
 }
 
-function chatCompletionToResponses(data, publicModel) {
+function chatCompletionToResponses(data, publicModel, customToolNames = new Set()) {
   const choice = (data.choices || [])[0] || {};
   const message = choice.message || {};
   const text = typeof message.content === "string" ? message.content : "";
@@ -4976,6 +5021,7 @@ function chatCompletionToResponses(data, publicModel) {
       name,
       args: (call.function && call.function.arguments) || "{}",
       status: "completed",
+      customToolNames,
     }));
   }
 
@@ -5041,7 +5087,7 @@ function endResponsesStream(res, delayMs = 75) {
   }, delayMs);
 }
 
-function createResponsesStreamBridge(res, publicModel) {
+function createResponsesStreamBridge(res, publicModel, customToolNames = new Set()) {
   const rawWrite = res.write.bind(res);
   const rawEnd = res.end.bind(res);
   const responseId = `resp_${Date.now()}`;
@@ -5145,6 +5191,7 @@ function createResponsesStreamBridge(res, publicModel) {
         name: tracked.name,
         args: {},
         status: "in_progress",
+        customToolNames,
       }),
     }));
   };
@@ -5224,12 +5271,19 @@ function createResponsesStreamBridge(res, publicModel) {
         name: tracked.name,
         args: tracked.arguments,
         status: "completed",
+        customToolNames,
       });
       if (item.type === "function_call") {
         writeEvent("response.function_call_arguments.done", eventPayload("response.function_call_arguments.done", {
           item_id: tracked.id,
           output_index: tracked.output_index,
           arguments: item.arguments,
+        }));
+      } else if (item.type === "custom_tool_call") {
+        writeEvent("response.custom_tool_call_input.done", eventPayload("response.custom_tool_call_input.done", {
+          item_id: tracked.id,
+          output_index: tracked.output_index,
+          input: item.input,
         }));
       }
       writeEvent("response.output_item.done", eventPayload("response.output_item.done", {
@@ -5319,31 +5373,47 @@ function createResponsesStreamBridge(res, publicModel) {
   return { fail, complete, rawWrite, rawEnd, start: startResponse };
 }
 
-function emitResponsesStreamFromChatCompletion(res, data, publicModel) {
-  const response = chatCompletionToResponses(data, publicModel);
+function emitResponsesStreamFromChatCompletion(res, data, publicModel, customToolNames = new Set()) {
+  const response = chatCompletionToResponses(data, publicModel, customToolNames);
   rememberResponsesState(response);
   const inProgressResponse = { ...response, status: "in_progress", output: [] };
   responseSseWrite(res, "response.created", { type: "response.created", response: inProgressResponse });
   responseSseWrite(res, "response.in_progress", { type: "response.in_progress", response: inProgressResponse });
 
   for (const [outputIndex, output] of response.output.entries()) {
-    if (output.type === "function_call") {
+    if (output.type === "function_call" || output.type === "custom_tool_call") {
       responseSseWrite(res, "response.output_item.added", responseStreamEvent(response, "response.output_item.added", {
         output_index: outputIndex,
-        item: { ...output, status: "in_progress", arguments: "" },
+        item: output.type === "custom_tool_call"
+          ? { ...output, status: "in_progress", input: "" }
+          : { ...output, status: "in_progress", arguments: "" },
       }));
-      if (output.arguments) {
+      if (output.type === "function_call" && output.arguments) {
         responseSseWrite(res, "response.function_call_arguments.delta", responseStreamEvent(response, "response.function_call_arguments.delta", {
           item_id: output.id,
           output_index: outputIndex,
           delta: output.arguments,
         }));
       }
-      responseSseWrite(res, "response.function_call_arguments.done", responseStreamEvent(response, "response.function_call_arguments.done", {
-        item_id: output.id,
-        output_index: outputIndex,
-        arguments: output.arguments,
-      }));
+      if (output.type === "function_call") {
+        responseSseWrite(res, "response.function_call_arguments.done", responseStreamEvent(response, "response.function_call_arguments.done", {
+          item_id: output.id,
+          output_index: outputIndex,
+          arguments: output.arguments,
+        }));
+      }
+      if (output.type === "custom_tool_call") {
+        responseSseWrite(res, "response.custom_tool_call_input.delta", responseStreamEvent(response, "response.custom_tool_call_input.delta", {
+          item_id: output.id,
+          output_index: outputIndex,
+          delta: output.input,
+        }));
+        responseSseWrite(res, "response.custom_tool_call_input.done", responseStreamEvent(response, "response.custom_tool_call_input.done", {
+          item_id: output.id,
+          output_index: outputIndex,
+          input: output.input,
+        }));
+      }
       responseSseWrite(res, "response.output_item.done", responseStreamEvent(response, "response.output_item.done", { output_index: outputIndex, item: output }));
       continue;
     }
@@ -5384,8 +5454,11 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const original = req.body || {};
   const wantsStream = !!original.stream;
   const publicModel = publicModelName(original.model || "opus");
+  const customToolNames = new Set((Array.isArray(original.tools) ? original.tools : [])
+    .filter((tool) => tool && tool.type === "custom" && String(tool.name || "").trim())
+    .map((tool) => String(tool.name).trim()));
   req.obs.previous_response_id = String(original.previous_response_id || "").trim();
-  const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel) : null;
+  const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel, customToolNames) : null;
   const chatTools = responsesToolsToChatTools(original.tools);
   if (Array.isArray(original.tools)) {
     addLog(`responses tools ${JSON.stringify(responsesToolsSummary(original.tools))} -> ${chatTools ? chatTools.length : 0}`);
@@ -5410,7 +5483,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     top_p: original.top_p,
     max_tokens: responseMaxTokens,
     tools: chatTools,
-    tool_choice: chatTools ? original.tool_choice : undefined,
+    tool_choice: chatTools ? responsesToolChoiceToChatToolChoice(original.tool_choice, customToolNames) : undefined,
     parallel_tool_calls: original.parallel_tool_calls,
     stream: wantsStream,
   };
@@ -5428,8 +5501,8 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
       return streamBridge.rawEnd();
     }
     if (data && data.choices) {
-      if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel);
-      const response = chatCompletionToResponses(data, publicModel);
+      if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel, customToolNames);
+      const response = chatCompletionToResponses(data, publicModel, customToolNames);
       rememberResponsesState(response);
       return oldJson(response);
     }
