@@ -53,20 +53,13 @@ body{font-family:'Inter',sans-serif}
 
   <!-- Account overview -->
   <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-    <div class="lg:col-span-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div class="bg-gradient-to-br from-primary/25 via-dark-700 to-purple-900/20 border border-primary/30 rounded-3xl p-5 md:p-6 shadow-2xl shadow-primary/5">
-        <p class="text-sm text-gray-400 mb-2">Request còn lại</p>
-        <div class="text-4xl md:text-5xl font-black tracking-tight text-white break-words" id="requestBalance">—</div>
-        <p class="text-xs text-gray-500 mt-2">Mỗi lần gọi API dùng 1 request</p>
-      </div>
-      <div class="bg-gradient-to-br from-cyan-500/15 via-dark-700 to-blue-900/20 border border-cyan-400/20 rounded-3xl p-5 md:p-6">
+    <div class="lg:col-span-5 bg-gradient-to-br from-cyan-500/15 via-dark-700 to-blue-900/20 border border-cyan-400/20 rounded-3xl p-5 md:p-6 shadow-2xl shadow-cyan-500/5">
         <p class="text-sm text-gray-400 mb-2">Token còn lại</p>
         <div class="text-4xl md:text-5xl font-black tracking-tight text-white break-words" id="tokenBalance">—</div>
         <p class="text-xs text-gray-500 mt-2">Quota token của gói</p>
-      </div>
     </div>
 
-    <div class="lg:col-span-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+    <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
         <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">RPM Limit</p>
         <div class="text-3xl font-bold" id="rpmLimit">—</div>
@@ -84,7 +77,7 @@ body{font-family:'Inter',sans-serif}
   </section>
 
   <div class="rounded-2xl bg-primary/10 border border-primary/20 px-4 py-3 text-sm text-primary-100">
-    API key sẽ dừng khi hết request hoặc hết token, hoặc khi key hết hạn. RPM là giới hạn số request mỗi phút.
+    API key hoạt động theo quota gói, thời hạn sử dụng và giới hạn RPM.
   </div>
 
   <section class="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -182,11 +175,10 @@ Model    : gpt-5.5</code></pre>
             <th class="text-left p-3">Lo&#7841;i</th>
             <th class="text-left p-3">Model</th>
             <th class="text-right p-3">Token</th>
-            <th class="text-right p-3">Request</th>
           </tr>
         </thead>
         <tbody id="historyTable">
-          <tr><td colspan="5" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr>
+          <tr><td colspan="4" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr>
         </tbody>
       </table>
     </div>
@@ -237,7 +229,6 @@ function renderBalance(data) {
 
   const tokenEl = document.getElementById("tokenBalance");
   if (tokenEl) tokenEl.textContent = tokenRemaining.toLocaleString();
-  document.getElementById("requestBalance").textContent = Number(data.credit || 0).toLocaleString();
 
   document.getElementById("rpmLimit").textContent = data.rpm_limit;
   document.getElementById("keyStatus").innerHTML = data.active
@@ -316,7 +307,7 @@ function loadHistory() {
       const tbody = document.getElementById("historyTable");
       const rows = data.history || [];
       if (!rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; l&#7883;ch s&#7917;</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; l&#7883;ch s&#7917;</td></tr>';
         return;
       }
       const formatHistoryTime = (value) => {
@@ -329,13 +320,11 @@ function loadHistory() {
       tbody.innerHTML = rows.map((r) => {
         const isUsage = r.delta < 0;
         const tokens = Math.max(0, Number(r.tokens_in || 0) + Number(r.tokens_out || 0));
-        const requests = Math.abs(Number(r.delta || 0));
         return `<tr class="border-b border-white/5 hover:bg-white/2">
           <td class="py-3 text-gray-400 text-xs">${formatHistoryTime(r.created_at)}</td>
           <td class="py-3"><span class="px-2 py-0.5 rounded text-xs ${isUsage ? "bg-red-500/10 text-red-400" : "bg-green-500/10 text-green-400"}">${isUsage ? "S&#7917; d&#7909;ng" : r.reason}</span></td>
           <td class="py-3 text-gray-300 text-xs">${r.model || "—"}</td>
           <td class="py-3 text-right text-gray-400 text-xs">${tokens ? tokens.toLocaleString("vi-VN") : "—"}</td>
-          <td class="py-3 text-right font-mono text-xs ${isUsage ? "text-red-400" : "text-green-400"}">${requests ? (isUsage ? "-" : "+") + requests.toLocaleString("vi-VN") : "—"}</td>
         </tr>`;
       }).join("");
       return fetch(`${BASE}/api/credit/balance`, { headers: { Authorization: `Bearer ${currentKey}` } });
