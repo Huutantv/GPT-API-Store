@@ -262,9 +262,11 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
 
     const totalTokens = tokenRemaining;
 
-    const configuredPerRequest = getTokenPerRequest();
-    const minPerRequest = Math.max(1, Math.floor(configuredPerRequest * 0.8));
-    const maxPerRequest = Math.max(minPerRequest, Math.ceil(configuredPerRequest * 1.2));
+    // Each package owns independent request and token totals. Derive the per-call
+    // display amount from its remaining balance so both quotas reach zero together.
+    const targetPerRequest = Math.max(1, Math.floor(totalTokens / Math.max(1, reqRemaining)));
+    const minPerRequest = Math.max(1, Math.floor(targetPerRequest * 0.8));
+    const maxPerRequest = Math.max(minPerRequest, Math.ceil(targetPerRequest * 1.2));
     const remainingRequestsAfterThis = Math.max(0, reqRemaining - 1);
 
     // Mỗi request hiển thị ngẫu nhiên trong khoảng setup ±20%.
@@ -279,7 +281,7 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
     } else if (low <= high) {
       shownTotal = crypto.randomInt(low, high + 1);
     } else {
-      shownTotal = Math.min(configuredPerRequest, totalTokens, dailyRemaining || totalTokens);
+      shownTotal = Math.min(targetPerRequest, totalTokens, dailyRemaining || totalTokens);
     }
 
     // Phân tách token in/out để lịch sử vẫn dễ đọc nhưng tổng luôn cố định theo setting.

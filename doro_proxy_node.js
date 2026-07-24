@@ -6827,7 +6827,7 @@ app.get("/api/credit/stats", (req, res) => {
 app.get("/api/admin/packages", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  res.json({ packages: orders.listAllPackages(), token_per_request: getTokenPerRequest() });
+  res.json({ packages: orders.listAllPackages() });
 });
 
 app.put("/api/admin/packages/:id", (req, res) => {
@@ -6837,6 +6837,7 @@ app.put("/api/admin/packages/:id", (req, res) => {
   if (!/^[a-z][a-z0-9_]{0,19}$/i.test(id)) return res.status(400).json({ detail: "Invalid package id" });
   const body = req.body || {};
   const tokenQuota = Math.max(0, Math.floor(Number(body.token_quota) || 0));
+  const requestQuota = Math.max(0, Math.floor(Number(body.request_quota) || 0));
   const price = Math.max(0, Math.floor(Number(body.price) || 0));
   const rpmLimit = Math.max(1, Math.floor(Number(body.rpm_limit) || 10));
   const name = String(body.name || "").trim();
@@ -6845,12 +6846,13 @@ app.put("/api/admin/packages/:id", (req, res) => {
     const pkg = orders.updatePackage(id, {
       name,
       price,
+      requestQuota,
       tokenQuota,
       rpmLimit,
       description: String(body.description || "").trim(),
       active: !!body.active,
     });
-    addLog(`PACKAGE UPDATE id=${id} token_quota=${pkg.token_quota} credit=${pkg.credit}`);
+    addLog(`PACKAGE UPDATE id=${id} requests=${pkg.credit} token_quota=${pkg.token_quota}`);
     res.json({ ok: true, package: pkg });
   } catch (err) {
     res.status(400).json({ detail: err.message });

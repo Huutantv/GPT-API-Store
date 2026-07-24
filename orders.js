@@ -5,10 +5,7 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 const crypto = require("crypto");
-const {
-  getPackageDurationDays,
-  tokensToRequestQuota,
-} = require("./package_quotas");
+const { getPackageDurationDays } = require("./package_quotas");
 
 const db = new Database(path.join(__dirname, "credit.db"));
 
@@ -59,21 +56,21 @@ try { db.exec("ALTER TABLE orders ADD COLUMN token_quota INTEGER NOT NULL DEFAUL
 
 // Seed default packages
 const seedPkgs = [
-  { id: "starter", name: "Starter", price: 20000,  token_quota: 30000000,  rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
-  { id: "pro",     name: "Pro",     price: 270000, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày, 30M token/ngày", active: 1 },
-  { id: "pro_v2",  name: "Pro v2",  price: 290000, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 450000, token_quota: 0,         rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
+  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
+  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
+  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
+  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
   INSERT OR IGNORE INTO packages (id, name, price, credit, token_quota, rpm_limit, description, active)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
-for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, tokensToRequestQuota(p.token_quota), p.token_quota, p.rpm_limit, p.description, p.active);
+for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.token_quota, p.rpm_limit, p.description, p.active);
 
-// Migrate legacy default plans once. Existing manual values are never overwritten.
-const migrateLegacyPackageQuota = db.prepare("UPDATE packages SET token_quota=?, credit=? WHERE id=? AND token_quota=0");
+// Migrate legacy token-only packages once while preserving their existing request quota.
+const migrateLegacyPackageQuota = db.prepare("UPDATE packages SET token_quota=? WHERE id=? AND token_quota=0");
 for (const p of seedPkgs) {
-  if (p.token_quota > 0) migrateLegacyPackageQuota.run(p.token_quota, tokensToRequestQuota(p.token_quota), p.id);
+  if (p.token_quota > 0) migrateLegacyPackageQuota.run(p.token_quota, p.id);
 }
 db.prepare(`
   UPDATE orders
@@ -174,11 +171,11 @@ function cancelExpiredOrders() {
   return result.changes;
 }
 
-function updatePackage(id, { name, price, tokenQuota, rpmLimit, description, active }) {
+function updatePackage(id, { name, price, requestQuota, tokenQuota, rpmLimit, description, active }) {
   const token_quota = Math.max(0, Math.floor(Number(tokenQuota) || 0));
+  const credit = Math.max(0, Math.floor(Number(requestQuota) || 0));
   const rpm_limit = Math.max(1, Math.floor(Number(rpmLimit) || 10));
   const amount = Math.max(0, Math.floor(Number(price) || 0));
-  const credit = token_quota > 0 ? tokensToRequestQuota(token_quota) : 0;
   const result = stmts.updatePackage.run(String(name || "").trim(), amount, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, id);
   if (!result.changes) throw new Error(`Package not found: ${id}`);
   return getPackage(id);
