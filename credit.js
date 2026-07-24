@@ -9,7 +9,6 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const crypto = require("crypto");
 const {
-  PACKAGE_TOKEN_QUOTAS,
   getTokenPerRequest,
 } = require("./package_quotas");
 
@@ -129,35 +128,23 @@ function getPackageIdFromLabel(row) {
   return match ? match[1].trim() : "";
 }
 
-function getQuotaTokenLimit(row) {
-  return PACKAGE_TOKEN_QUOTAS[getPackageIdFromLabel(row)] || 0;
-}
-
 function inferQuotaTokenRemaining(row) {
   const tokenRemaining = Math.max(0, Number((row && row.token_remaining) || 0));
-  if (tokenRemaining > 0) return tokenRemaining;
-
-  const packageTokenQuota = getQuotaTokenLimit(row);
-  const creditRemaining = Math.max(0, Number((row && row.credit) || 0));
-  if (!packageTokenQuota || !creditRemaining) return 0;
-
-  return Math.min(packageTokenQuota, creditRemaining * getTokenPerRequest());
+  return tokenRemaining;
 }
 
 function isQuotaKey(row) {
-  return Number((row && row.token_remaining) || 0) > 0 || getQuotaTokenLimit(row) > 0;
+  return Number((row && row.token_remaining) || 0) > 0;
 }
 
 function isDailyLimitedQuotaKey(row) {
-  return getPackageIdFromLabel(row) === "pro";
+  return false;
 }
 
 function getQuotaInfo(row) {
-  const packageId = getPackageIdFromLabel(row);
-  const tokenQuota = getQuotaTokenLimit(row);
   return {
-    package_id: packageId,
-    token_quota: tokenQuota,
+    package_id: getPackageIdFromLabel(row),
+    token_quota: Math.max(0, Number((row && row.token_remaining) || 0)),
     token_per_request: getTokenPerRequest(),
     token_remaining: inferQuotaTokenRemaining(row),
   };
@@ -263,7 +250,8 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
   // Quota package mode: credit = request quota, token_remaining = synthetic token quota.
   // Old keys may have token_remaining=0, so infer remaining quota from current request credit.
   const inferredTokenRemaining = inferQuotaTokenRemaining(rowBefore);
-  if (rowBefore && isQuotaKey(rowBefore) && inferredTokenRemaining > 0) {
+  const quotaMode = rowBefore && isQuotaKey(rowBefore) && inferredTokenRemaining > 0;
+  if (quotaMode) {
     cost = 1; // 1 request
 
     const reqRemaining = Math.max(0, Number(rowBefore.credit || 0));
@@ -314,7 +302,7 @@ function deductCredit(apiKey, tokensIn, tokensOut, model, reqId) {
   stmts.insertTxn.run(apiKey, -cost, "usage", tIn || 0, tOut || 0, model || "", reqId || "");
   const row = stmts.getKey.get(apiKey);
 
-  if (row && isQuotaKey(row) && getQuotaTokenLimit(row) > 0 && Number(row.token_remaining || 0) <= 0) {
+  if (row && quotaMode && Number(row.token_remaining || 0) <= 0) {
     db.prepare("UPDATE api_keys SET credit = 0 WHERE key = ?").run(apiKey);
     row.credit = 0;
   }

@@ -246,22 +246,12 @@ let creatingOrder = false;
 // Load packages
 fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
   const list = document.getElementById("packageList");
+  const formatTokens = (value) => Number(value || 0).toLocaleString("vi-VN") + " token";
   const packageDescription = (p) => {
-    if (p.id === "starter") return "30,000,000 token";
-    if (p.id === "pro") return "900,000,000 token / 30 ngày · 30M token / ngày";
-    if (p.id === "pro_v2") return "900,000,000 token / 30 ngày";
-    return p.description;
+    return p.token_quota > 0 ? formatTokens(p.token_quota) : p.description;
   };
   const packageBadges = (p) => {
-    if (p.id === "starter") {
-      return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">30,000,000 token</span>`;
-    }
-    if (p.id === "pro") {
-      return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">900,000,000 token</span><span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">30M token / ngày</span>`;
-    }
-    if (p.id === "pro_v2") {
-      return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">900,000,000 token</span>`;
-    }
+    if (p.token_quota > 0) return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">${formatTokens(p.token_quota)}</span>`;
     return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">${Number(p.credit).toLocaleString()} credit</span>`;
   };
   list.innerHTML = (data.packages || []).map(p => `

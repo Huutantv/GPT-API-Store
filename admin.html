@@ -54,6 +54,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('history');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; L&#7883;ch s&#7917;</button>
       <button onclick="showTab('monitor');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
       <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
+      <button onclick="showTab('packages');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="packages">&#x1F4E6; G&#243;i d&#7883;ch v&#7909;</button>
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
 <button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
@@ -98,6 +99,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('history')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; L&#7883;ch s&#7917;</button>
       <button onclick="showTab('monitor')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
       <button onclick="showTab('orders')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
+      <button onclick="showTab('packages')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="packages">&#x1F4E6; G&#243;i d&#7883;ch v&#7909;</button>
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
 <button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
@@ -142,6 +144,23 @@ body{font-family:'Inter',sans-serif}
   <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><h3 class="font-bold mb-4">Top g&#243;i b&#225;n ch&#7841;y</h3><div id="topPackagesList" class="space-y-2"></div></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><h3 class="font-bold mb-4">&#272;&#417;n thanh to&#225;n m&#7899;i nh&#7845;t</h3><div id="recentPaidOrders" class="space-y-2"></div></div>
+  </div>
+</div>
+
+<!-- Tab: Packages -->
+<div id="tab-packages" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3">
+    <div><h2 class="text-xl font-bold">G&#243;i d&#7883;ch v&#7909;</h2><p class="text-sm text-gray-400 mt-1">Mỗi gói có quota token riêng. Thay đổi chỉ áp dụng cho đơn hàng mới.</p></div>
+    <button onclick="loadPackages()" class="px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-white/10 rounded-lg text-sm font-semibold transition">L&#224;m m&#7899;i</button>
+  </div>
+  <div id="packagesMsg" class="text-sm text-gray-400"></div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm min-w-[950px]">
+        <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800"><th class="text-left px-4 py-3">Gói</th><th class="text-right px-4 py-3">Giá (VNĐ)</th><th class="text-right px-4 py-3">Tổng token</th><th class="text-right px-4 py-3">Request quy đổi</th><th class="text-right px-4 py-3">RPM</th><th class="text-left px-4 py-3">Mô tả</th><th class="text-center px-4 py-3">Bán</th><th class="text-right px-4 py-3">Thao tác</th></tr></thead>
+        <tbody id="packagesTable"><tr><td colspan="8" class="text-center text-gray-500 py-8">Đang tải...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -1279,6 +1298,7 @@ function showTab(name) {
   if (name === "history") loadHistory();
   if (name === "monitor") loadMonitor();
   if (name === "orders") loadOrders();
+  if (name === "packages") loadPackages();
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
@@ -1358,6 +1378,79 @@ function renderOverviewRecentPaid(items) {
       '<div class="text-right"><p class="text-sm font-bold text-green-400">' + currencyVND(item.amount || 0) + '</p><p class="text-xs text-gray-500 font-mono">' + escapeHtml(item.key_masked || '') + '</p></div>' +
     '</div>';
   }).join('');
+}
+
+/* ===== PACKAGES ===== */
+var CURRENT_PACKAGE_TOKEN_PER_REQUEST = 85714;
+
+function packageFieldId(id, field) {
+  return "pkg_" + id + "_" + field;
+}
+
+function packageInput(id, field) {
+  return document.getElementById(packageFieldId(id, field));
+}
+
+async function loadPackages() {
+  var msg = document.getElementById("packagesMsg");
+  var tbody = document.getElementById("packagesTable");
+  try {
+    var r = await fetch(BASE + "/api/admin/packages", { headers: authHeaders() });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Không thể tải gói");
+    CURRENT_PACKAGE_TOKEN_PER_REQUEST = Math.max(1, Number(data.token_per_request || 85714));
+    var packages = data.packages || [];
+    if (!packages.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">Chưa có gói nào</td></tr>';
+      return;
+    }
+    tbody.innerHTML = packages.map(function(p) {
+      var id = escapeHtml(p.id);
+      return '<tr class="border-b border-white/5 hover:bg-white/2">' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'name') + '" value="' + escapeHtml(p.name) + '" class="w-32 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"><p class="text-xs text-gray-500 mt-1 font-mono">' + id + '</p></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'price') + '" type="number" min="0" value="' + Number(p.price || 0) + '" class="w-28 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'tokens') + '" type="number" min="0" value="' + Number(p.token_quota || 0) + '" oninput="updatePackageRequestPreview(\'' + p.id + '\')" class="w-40 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td id="' + packageFieldId(p.id, 'requests') + '" class="px-4 py-3 text-right text-gray-300">' + Number(p.credit || 0).toLocaleString('vi-VN') + '</td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'rpm') + '" type="number" min="1" value="' + Number(p.rpm_limit || 10) + '" class="w-20 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'description') + '" value="' + escapeHtml(p.description || '') + '" class="w-56 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"></td>' +
+        '<td class="px-4 py-3 text-center"><input id="' + packageFieldId(p.id, 'active') + '" type="checkbox" class="w-4 h-4 accent-primary"' + (p.active ? ' checked' : '') + '></td>' +
+        '<td class="px-4 py-3 text-right"><button onclick="savePackage(\'' + p.id + '\')" class="px-3 py-1.5 bg-primary hover:bg-primary/90 rounded text-xs font-semibold transition">Lưu</button></td>' +
+      '</tr>';
+    }).join('');
+    msg.className = 'text-sm text-gray-400';
+    msg.textContent = '1 request = ' + CURRENT_PACKAGE_TOKEN_PER_REQUEST.toLocaleString('vi-VN') + ' token.';
+  } catch (err) {
+    msg.className = 'text-sm text-red-400';
+    msg.textContent = err.message || 'Không thể tải gói';
+  }
+}
+
+function updatePackageRequestPreview(id) {
+  var tokens = Math.max(0, Math.floor(Number(packageInput(id, 'tokens').value || 0)));
+  packageInput(id, 'requests').textContent = Math.floor(tokens / CURRENT_PACKAGE_TOKEN_PER_REQUEST).toLocaleString('vi-VN');
+}
+
+async function savePackage(id) {
+  var msg = document.getElementById('packagesMsg');
+  var body = {
+    name: packageInput(id, 'name').value.trim(),
+    price: Number(packageInput(id, 'price').value || 0),
+    token_quota: Number(packageInput(id, 'tokens').value || 0),
+    rpm_limit: Number(packageInput(id, 'rpm').value || 10),
+    description: packageInput(id, 'description').value.trim(),
+    active: packageInput(id, 'active').checked
+  };
+  try {
+    var r = await fetch(BASE + '/api/admin/packages/' + encodeURIComponent(id), { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Không thể lưu gói');
+    msg.className = 'text-sm text-green-400';
+    msg.textContent = 'Đã lưu ' + data.package.name + ': ' + Number(data.package.token_quota || 0).toLocaleString('vi-VN') + ' token.';
+    loadPackages();
+  } catch (err) {
+    msg.className = 'text-sm text-red-400';
+    msg.textContent = err.message || 'Không thể lưu gói';
+  }
 }
 
 async function loadOverview() {

@@ -7,8 +7,7 @@ const path = require("path");
 const crypto = require("crypto");
 const {
   getPackageDurationDays,
-  getPackageRequestQuota,
-  withComputedPackageQuota,
+  tokensToRequestQuota,
 } = require("./package_quotas");
 
 const db = new Database(path.join(__dirname, "credit.db"));
@@ -20,6 +19,7 @@ db.exec(`
     name        TEXT NOT NULL,
     price       INTEGER NOT NULL,
     credit      INTEGER NOT NULL,
+    token_quota INTEGER NOT NULL DEFAULT 0,
     rpm_limit   INTEGER NOT NULL DEFAULT 10,
     description TEXT NOT NULL DEFAULT '',
     active      INTEGER NOT NULL DEFAULT 1
@@ -31,6 +31,7 @@ db.exec(`
     package_id    TEXT NOT NULL,
     amount        INTEGER NOT NULL,
     credit        INTEGER NOT NULL,
+    token_quota   INTEGER NOT NULL DEFAULT 0,
     rpm_limit     INTEGER NOT NULL DEFAULT 10,
     status        TEXT NOT NULL DEFAULT 'pending',
     customer_name TEXT NOT NULL DEFAULT '',
@@ -53,31 +54,38 @@ try { db.exec("ALTER TABLE orders ADD COLUMN expires_at TEXT"); } catch (_) {}
 
 // Migration: thêm cột customer_phone nếu chưa có
 try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT ''"); } catch (_) {}
+try { db.exec("ALTER TABLE packages ADD COLUMN token_quota INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE orders ADD COLUMN token_quota INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 
 // Seed default packages
 const seedPkgs = [
-  // credit là request quota, được tính lại theo DORO_TOKEN_PER_REQUEST khi đọc/tạo order
-  { id: "starter", name: "Starter", price: 20000,  credit: getPackageRequestQuota("starter"), rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
-  { id: "pro",     name: "Pro",     price: 270000, credit: getPackageRequestQuota("pro"),     rpm_limit: 10, description: "900,000,000 token / 30 ngày, 30M token/ngày", active: 1 },
-  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: getPackageRequestQuota("pro_v2"),  rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
+  { id: "starter", name: "Starter", price: 20000,  token_quota: 30000000,  rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
+  { id: "pro",     name: "Pro",     price: 270000, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày, 30M token/ngày", active: 1 },
+  { id: "pro_v2",  name: "Pro v2",  price: 290000, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
+  { id: "ultra",   name: "Ultra",   price: 450000, token_quota: 0,         rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
-  INSERT OR IGNORE INTO packages (id, name, price, credit, rpm_limit, description, active)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT OR IGNORE INTO packages (id, name, price, credit, token_quota, rpm_limit, description, active)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
-for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.rpm_limit, p.description, p.active);
+for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, tokensToRequestQuota(p.token_quota), p.token_quota, p.rpm_limit, p.description, p.active);
 
-// Cập nhật packages đã tồn tại
-const updatePkg = db.prepare("UPDATE packages SET price=?, credit=?, description=?, active=? WHERE id=?");
-updatePkg.run(20000,  getPackageRequestQuota("starter"), "30,000,000 token, 10 RPM, 1 ngày",    1, "starter");
-updatePkg.run(270000, getPackageRequestQuota("pro"),     "900,000,000 token / 30 ngày, 30M token/ngày", 1, "pro");
-updatePkg.run(290000, getPackageRequestQuota("pro_v2"),  "900,000,000 token / 30 ngày", 1, "pro_v2");
-updatePkg.run(450000, 30000, "30.000 credit (~30M token), 5 API key, 60 RPM",   0, "ultra");
+// Migrate legacy default plans once. Existing manual values are never overwritten.
+const migrateLegacyPackageQuota = db.prepare("UPDATE packages SET token_quota=?, credit=? WHERE id=? AND token_quota=0");
+for (const p of seedPkgs) {
+  if (p.token_quota > 0) migrateLegacyPackageQuota.run(p.token_quota, tokensToRequestQuota(p.token_quota), p.id);
+}
+db.prepare(`
+  UPDATE orders
+  SET token_quota = COALESCE((SELECT token_quota FROM packages WHERE packages.id = orders.package_id), 0),
+      credit = COALESCE((SELECT credit FROM packages WHERE packages.id = orders.package_id), credit)
+  WHERE status = 'pending' AND token_quota = 0
+`).run();
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
   listPackages:  db.prepare("SELECT * FROM packages WHERE active = 1 ORDER BY price ASC"),
+  listAllPackages: db.prepare("SELECT * FROM packages ORDER BY price ASC"),
   getPackage:    db.prepare("SELECT * FROM packages WHERE id = ?"),
   getOrder:      db.prepare("SELECT * FROM orders WHERE id = ?"),
   getOrderCode:  db.prepare("SELECT * FROM orders WHERE order_code = ?"),
@@ -91,8 +99,9 @@ const stmts = {
   `),
   listByStatus:  db.prepare("SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC"),
   listByEmail:   db.prepare("SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC"),
-  insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, rpm_limit, customer_name, customer_email, customer_phone)
-                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, token_quota, rpm_limit, customer_name, customer_email, customer_phone)
+                              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  updatePackage: db.prepare("UPDATE packages SET name=?, price=?, credit=?, token_quota=?, rpm_limit=?, description=?, active=? WHERE id=?"),
   setOrderExpiry: db.prepare("UPDATE orders SET expires_at=? WHERE id=?"),
   markPaid:      db.prepare("UPDATE orders SET status='paid', api_key=?, paid_at=datetime('now'), note=? WHERE id=?"),
   markCancelled: db.prepare("UPDATE orders SET status='cancelled' WHERE id=?"),
@@ -105,8 +114,9 @@ function genOrderId()   { return crypto.randomBytes(8).toString("hex").toUpperCa
 function genOrderCode() { return "GPT" + Date.now().toString(36).toUpperCase().slice(-6); }
 
 // ── Public API ────────────────────────────────────────────────────────────────
-function listPackages() { return stmts.listPackages.all().map(withComputedPackageQuota); }
-function getPackage(id) { return withComputedPackageQuota(stmts.getPackage.get(id)); }
+function listPackages() { return stmts.listPackages.all(); }
+function listAllPackages() { return stmts.listAllPackages.all(); }
+function getPackage(id) { return stmts.getPackage.get(id); }
 function getOrder(id)   { return stmts.getOrder.get(id); }
 function getOrderByCode(code) { return stmts.getOrderCode.get(code); }
 function getOrderByApiKey(apiKey) { return stmts.getOrderByApiKey.get(apiKey); }
@@ -140,7 +150,7 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
     expiresAt = `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
   }
 
-  stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.rpm_limit, customerName || "", customerEmail || "", customerPhone || "");
+  stmts.insertOrder.run(id, code, pkg.id, pkg.price, pkg.credit, pkg.token_quota || 0, pkg.rpm_limit, customerName || "", customerEmail || "", customerPhone || "");
 
   if (expiresAt) {
     stmts.setOrderExpiry.run(expiresAt, id);
@@ -164,6 +174,16 @@ function cancelExpiredOrders() {
   return result.changes;
 }
 
+function updatePackage(id, { name, price, tokenQuota, rpmLimit, description, active }) {
+  const token_quota = Math.max(0, Math.floor(Number(tokenQuota) || 0));
+  const rpm_limit = Math.max(1, Math.floor(Number(rpmLimit) || 10));
+  const amount = Math.max(0, Math.floor(Number(price) || 0));
+  const credit = token_quota > 0 ? tokensToRequestQuota(token_quota) : 0;
+  const result = stmts.updatePackage.run(String(name || "").trim(), amount, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, id);
+  if (!result.changes) throw new Error(`Package not found: ${id}`);
+  return getPackage(id);
+}
+
 function getStats() {
   const counts = {};
   for (const row of stmts.countByStatus.all()) counts[row.status] = row.cnt;
@@ -177,4 +197,4 @@ function getStats() {
   };
 }
 
-module.exports = { listPackages, getPackage, getOrder, getOrderByCode, getOrderByApiKey, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, getStats };
+module.exports = { listPackages, listAllPackages, getPackage, getOrder, getOrderByCode, getOrderByApiKey, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, updatePackage, getStats };

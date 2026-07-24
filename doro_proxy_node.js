@@ -47,8 +47,6 @@ const orders = require("./orders");
 const mailer = require("./mailer");
 const ipGuard = require("./ip-guard");
 const {
-  getPackageRequestQuota,
-  getPackageTokenQuota,
   getTokenPerRequest,
 } = require("./package_quotas");
 const { ResponseCache } = require("./cache");
@@ -5997,8 +5995,8 @@ async function processPayment(orderCode, amount, note) {
 
   // Tạo API key và nạp credit — đọc expires_at từ cột riêng
   const expiresAt = order.expires_at || null;
-  const tokenRemaining = getPackageTokenQuota(order.package_id);
-  const requestQuota = tokenRemaining > 0 ? getPackageRequestQuota(order.package_id) : order.credit;
+  const tokenRemaining = Math.max(0, Number(order.token_quota || 0));
+  const requestQuota = Number(order.credit || 0);
   const keyRow = credit.createKey({ label: `${order.customer_name} (${order.package_id})`, credit: requestQuota, rpmLimit: order.rpm_limit, expiresAt, tokenRemaining });
   orders.markPaid(order.id, keyRow.key, note || "");
   addLog(`webhook: paid code=${orderCode} key=${keyRow.key.slice(0,16)}...`);
@@ -6824,6 +6822,39 @@ app.get("/api/credit/stats", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   res.json(credit.getStats());
+});
+
+app.get("/api/admin/packages", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({ packages: orders.listAllPackages(), token_per_request: getTokenPerRequest() });
+});
+
+app.put("/api/admin/packages/:id", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const id = String(req.params.id || "").trim();
+  if (!/^[a-z][a-z0-9_]{0,19}$/i.test(id)) return res.status(400).json({ detail: "Invalid package id" });
+  const body = req.body || {};
+  const tokenQuota = Math.max(0, Math.floor(Number(body.token_quota) || 0));
+  const price = Math.max(0, Math.floor(Number(body.price) || 0));
+  const rpmLimit = Math.max(1, Math.floor(Number(body.rpm_limit) || 10));
+  const name = String(body.name || "").trim();
+  if (!name || name.length > 100) return res.status(400).json({ detail: "Package name must be 1-100 characters" });
+  try {
+    const pkg = orders.updatePackage(id, {
+      name,
+      price,
+      tokenQuota,
+      rpmLimit,
+      description: String(body.description || "").trim(),
+      active: !!body.active,
+    });
+    addLog(`PACKAGE UPDATE id=${id} token_quota=${pkg.token_quota} credit=${pkg.credit}`);
+    res.json({ ok: true, package: pkg });
+  } catch (err) {
+    res.status(400).json({ detail: err.message });
+  }
 });
 
 app.get("/api/credit/keys", (req, res) => {
