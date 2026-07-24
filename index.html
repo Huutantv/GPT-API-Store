@@ -156,7 +156,7 @@ pre code{display:block}
 <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-primary rounded-full text-xs font-bold">ĐANG MỞ BÁN</div>
 <h3 class="text-lg font-bold mb-1">Starter</h3>
 <p class="text-gray-500 text-sm mb-2">D&#249;ng th&#7917;, c&#225; nh&#226;n</p>
-<div class="mb-1"><span class="text-4xl font-black line-through text-gray-500 text-2xl">30K</span> <span class="text-4xl font-black text-red-400">20K</span><span class="text-gray-400 text-sm ml-1">VN&#272;</span></div>
+<div class="mb-1"><span class="text-4xl font-black text-red-400" data-package-price="starter">20K</span><span class="text-gray-400 text-sm ml-1">VN&#272;</span></div>
 <p class="text-xs text-red-400 mb-1">&#x1F525; Sale c&#243; th&#7901;i h&#7841;n</p>
 <p class="text-xs text-primary mb-2">20K VND s&#7869; &#273;&#432;&#7907;c 30M token</p>
 <ul class="text-sm text-gray-300 space-y-3 mb-8 flex-1">
@@ -174,7 +174,7 @@ pre code{display:block}
 <div class="absolute top-3 right-3 px-2 py-0.5 bg-primary/20 border border-primary/30 rounded text-xs text-primary font-bold">M&#7902; B&#193;N</div>
 <h3 class="text-lg font-bold mb-1">Pro</h3>
 <p class="text-gray-500 text-sm mb-2">Developer, freelancer</p>
-<div class="mb-1"><span class="text-4xl font-black">270K</span><span class="text-gray-400 text-sm ml-1">VN&#272;/th&#225;ng</span></div>
+<div class="mb-1"><span class="text-4xl font-black" data-package-price="pro">270K</span><span class="text-gray-400 text-sm ml-1">VN&#272;/th&#225;ng</span></div>
 <p class="text-xs text-primary mb-6">30M token / ng&#224;y trong 30 ng&#224;y</p>
 <ul class="text-sm text-gray-300 space-y-3 mb-8 flex-1">
 <li>&#x2705; 1 API Key</li>
@@ -192,7 +192,7 @@ pre code{display:block}
 <div class="absolute top-3 right-3 px-2 py-0.5 bg-blue-500/15 border border-blue-400/30 rounded text-xs text-blue-300 font-bold">GÓI MỚI</div>
 <h3 class="text-lg font-bold mb-1">Pro v2</h3>
 <p class="text-gray-500 text-sm mb-2">Developer, freelancer</p>
-<div class="mb-1"><span class="text-4xl font-black">290K</span><span class="text-gray-400 text-sm ml-1">VN&#272;/th&#225;ng</span></div>
+<div class="mb-1"><span class="text-4xl font-black" data-package-price="pro_v2">290K</span><span class="text-gray-400 text-sm ml-1">VN&#272;/th&#225;ng</span></div>
 <p class="text-xs text-blue-300 mb-6">900M token trong 30 ng&#224;y</p>
 <ul class="text-sm text-gray-300 space-y-3 mb-8 flex-1">
 <li>&#x2705; 1 API Key</li>
@@ -209,7 +209,7 @@ pre code{display:block}
 <div class="absolute top-3 right-3 px-2 py-0.5 bg-dark-600 border border-white/10 rounded text-xs text-gray-500">S&#7855;p ra m&#7855;t</div>
 <h3 class="text-lg font-bold mb-1">Ultra</h3>
 <p class="text-gray-500 text-sm mb-2">Team, doanh nghi&#7879;p</p>
-<div class="mb-1"><span class="text-4xl font-black">450K</span><span class="text-gray-400 text-sm ml-1">VN&#272;</span></div>
+<div class="mb-1"><span class="text-4xl font-black" data-package-price="ultra">450K</span><span class="text-gray-400 text-sm ml-1">VN&#272;</span></div>
 <p class="text-xs text-gray-500 mb-6">S&#7855;p c&#244;ng b&#7889;</p>
 <ul class="text-sm text-gray-400 space-y-3 mb-8 flex-1">
 <li>&#x2705; 5 API Keys</li>
@@ -487,7 +487,18 @@ function showTab(id){
     else{btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10';}
   });
 }
+
+fetch('/api/orders/packages')
+  .then(function(response) { return response.ok ? response.json() : null; })
+  .then(function(data) {
+    (data && data.packages || []).forEach(function(pkg) {
+      document.querySelectorAll('[data-package-price="' + pkg.id + '"]').forEach(function(element) {
+        var price = Number(pkg.price || 0);
+        element.textContent = price % 1000 === 0 ? (price / 1000).toLocaleString('vi-VN') + 'K' : price.toLocaleString('vi-VN');
+      });
+    });
+  })
+  .catch(function() {});
 </script>
 </body>
 </html>
-
