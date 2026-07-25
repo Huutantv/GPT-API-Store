@@ -6916,9 +6916,8 @@ app.post("/api/credit/keys", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
   try {
-    const tokenPerRequest = getTokenPerRequest();
     const tokenQuota = optionalPositiveInt(body.token_quota);
-    const creditAmount = tokenQuota ? Math.floor(tokenQuota / tokenPerRequest) : Number(body.credit || 0);
+    const creditAmount = Math.max(0, Math.floor(Number(body.credit) || 0));
     const tokenRemaining = tokenQuota || 0;
     const durationRaw = String(body.duration_days ?? "").trim();
     const durationDays = optionalPositiveInt(durationRaw);
