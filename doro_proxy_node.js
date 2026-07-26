@@ -4298,9 +4298,11 @@ function maybeBackend5Chain(req, res, messages, originalModel, errPayloadFn) {
 // ── Response Cache helpers ───────────────────────────────────────────────────
 // Cache key chỉ bao gồm các field ảnh hưởng đến output. Bỏ qua user/metadata/n.
 // Bỏ qua request chứa ảnh (base64 lớn, giá trị cache thấp).
-function responseCacheKey(body, publicModel, isStream) {
+function responseCacheKey(body, publicModel, isStream, tenantScope) {
   if (!body || typeof body !== "object") return "";
+  if (!tenantScope) return "";
   const fields = {
+    tenant: tenantScope,
     m: String(publicModel || body.model || ""),
     s: !!isStream,
     msg: body.messages,
@@ -4348,10 +4350,14 @@ function responseCacheable(body, isStream) {
 // Phục vụ từ cache nếu có hit. Trả true khi đã gửi response (handler phải return).
 function maybeServeResponseFromCache(req, res, body, publicModel, isStream) {
   if (!responseCacheable(body, isStream)) return false;
-  const key = responseCacheKey(body, publicModel, isStream);
+  const auth = req.__doroAuth;
+  if (!auth || !auth.ok || !auth.token) return false;
+  const tenantScope = crypto.createHash("sha256").update(auth.token).digest("hex");
+  const key = responseCacheKey(body, publicModel, isStream, tenantScope);
   if (!key) return false;
   const hit = responseCache.get(key);
   if (!hit) return false;
+  credit.deductCredit(auth.token, 0, 0, publicModel, req.reqId || "");
   req.obs.cache_hit = true;
   req.obs.backend_id = "cache";
   req.obs.backend_profile = "cache";
@@ -4374,7 +4380,10 @@ function maybeServeResponseFromCache(req, res, body, publicModel, isStream) {
 // (status < 400, không retry, không error) thì lưu vào cache.
 function installResponseCacheCapture(req, res, body, publicModel, isStream) {
   if (!responseCacheable(body, isStream)) return null;
-  const key = responseCacheKey(body, publicModel, isStream);
+  const auth = req.__doroAuth;
+  if (!auth || !auth.ok || !auth.token) return null;
+  const tenantScope = crypto.createHash("sha256").update(auth.token).digest("hex");
+  const key = responseCacheKey(body, publicModel, isStream, tenantScope);
   if (!key) return null;
   const chunks = [];
   const origWrite = res.write.bind(res);
@@ -4411,6 +4420,7 @@ function installResponseCacheCapture(req, res, body, publicModel, isStream) {
 function ensureResponseCache(req, res, body, publicModel, isStream) {
   if (req.__doroCacheHandled) return false;
   req.__doroCacheHandled = true;
+  if (!req.__doroAuth || !req.__doroAuth.ok || !req.__doroAuth.token) return false;
   if (maybeServeResponseFromCache(req, res, body, publicModel, isStream)) return true;
   installResponseCacheCapture(req, res, body, publicModel, isStream);
   return false;
@@ -4418,6 +4428,7 @@ function ensureResponseCache(req, res, body, publicModel, isStream) {
 
 app.post(["/v1/messages", "/messages"], async (req, res) => {
   const auth = checkAuth(req);
+  req.__doroAuth = auth;
   req.obs.api_key_masked = maskSecret(auth.token || extractToken(req));
   if (!auth.ok) {
     req.obs.error_type = "auth";
@@ -5449,6 +5460,16 @@ app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
 });
 
 app.post(["/v1/responses", "/responses"], async (req, res) => {
+  const auth = checkAuth(req);
+  req.__doroAuth = auth;
+  req.obs.api_key_masked = maskSecret(auth.token || extractToken(req));
+  if (!auth.ok) {
+    req.obs.error_type = "auth";
+    req.obs.error_message = auth.message;
+    const context = authErrorContext(req, auth);
+    const message = authErrorMessage(req, auth, context);
+    return res.status(auth.status).json(openaiErrorPayload(auth.status, message, auth.status === 401 ? "authentication_error" : "permission_error", auth.code, context));
+  }
   const original = req.body || {};
   const wantsStream = !!original.stream;
   const publicModel = publicModelName(original.model || "opus");
@@ -5514,7 +5535,8 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
 });
 
 async function openAIChatCompletionsHandler(req, res) {
-  const auth = checkAuth(req);
+  const auth = req.__doroAuth || checkAuth(req);
+  req.__doroAuth = auth;
   req.obs.api_key_masked = maskSecret(auth.token || extractToken(req));
   if (!auth.ok) {
     req.obs.error_type = "auth";
