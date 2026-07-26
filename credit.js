@@ -12,7 +12,9 @@ const {
   getTokenPerRequest,
 } = require("./package_quotas");
 
-const DB_PATH = path.join(__dirname, "credit.db");
+const DB_PATH = process.env.DORO_DB_PATH
+  ? path.resolve(process.env.DORO_DB_PATH)
+  : path.join(__dirname, "credit.db");
 const db = new Database(DB_PATH);
 
 // ── Khởi tạo schema ──────────────────────────────────────────────────────────
@@ -59,6 +61,20 @@ db.exec(`
     tokens      INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (key, day)
   );
+
+  CREATE TABLE IF NOT EXISTS request_reservations (
+    req_id          TEXT PRIMARY KEY,
+    key             TEXT NOT NULL,
+    model           TEXT NOT NULL DEFAULT '',
+    state           TEXT NOT NULL CHECK (state IN ('reserved', 'settled', 'refunded')),
+    quota_mode      INTEGER NOT NULL DEFAULT 0,
+    token_debit     INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at    TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_request_reservations_key_state
+    ON request_reservations(key, state);
 `);
 
 // Migration: thêm cột token_remaining nếu chưa có
@@ -88,6 +104,12 @@ const stmts = {
   cleanRpm:     db.prepare("DELETE FROM rpm_buckets WHERE minute < ?"),
   getDailyUsage: db.prepare("SELECT tokens FROM token_daily_usage WHERE key = ? AND day = ?"),
   upsertDailyUsage: db.prepare("INSERT INTO token_daily_usage (key, day, tokens) VALUES (?, ?, ?) ON CONFLICT(key, day) DO UPDATE SET tokens = tokens + excluded.tokens"),
+  getReservation: db.prepare("SELECT * FROM request_reservations WHERE req_id = ?"),
+  insertReservation: db.prepare("INSERT INTO request_reservations (req_id, key, model, state, quota_mode) VALUES (?, ?, ?, 'reserved', ?)"),
+  countPendingReservations: db.prepare("SELECT COUNT(*) AS count FROM request_reservations WHERE key = ? AND state = 'reserved'"),
+  settleReservation: db.prepare("UPDATE request_reservations SET state = 'settled', token_debit = ?, completed_at = datetime('now') WHERE req_id = ? AND state = 'reserved'"),
+  refundReservation: db.prepare("UPDATE request_reservations SET state = 'refunded', completed_at = datetime('now') WHERE req_id = ? AND state = 'reserved'"),
+  reserveCredit: db.prepare("UPDATE api_keys SET credit = credit - 1 WHERE key = ? AND credit > 0"),
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -234,6 +256,139 @@ function checkRpm(apiKey, rpmLimit) {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString().slice(0, 16).replace("T", " ");
   stmts.cleanRpm.run(fiveMinAgo);
   return { ok: true };
+}
+
+function reservationError(status, message, code) {
+  return { ok: false, status, message, ...(code ? { code } : {}) };
+}
+
+function validateReservableKey(row) {
+  if (!row) return reservationError(403, "Invalid API key");
+  if (!row.active) return reservationError(403, "API key is disabled");
+  const expiresAt = parseExpiryTime(row.expires_at);
+  if (expiresAt && expiresAt < new Date()) {
+    return reservationError(403, "API key has expired", "api_key_expired");
+  }
+  if (Number(row.credit || 0) <= 0) {
+    return reservationError(429, `Insufficient credit. Please top up at ${process.env.DORO_PUBLIC_URL || "https://zplay.io.vn"}`, "insufficient_credit");
+  }
+  if (isDailyLimitedQuotaKey(row) && getDailyTokenUsed(row.key) >= 30000000) {
+    return reservationError(429, "Daily token limit reached: 30M tokens. Please try again tomorrow.", "daily_token_limit");
+  }
+  return { ok: true };
+}
+
+const reserveRequestTransaction = db.transaction((apiKey, reqId, model) => {
+  const existing = stmts.getReservation.get(reqId);
+  if (existing) {
+    if (existing.key !== apiKey) return reservationError(409, "Request ID is already assigned to another API key", "duplicate_request_id");
+    if (existing.state === "refunded") return reservationError(409, "Request reservation was already refunded", "reservation_refunded");
+    return { ok: true, reservation: existing, duplicate: true };
+  }
+
+  const row = stmts.getKey.get(apiKey);
+  const validity = validateReservableKey(row);
+  if (!validity.ok) return validity;
+
+  const minute = currentMinute();
+  const rpm = stmts.getRpmCount.get(apiKey, minute);
+  const rpmLimit = Math.max(1, Number(row.rpm_limit || 10));
+  if (Number((rpm && rpm.count) || 0) >= rpmLimit) {
+    return reservationError(429, `Rate limit exceeded: ${rpmLimit} RPM. Please slow down.`, "rate_limit_exceeded");
+  }
+
+  const reserved = stmts.reserveCredit.run(apiKey);
+  if (reserved.changes !== 1) {
+    return reservationError(429, `Insufficient credit. Please top up at ${process.env.DORO_PUBLIC_URL || "https://zplay.io.vn"}`, "insufficient_credit");
+  }
+  stmts.upsertRpm.run(apiKey, minute);
+  stmts.insertReservation.run(reqId, apiKey, String(model || ""), isQuotaKey(row) ? 1 : 0);
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString().slice(0, 16).replace("T", " ");
+  stmts.cleanRpm.run(fiveMinAgo);
+  return { ok: true, reservation: stmts.getReservation.get(reqId), remaining: Number(row.credit) - 1 };
+});
+
+function reserveRequest(apiKey, reqId, model = "") {
+  const key = String(apiKey || "").trim();
+  const id = String(reqId || "").trim();
+  if (!key) return reservationError(401, "Missing API key");
+  if (!id) return reservationError(400, "Missing request ID", "missing_request_id");
+  return reserveRequestTransaction.immediate(key, id, model);
+}
+
+const settleRequestTransaction = db.transaction((reqId, tokensIn, tokensOut, model) => {
+  const reservation = stmts.getReservation.get(reqId);
+  if (!reservation) return { ok: false, state: "missing" };
+  if (reservation.state !== "reserved") return { ok: reservation.state === "settled", state: reservation.state, duplicate: true };
+
+  const row = stmts.getKey.get(reservation.key);
+  if (!row) {
+    stmts.refundReservation.run(reqId);
+    return { ok: false, state: "refunded", message: "API key no longer exists" };
+  }
+
+  let cost = tokensToCredit(tokensIn, tokensOut);
+  let tIn = Math.max(0, Number(tokensIn || 0));
+  let tOut = Math.max(0, Number(tokensOut || 0));
+  let tokenDebit = 0;
+
+  if (reservation.quota_mode) {
+    cost = 1;
+    const tokenRemaining = Math.max(0, Number(row.token_remaining || 0));
+    const pending = Number(stmts.countPendingReservations.get(reservation.key).count || 0);
+    const requestShares = Math.max(1, Number(row.credit || 0) + pending);
+    if (tokenRemaining > 0) {
+      const target = Math.max(1, Math.floor(tokenRemaining / requestShares));
+      const min = Math.max(1, Math.floor(target * 0.8));
+      const max = Math.max(min, Math.ceil(target * 1.2));
+      const remainingShares = Math.max(0, requestShares - 1);
+      const low = Math.max(1, min, tokenRemaining - (remainingShares * max));
+      const high = Math.min(max, tokenRemaining - (remainingShares * min));
+      tokenDebit = requestShares <= 1
+        ? tokenRemaining
+        : (low <= high ? crypto.randomInt(low, high + 1) : Math.min(target, tokenRemaining));
+      const minIn = Math.max(1, Math.floor(tokenDebit * 0.25));
+      const maxIn = Math.max(minIn, tokenDebit - 1);
+      tIn = tokenDebit <= 1 ? tokenDebit : crypto.randomInt(minIn, maxIn + 1);
+      tOut = Math.max(0, tokenDebit - tIn);
+      stmts.setTokenRemaining.run(Math.max(0, tokenRemaining - tokenDebit), reservation.key);
+      if (isDailyLimitedQuotaKey(row)) stmts.upsertDailyUsage.run(reservation.key, currentVNDay(), tokenDebit);
+    } else {
+      tIn = 0;
+      tOut = 0;
+    }
+  } else {
+    const additionalCost = Math.max(0, cost - 1);
+    if (additionalCost > 0) {
+      db.prepare("UPDATE api_keys SET credit = MAX(0, credit - ?) WHERE key = ?").run(additionalCost, reservation.key);
+    }
+  }
+
+  stmts.insertTxn.run(reservation.key, -cost, "usage", tIn, tOut, model || reservation.model || "", reqId);
+  stmts.settleReservation.run(tokenDebit, reqId);
+  const updated = stmts.getKey.get(reservation.key);
+  return { ok: true, state: "settled", credited: cost, remaining: updated ? updated.credit : 0, token_remaining: updated ? updated.token_remaining : 0 };
+});
+
+function settleRequest(reqId, tokensIn, tokensOut, model = "") {
+  const id = String(reqId || "").trim();
+  if (!id) return { ok: false, state: "missing" };
+  return settleRequestTransaction.immediate(id, tokensIn, tokensOut, model);
+}
+
+const refundRequestTransaction = db.transaction((reqId) => {
+  const reservation = stmts.getReservation.get(reqId);
+  if (!reservation) return { ok: false, state: "missing" };
+  if (reservation.state !== "reserved") return { ok: true, state: reservation.state, duplicate: true };
+  const updated = stmts.refundReservation.run(reqId);
+  if (updated.changes === 1 && stmts.getKey.get(reservation.key)) stmts.updateCredit.run(1, reservation.key);
+  return { ok: true, state: "refunded" };
+});
+
+function refundRequest(reqId) {
+  const id = String(reqId || "").trim();
+  if (!id) return { ok: false, state: "missing" };
+  return refundRequestTransaction.immediate(id);
 }
 
 /**
@@ -465,6 +620,9 @@ module.exports = {
   checkCreditAuth,
   checkRpm,
   deductCredit,
+  reserveRequest,
+  settleRequest,
+  refundRequest,
   topupCredit,
   adjustCredit,
   adjustToken,

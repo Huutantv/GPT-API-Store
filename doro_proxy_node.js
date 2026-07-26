@@ -1674,6 +1674,35 @@ function checkAuth(req) {
   return { ok: true, token, keyRow: result.keyRow };
 }
 
+function reserveAuthenticatedRequest(req, res, auth, model) {
+  if (req.__doroReservation) return { ok: true, reservation: req.__doroReservation, duplicate: true };
+  const result = credit.reserveRequest(auth && auth.token, req.reqId, model);
+  if (!result.ok) return result;
+  req.__doroReservation = result.reservation;
+
+  const refundUnsettled = () => {
+    try {
+      const refund = credit.refundRequest(req.reqId);
+      if (refund.ok && refund.state === "refunded" && !refund.duplicate) {
+        addLog(`CREDIT REFUND req=${req.reqId} key=${maskSecret(auth.token)}`);
+      }
+    } catch (err) {
+      addLog(`CREDIT REFUND ERROR req=${req.reqId} ${err.message}`);
+    }
+  };
+  res.once("finish", refundUnsettled);
+  res.once("close", refundUnsettled);
+  return result;
+}
+
+function settleAuthenticatedRequest(req, tokensIn, tokensOut, model) {
+  const result = credit.settleRequest(req.reqId, tokensIn, tokensOut, model);
+  if (!result.ok && result.state !== "settled") {
+    throw new Error(`Unable to settle request credit: ${result.state || "unknown"}`);
+  }
+  return result;
+}
+
 function checkAdminAuth(req) {
   const adminKey = String(process.env.DORO_ADMIN_KEY || "").trim();
   if (!adminKey) return { ok: true };
@@ -3554,7 +3583,6 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
   const outputTokens = usage.completion_tokens || usage.output_tokens || 0;
   sseWrite(res, "message_delta", { type: "message_delta", delta: { stop_reason: mapFinishReason(finishReason, hasToolCalls), stop_sequence: null }, usage: { output_tokens: outputTokens } });
   sseWrite(res, "message_stop", { type: "message_stop" });
-  res.end();
   return usage.total_tokens || outputTokens || 0;
 }
 
@@ -3611,7 +3639,6 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
   if (!sawStop) {
     throw incompleteBackendStreamError("Backend stream ended after partial output without message_stop (Anthropic pipe)");
   }
-  res.end();
   return inputTokens + outputTokens;
 }
 
@@ -3766,15 +3793,12 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           : pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages));
       });
       if (stopHeartbeat) stopHeartbeat();
-      // Trừ credit sau khi stream xong
-      if (apiKeyToken && tokens > 0) {
-        const tokensIn = Math.floor(tokens * 0.4);
-        const tokensOut = tokens - tokensIn;
-        credit.deductCredit(apiKeyToken, tokensIn, tokensOut, modelName, reqId || "");
-      }
+      const tokensIn = Math.floor(tokens * 0.4);
+      const tokensOut = tokens - tokensIn;
+      credit.settleRequest(reqId || "", tokensIn, tokensOut, modelName || "");
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
-      return;
+      return res.end();
     } catch (err) {
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
@@ -3978,12 +4002,12 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       if (apiKeyToken && totalTokens > 0) {
         const tokensIn = Math.floor(totalTokens * 0.4);
         const tokensOut = totalTokens - tokensIn;
-        credit.deductCredit(apiKeyToken, tokensIn, tokensOut, modelName || "", reqId || "");
+        credit.settleRequest(reqId || "", tokensIn, tokensOut, modelName || "");
       } else if (apiKeyToken) {
         // Fallback: ước tính từ input messages nếu backend không trả usage
         const inputText = JSON.stringify(payload.messages || []);
         const estTokens = Math.ceil(inputText.length / 4) + 200;
-        credit.deductCredit(apiKeyToken, Math.floor(estTokens * 0.7), Math.ceil(estTokens * 0.3), modelName || "", reqId || "");
+        credit.settleRequest(reqId || "", Math.floor(estTokens * 0.7), Math.ceil(estTokens * 0.3), modelName || "");
       }
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
       return res.end();
@@ -4357,7 +4381,7 @@ function maybeServeResponseFromCache(req, res, body, publicModel, isStream) {
   if (!key) return false;
   const hit = responseCache.get(key);
   if (!hit) return false;
-  credit.deductCredit(auth.token, 0, 0, publicModel, req.reqId || "");
+  settleAuthenticatedRequest(req, 0, 0, publicModel);
   req.obs.cache_hit = true;
   req.obs.backend_id = "cache";
   req.obs.backend_profile = "cache";
@@ -4459,6 +4483,12 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  const admission = reserveAuthenticatedRequest(req, res, auth, originalModel);
+  if (!admission.ok) {
+    req.obs.error_type = admission.code === "rate_limit_exceeded" ? "rate_limit" : "credit";
+    req.obs.error_message = admission.message;
+    return res.status(admission.status || 429).json(anthropicErrorPayload(admission.status || 429, admission.message, "permission_error", admission.code));
+  }
   if (ensureResponseCache(req, res, body, publicModel, useStream)) return;
   const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
@@ -4559,8 +4589,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     const tokensOut = Number((data.usage || {}).completion_tokens || 0);
     stats.requests += 1;
     stats.tokens += tokens;
-    // Trừ credit
-    if (auth.token) credit.deductCredit(auth.token, tokensIn, tokensOut, originalModel, req.reqId || "");
+    settleAuthenticatedRequest(req, tokensIn, tokensOut, originalModel);
     addLog(`ok ant ${originalModel} tokens=${tokens}`);
     return res.json(out);
   } catch (err) {
@@ -5506,6 +5535,12 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     parallel_tool_calls: original.parallel_tool_calls,
     stream: wantsStream,
   };
+  const admission = reserveAuthenticatedRequest(req, res, auth, original.model || "opus");
+  if (!admission.ok) {
+    req.obs.error_type = admission.code === "rate_limit_exceeded" ? "rate_limit" : "credit";
+    req.obs.error_message = admission.message;
+    return res.status(admission.status || 429).json(openaiErrorPayload(admission.status || 429, admission.message, "permission_error", admission.code));
+  }
   if (ensureResponseCache(req, res, req.body, publicModel, wantsStream)) return;
   if (wantsStream) {
     res.statusCode = 200;
@@ -5566,6 +5601,12 @@ async function openAIChatCompletionsHandler(req, res) {
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  const admission = reserveAuthenticatedRequest(req, res, auth, originalModel);
+  if (!admission.ok) {
+    req.obs.error_type = admission.code === "rate_limit_exceeded" ? "rate_limit" : "credit";
+    req.obs.error_message = admission.message;
+    return res.status(admission.status || 429).json(openaiErrorPayload(admission.status || 429, admission.message, "permission_error", admission.code));
+  }
   if (ensureResponseCache(req, res, body, publicModel, !!body.stream)) return;
   const settingsChain = b5.handled ? b5.chain : getSettingsChain(originalModel);
   const settings = settingsChain[0];
@@ -5736,8 +5777,7 @@ async function openAIChatCompletionsHandler(req, res) {
     const tokensOut = Number((data.usage || {}).completion_tokens || 0);
     stats.requests += 1;
     stats.tokens += tokens;
-    // Trừ credit
-    if (auth.token) credit.deductCredit(auth.token, tokensIn, tokensOut, originalModel, req.reqId || "");
+    settleAuthenticatedRequest(req, tokensIn, tokensOut, originalModel);
     addLog(`ok oai ${originalModel} tokens=${tokens}`);
     return res.json(data);
   } catch (err) {
