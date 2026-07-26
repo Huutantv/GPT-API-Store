@@ -1507,11 +1507,42 @@ async function loadKeys() {
       '<td class="px-4 py-3 text-xs text-gray-400">' + formatExpiry(k.expires_at) + '</td>' +
       '<td class="px-4 py-3 text-xs text-gray-500">' + fmtDateVN(k.created_at) + '</td>' +
       '<td class="px-4 py-3 text-right"><div class="flex gap-1 justify-end">' +
+        '<button onclick="adjustKeyCredit(\'' + k.key + '\',1,' + Number(k.credit || 0) + ')" title="Tăng credit" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs font-bold transition">+</button>' +
+        '<button onclick="adjustKeyCredit(\'' + k.key + '\',-1,' + Number(k.credit || 0) + ')" title="Giảm credit" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs font-bold transition">−</button>' +
         '<button onclick="quickTopup(\'' + k.key + '\')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">N\u1ea1p</button>' +
         '<button onclick="toggleKey(\'' + k.key + '\',' + k.active + ')" class="px-2 py-1 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/40 rounded text-xs transition">' + toggleTxt + '</button>' +
         '<button onclick="deleteKey(\'' + k.key + '\')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">X\u00f3a</button>' +
       '</div></td></tr>';
   }).join("");
+}
+
+async function adjustKeyCredit(key, direction, currentCredit) {
+  var action = direction > 0 ? "tăng" : "giảm";
+  var raw = window.prompt("Nhập số Credit muốn " + action + ":", "100");
+  if (raw === null) return;
+  var amount = Math.floor(Number(raw));
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    window.alert("Số Credit phải là số nguyên lớn hơn 0.");
+    return;
+  }
+  if (direction < 0 && amount > Number(currentCredit || 0)) {
+    window.alert("Không thể giảm quá số dư hiện tại (" + Number(currentCredit || 0).toLocaleString("vi-VN") + " Credit).");
+    return;
+  }
+  if (direction < 0 && !window.confirm("Giảm " + amount.toLocaleString("vi-VN") + " Credit khỏi key này?")) return;
+
+  try {
+    var r = await fetch(BASE + "/api/credit/adjust", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ key: key, delta: direction * amount })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Không thể điều chỉnh Credit");
+    await loadKeys();
+  } catch (err) {
+    window.alert(err.message || "Không thể điều chỉnh Credit");
+  }
 }
 
 async function createKey() {

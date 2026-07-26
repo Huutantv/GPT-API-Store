@@ -331,6 +331,24 @@ function topupCredit(apiKey, amount, reason = "topup", tokenAmount = 0) {
   return { key: apiKey, credit: updated.credit, token_remaining: updated.token_remaining };
 }
 
+function adjustCredit(apiKey, delta, reason = "admin_adjustment") {
+  const amount = Math.trunc(Number(delta));
+  if (!Number.isSafeInteger(amount) || amount === 0) throw new Error("Credit adjustment must be a non-zero integer");
+
+  const adjust = db.transaction(() => {
+    const row = stmts.getKey.get(apiKey);
+    if (!row) throw new Error("Key not found");
+    const nextCredit = Number(row.credit || 0) + amount;
+    if (nextCredit < 0) throw new Error("Credit cannot be reduced below zero");
+    stmts.setCredit.run(nextCredit, apiKey);
+    stmts.insertTxn.run(apiKey, amount, reason, 0, 0, "", "");
+    return stmts.getKey.get(apiKey);
+  });
+
+  const updated = adjust();
+  return { key: apiKey, delta: amount, credit: updated.credit, token_remaining: updated.token_remaining };
+}
+
 /**
  * Tạo key mới
  */
@@ -429,6 +447,7 @@ module.exports = {
   checkRpm,
   deductCredit,
   topupCredit,
+  adjustCredit,
   createKey,
   createManualKey,
   deleteKey,

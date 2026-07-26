@@ -6978,6 +6978,25 @@ app.post("/api/credit/topup", (req, res) => {
   }
 });
 
+app.post("/api/credit/adjust", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const key = String(body.key || "").trim();
+  const delta = Number(body.delta);
+  if (!key || !Number.isSafeInteger(delta) || delta === 0) {
+    return res.status(400).json({ detail: "Key and a non-zero integer delta are required" });
+  }
+  try {
+    const reason = delta > 0 ? "admin_credit_increase" : "admin_credit_decrease";
+    const result = credit.adjustCredit(key, delta, reason);
+    addLog(`CREDIT ADJUST ${key.slice(0, 20)} delta=${delta} -> ${result.credit}`);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(err.message === "Key not found" ? 404 : 400).json({ detail: err.message });
+  }
+});
+
 app.post("/api/credit/set-active", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
