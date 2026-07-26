@@ -76,6 +76,7 @@ const stmts = {
   updateCredit: db.prepare("UPDATE api_keys SET credit = credit + ? WHERE key = ?"),
   updateTokenRemaining: db.prepare("UPDATE api_keys SET token_remaining = token_remaining + ? WHERE key = ?"),
   setCredit:    db.prepare("UPDATE api_keys SET credit = ? WHERE key = ?"),
+  setTokenRemaining: db.prepare("UPDATE api_keys SET token_remaining = ? WHERE key = ?"),
   setActive:    db.prepare("UPDATE api_keys SET active = ? WHERE key = ?"),
   deleteKey:    db.prepare("DELETE FROM api_keys WHERE key = ?"),
   insertTxn:    db.prepare("INSERT INTO credit_txns (key, delta, reason, tokens_in, tokens_out, model, req_id) VALUES (?, ?, ?, ?, ?, ?, ?)"),
@@ -349,6 +350,24 @@ function adjustCredit(apiKey, delta, reason = "admin_adjustment") {
   return { key: apiKey, delta: amount, credit: updated.credit, token_remaining: updated.token_remaining };
 }
 
+function adjustToken(apiKey, delta, reason = "admin_token_adjustment") {
+  const amount = Math.trunc(Number(delta));
+  if (!Number.isSafeInteger(amount) || amount === 0) throw new Error("Token adjustment must be a non-zero integer");
+
+  const adjust = db.transaction(() => {
+    const row = stmts.getKey.get(apiKey);
+    if (!row) throw new Error("Key not found");
+    const nextTokens = Number(row.token_remaining || 0) + amount;
+    if (nextTokens < 0) throw new Error("Token balance cannot be reduced below zero");
+    stmts.setTokenRemaining.run(nextTokens, apiKey);
+    stmts.insertTxn.run(apiKey, 0, `${reason}:${amount}`, 0, 0, "", "");
+    return stmts.getKey.get(apiKey);
+  });
+
+  const updated = adjust();
+  return { key: apiKey, delta: amount, credit: updated.credit, token_remaining: updated.token_remaining };
+}
+
 /**
  * Tạo key mới
  */
@@ -448,6 +467,7 @@ module.exports = {
   deductCredit,
   topupCredit,
   adjustCredit,
+  adjustToken,
   createKey,
   createManualKey,
   deleteKey,

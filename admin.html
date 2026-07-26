@@ -209,18 +209,19 @@ body{font-family:'Inter',sans-serif}
   </div>
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
-    <table class="w-full text-sm min-w-[700px]">
+    <table class="w-full text-sm min-w-[900px]">
       <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
         <th class="text-left px-4 py-3">Key</th>
         <th class="text-left px-4 py-3">Nh&#227;n</th>
         <th class="text-right px-4 py-3">Credit</th>
+        <th class="text-right px-4 py-3">Token</th>
         <th class="text-right px-4 py-3">RPM</th>
         <th class="text-left px-4 py-3">Tr&#7841;ng th&#225;i</th>
         <th class="text-left px-4 py-3">H&#7871;t h&#7841;n</th>
         <th class="text-left px-4 py-3">Ng&#224;y t&#7841;o</th>
         <th class="text-right px-4 py-3">Thao t&#225;c</th>
       </tr></thead>
-      <tbody id="keysTable"><tr><td colspan="8" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
+      <tbody id="keysTable"><tr><td colspan="9" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
     </div>
   </div>
@@ -1488,7 +1489,7 @@ async function loadKeys() {
   var tbody = document.getElementById("keysTable");
   var keys = data.keys || [];
   if (!keys.length) {
-    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">Ch\u01b0a c\u00f3 key n\u00e0o</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center text-gray-500 py-8">Ch\u01b0a c\u00f3 key n\u00e0o</td></tr>';
     return;
   }
   tbody.innerHTML = keys.map(function(k) {
@@ -1502,13 +1503,16 @@ async function loadKeys() {
         ' <button onclick="copyText(\'' + k.key + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button></td>' +
       '<td class="px-4 py-3 text-sm">' + (k.label || '<span class="text-gray-500">\u2014</span>') + '</td>' +
       '<td class="px-4 py-3 text-right font-bold ' + cCls + '">' + Number(k.credit).toLocaleString() + '</td>' +
+      '<td class="px-4 py-3 text-right text-cyan-300">' + Number(k.token_remaining || 0).toLocaleString("vi-VN") + '</td>' +
       '<td class="px-4 py-3 text-right text-gray-300">' + k.rpm_limit + '</td>' +
       '<td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ' + sCls + '">' + sTxt + '</span></td>' +
       '<td class="px-4 py-3 text-xs text-gray-400">' + formatExpiry(k.expires_at) + '</td>' +
       '<td class="px-4 py-3 text-xs text-gray-500">' + fmtDateVN(k.created_at) + '</td>' +
       '<td class="px-4 py-3 text-right"><div class="flex gap-1 justify-end">' +
-        '<button onclick="adjustKeyCredit(\'' + k.key + '\',1,' + Number(k.credit || 0) + ')" title="Tăng credit" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs font-bold transition">+</button>' +
-        '<button onclick="adjustKeyCredit(\'' + k.key + '\',-1,' + Number(k.credit || 0) + ')" title="Giảm credit" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs font-bold transition">−</button>' +
+        '<button onclick="adjustKeyCredit(\'' + k.key + '\',1,' + Number(k.credit || 0) + ')" title="Tăng Credit" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs font-bold transition">C+</button>' +
+        '<button onclick="adjustKeyCredit(\'' + k.key + '\',-1,' + Number(k.credit || 0) + ')" title="Giảm Credit" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs font-bold transition">C−</button>' +
+        '<button onclick="adjustKeyToken(\'' + k.key + '\',1,' + Number(k.token_remaining || 0) + ')" title="Tăng Token" class="px-2 py-1 bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 rounded text-xs font-bold transition">T+</button>' +
+        '<button onclick="adjustKeyToken(\'' + k.key + '\',-1,' + Number(k.token_remaining || 0) + ')" title="Giảm Token" class="px-2 py-1 bg-orange-600/20 text-orange-300 hover:bg-orange-600/40 rounded text-xs font-bold transition">T−</button>' +
         '<button onclick="quickTopup(\'' + k.key + '\')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">N\u1ea1p</button>' +
         '<button onclick="toggleKey(\'' + k.key + '\',' + k.active + ')" class="px-2 py-1 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/40 rounded text-xs transition">' + toggleTxt + '</button>' +
         '<button onclick="deleteKey(\'' + k.key + '\')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">X\u00f3a</button>' +
@@ -1542,6 +1546,35 @@ async function adjustKeyCredit(key, direction, currentCredit) {
     await loadKeys();
   } catch (err) {
     window.alert(err.message || "Không thể điều chỉnh Credit");
+  }
+}
+
+async function adjustKeyToken(key, direction, currentTokens) {
+  var action = direction > 0 ? "tăng" : "giảm";
+  var raw = window.prompt("Nhập số Token muốn " + action + ":", "1000000");
+  if (raw === null) return;
+  var amount = Math.floor(Number(raw));
+  if (!Number.isSafeInteger(amount) || amount <= 0) {
+    window.alert("Số Token phải là số nguyên lớn hơn 0.");
+    return;
+  }
+  if (direction < 0 && amount > Number(currentTokens || 0)) {
+    window.alert("Không thể giảm quá số Token hiện tại (" + Number(currentTokens || 0).toLocaleString("vi-VN") + ").");
+    return;
+  }
+  if (direction < 0 && !window.confirm("Giảm " + amount.toLocaleString("vi-VN") + " Token khỏi key này?")) return;
+
+  try {
+    var r = await fetch(BASE + "/api/credit/adjust-token", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ key: key, delta: direction * amount })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Không thể điều chỉnh Token");
+    await loadKeys();
+  } catch (err) {
+    window.alert(err.message || "Không thể điều chỉnh Token");
   }
 }
 
