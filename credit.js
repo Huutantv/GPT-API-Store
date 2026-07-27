@@ -26,7 +26,7 @@ db.exec(`
     key            TEXT PRIMARY KEY,
     label          TEXT NOT NULL DEFAULT '',
     credit         INTEGER NOT NULL DEFAULT 0,
-    rpm_limit      INTEGER NOT NULL DEFAULT 10,
+    rpm_limit      INTEGER NOT NULL DEFAULT 30,
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
     expires_at     TEXT,
     active         INTEGER NOT NULL DEFAULT 1,
@@ -83,6 +83,9 @@ try { db.exec("ALTER TABLE api_keys ADD COLUMN token_remaining INTEGER NOT NULL 
 // Migration: thêm cột duration_days và first_used_at
 try { db.exec("ALTER TABLE api_keys ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 try { db.exec("ALTER TABLE api_keys ADD COLUMN first_used_at TEXT"); } catch (_) {}
+
+// Đồng bộ toàn bộ key hiện có với chính sách RPM hiện tại.
+db.exec("UPDATE api_keys SET rpm_limit = 30");
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
@@ -292,7 +295,7 @@ const reserveRequestTransaction = db.transaction((apiKey, reqId, model) => {
 
   const minute = currentMinute();
   const rpm = stmts.getRpmCount.get(apiKey, minute);
-  const rpmLimit = Math.max(1, Number(row.rpm_limit || 10));
+  const rpmLimit = Math.max(1, Number(row.rpm_limit || 30));
   if (Number((rpm && rpm.count) || 0) >= rpmLimit) {
     return reservationError(429, `Rate limit exceeded: ${rpmLimit} RPM. Please slow down.`, "rate_limit_exceeded");
   }
@@ -526,12 +529,12 @@ function adjustToken(apiKey, delta, reason = "admin_token_adjustment") {
 /**
  * Tạo key mới
  */
-function createKey({ label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
+function createKey({ label = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const key = generateKey();
   return createManualKey({ key, label, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
 }
 
-function createManualKey({ key, label = "", credit = 0, rpmLimit = 10, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
+function createManualKey({ key, label = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const apiKey = String(key || "").trim();
   if (!apiKey) throw new Error("Manual key is required");
   if (/\s/.test(apiKey)) throw new Error("Manual key must not contain spaces");

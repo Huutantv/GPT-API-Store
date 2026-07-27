@@ -203,7 +203,7 @@ function config() {
   return {
     enabled: envFlag(process.env.DORO_IPGUARD_ENABLED, true),
     rpsLimit: envInt(process.env.DORO_IPGUARD_RPS_LIMIT, 25),
-    rpmLimit: envInt(process.env.DORO_IPGUARD_RPM_LIMIT, 400),
+    rpmLimit: envInt(process.env.DORO_IPGUARD_RPM_LIMIT, 30),
     unauthLimit: envInt(process.env.DORO_IPGUARD_UNAUTH_LIMIT, 30),
     err4xxLimit: envInt(process.env.DORO_IPGUARD_ERR4XX_LIMIT || process.env.DORO_IPGUARD_404_LIMIT, 60),
     autoBanMinutes: envInt(process.env.DORO_IPGUARD_AUTO_BAN_MINUTES, 60),

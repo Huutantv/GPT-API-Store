@@ -182,7 +182,7 @@ body{font-family:'Inter',sans-serif}
       <div><label class="text-xs text-gray-400 block mb-1">API key thủ công</label><input id="newManualKey" placeholder="31F4E5C2-C364-4B59-B89C-B5C3A4270AEA" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#7893;ng token</label><input id="newTokenQuota" type="number" min="0" placeholder="30000000" value="30000000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#7893;ng credit</label><input id="newCredit" type="number" min="0" placeholder="350" value="350" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"><p class="text-xs text-gray-500 mt-1">Nhập độc lập với token.</p></div>
-      <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="10" value="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">RPM limit</label><input id="newRpm" type="number" placeholder="30" value="30" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
       <div><label class="text-xs text-gray-400 block mb-1">Th&#7901;i h&#7841;n</label>
         <select id="newExpires" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" onchange="updateExpiryPreview()">
           <option value="">Kh&#244;ng gi&#7899;i h&#7841;n</option>
@@ -517,6 +517,7 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
         <input id="cfg1Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
+      <label class="flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-3 py-2.5 cursor-pointer hover:border-cyan-400/50 transition"><input id="cfg1KeepTools" type="checkbox" class="mt-0.5 w-4 h-4 accent-cyan-500"><span><span class="text-sm font-medium text-cyan-200">Gi&#7919; tools cho Codex</span><span class="block text-xs text-gray-400 mt-0.5">Forward terminal, &#273;&#7885;c v&#224; s&#7917;a file tool calls sang backend.</span></span></label>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend1KeysList" class="space-y-2 mb-2"></div>
@@ -545,6 +546,7 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
         <input id="cfg2Model" placeholder="deepseek-v4-pro" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
+      <label class="flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-3 py-2.5 cursor-pointer hover:border-cyan-400/50 transition"><input id="cfg2KeepTools" type="checkbox" class="mt-0.5 w-4 h-4 accent-cyan-500"><span><span class="text-sm font-medium text-cyan-200">Gi&#7919; tools cho Codex</span><span class="block text-xs text-gray-400 mt-0.5">Forward terminal, &#273;&#7885;c v&#224; s&#7917;a file tool calls sang backend.</span></span></label>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend2KeysList" class="space-y-2 mb-2"></div>
@@ -573,6 +575,7 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
         <input id="cfg3Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
+      <label class="flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-3 py-2.5 cursor-pointer hover:border-cyan-400/50 transition"><input id="cfg3KeepTools" type="checkbox" class="mt-0.5 w-4 h-4 accent-cyan-500"><span><span class="text-sm font-medium text-cyan-200">Gi&#7919; tools cho Codex</span><span class="block text-xs text-gray-400 mt-0.5">Forward terminal, &#273;&#7885;c v&#224; s&#7917;a file tool calls sang backend.</span></span></label>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend3KeysList" class="space-y-2 mb-2"></div>
@@ -601,6 +604,7 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
         <input id="cfg4Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
+      <label class="flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-3 py-2.5 cursor-pointer hover:border-cyan-400/50 transition"><input id="cfg4KeepTools" type="checkbox" class="mt-0.5 w-4 h-4 accent-cyan-500"><span><span class="text-sm font-medium text-cyan-200">Gi&#7919; tools cho Codex</span><span class="block text-xs text-gray-400 mt-0.5">Forward terminal, &#273;&#7885;c v&#224; s&#7917;a file tool calls sang backend.</span></span></label>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend4KeysList" class="space-y-2 mb-2"></div>
@@ -630,6 +634,7 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
         <input id="cfg5Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
+      <label class="flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-3 py-2.5 cursor-pointer hover:border-cyan-400/50 transition"><input id="cfg5KeepTools" type="checkbox" class="mt-0.5 w-4 h-4 accent-cyan-500"><span><span class="text-sm font-medium text-cyan-200">Gi&#7919; tools cho Codex</span><span class="block text-xs text-gray-400 mt-0.5">Forward terminal, &#273;&#7885;c v&#224; s&#7917;a file tool calls sang backend.</span></span></label>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Style</label>
         <select id="cfg5ApiStyle" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
@@ -1409,7 +1414,7 @@ async function loadPackages() {
         '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'price') + '" type="number" min="0" value="' + Number(p.price || 0) + '" class="w-28 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
         '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'tokens') + '" type="number" min="0" value="' + Number(p.token_quota || 0) + '" class="w-40 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
         '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'requests') + '" type="number" min="0" value="' + Number(p.credit || 0) + '" class="w-28 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'rpm') + '" type="number" min="1" value="' + Number(p.rpm_limit || 10) + '" class="w-20 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'rpm') + '" type="number" min="1" value="' + Number(p.rpm_limit || 30) + '" class="w-20 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
         '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'description') + '" value="' + escapeHtml(p.description || '') + '" class="w-56 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"></td>' +
         '<td class="px-4 py-3 text-center"><input id="' + packageFieldId(p.id, 'active') + '" type="checkbox" class="w-4 h-4 accent-primary"' + (p.active ? ' checked' : '') + '></td>' +
         '<td class="px-4 py-3 text-right"><button onclick="savePackage(\'' + p.id + '\')" class="px-3 py-1.5 bg-primary hover:bg-primary/90 rounded text-xs font-semibold transition">Lưu</button></td>' +
@@ -1430,7 +1435,7 @@ async function savePackage(id) {
     price: Number(packageInput(id, 'price').value || 0),
     token_quota: Number(packageInput(id, 'tokens').value || 0),
     request_quota: Number(packageInput(id, 'requests').value || 0),
-    rpm_limit: Number(packageInput(id, 'rpm').value || 10),
+    rpm_limit: Number(packageInput(id, 'rpm').value || 30),
     description: packageInput(id, 'description').value.trim(),
     active: packageInput(id, 'active').checked
   };
@@ -1596,7 +1601,7 @@ async function createKey() {
     manual_key: manualKey,
     credit: creditAmount,
     token_quota: tokenQuota,
-    rpm_limit: Number(document.getElementById("newRpm").value || 10),
+    rpm_limit: Number(document.getElementById("newRpm").value || 30),
     duration_days: days > 0 ? days : "",
     start_from_first_use: document.getElementById("newFirstUse").checked
   };
@@ -2001,6 +2006,8 @@ async function loadBackendConfig() {
     if (summary) summary.textContent = (profile.backend_api_keys || 0) + " keys · Model: " + (profile.backend_model || "—");
     if (baseUrl) baseUrl.value = profile.base_url || "";
     if (model) model.value = profile.backend_model || "";
+    var keepTools = document.getElementById("cfg" + id + "KeepTools");
+    if (keepTools) keepTools.checked = !profile.disable_tools;
     if (apiStyle) apiStyle.value = profile.api_style || (id === 5 ? "anthropic" : "openai");
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
     if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], String(id));
@@ -2102,6 +2109,7 @@ async function saveBackend1Config() {
   var updates = {
     ANTHROPIC_BASE_URL: document.getElementById("cfg1BaseUrl").value.trim(),
     DORO_BACKEND_MODEL: document.getElementById("cfg1Model").value.trim(),
+    DORO_BACKEND1_DISABLE_TOOLS: document.getElementById("cfg1KeepTools").checked ? "0" : "1",
   };
   Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
   if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
@@ -2115,6 +2123,7 @@ async function saveBackendConfig(backend) {
   var updates = {};
   updates["DORO_BACKEND" + backend + "_BASE_URL"] = document.getElementById("cfg" + backend + "BaseUrl").value.trim();
   updates["DORO_BACKEND" + backend + "_MODEL"] = document.getElementById("cfg" + backend + "Model").value.trim();
+  updates["DORO_BACKEND" + backend + "_DISABLE_TOOLS"] = document.getElementById("cfg" + backend + "KeepTools").checked ? "0" : "1";
   var apiStyle = document.getElementById("cfg" + backend + "ApiStyle");
   if (apiStyle) updates["DORO_BACKEND" + backend + "_API_STYLE"] = apiStyle.value;
   Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
@@ -2561,6 +2570,7 @@ async function saveBackend2Config() {
   var updates = {
     DORO_BACKEND2_BASE_URL: document.getElementById("cfg2BaseUrl").value.trim(),
     DORO_BACKEND2_MODEL: document.getElementById("cfg2Model").value.trim(),
+    DORO_BACKEND2_DISABLE_TOOLS: document.getElementById("cfg2KeepTools").checked ? "0" : "1",
   };
   Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
   if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }

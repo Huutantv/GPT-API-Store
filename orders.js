@@ -17,7 +17,7 @@ db.exec(`
     price       INTEGER NOT NULL,
     credit      INTEGER NOT NULL,
     token_quota INTEGER NOT NULL DEFAULT 0,
-    rpm_limit   INTEGER NOT NULL DEFAULT 10,
+    rpm_limit   INTEGER NOT NULL DEFAULT 30,
     description TEXT NOT NULL DEFAULT '',
     active      INTEGER NOT NULL DEFAULT 1
   );
@@ -29,7 +29,7 @@ db.exec(`
     amount        INTEGER NOT NULL,
     credit        INTEGER NOT NULL,
     token_quota   INTEGER NOT NULL DEFAULT 0,
-    rpm_limit     INTEGER NOT NULL DEFAULT 10,
+    rpm_limit     INTEGER NOT NULL DEFAULT 30,
     status        TEXT NOT NULL DEFAULT 'pending',
     customer_name TEXT NOT NULL DEFAULT '',
     customer_email TEXT NOT NULL DEFAULT '',
@@ -56,16 +56,20 @@ try { db.exec("ALTER TABLE orders ADD COLUMN token_quota INTEGER NOT NULL DEFAUL
 
 // Seed default packages
 const seedPkgs = [
-  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: 10, description: "30,000,000 token, 10 RPM, 1 ngày", active: 1 },
-  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
-  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: 10, description: "900,000,000 token / 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: 60, description: "30.000 credit (~30M token), 5 API key, 60 RPM", active: 0 },
+  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: 30, description: "30,000,000 token, 30 RPM, 1 ngày", active: 1 },
+  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: 30, description: "900,000,000 token, 30 RPM, 30 ngày", active: 1 },
+  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: 30, description: "900,000,000 token, 30 RPM, 30 ngày", active: 1 },
+  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: 30, description: "30.000 credit (~30M token), 5 API key, 30 RPM", active: 0 },
 ];
 const insertPkg = db.prepare(`
   INSERT OR IGNORE INTO packages (id, name, price, credit, token_quota, rpm_limit, description, active)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `);
 for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.token_quota, p.rpm_limit, p.description, p.active);
+
+// Đồng bộ package, đơn hàng và key đã phát hành với chính sách 30 RPM.
+db.exec("UPDATE packages SET rpm_limit = 30");
+db.exec("UPDATE orders SET rpm_limit = 30");
 
 // Migrate legacy token-only packages once while preserving their existing request quota.
 const migrateLegacyPackageQuota = db.prepare("UPDATE packages SET token_quota=? WHERE id=? AND token_quota=0");
@@ -174,7 +178,7 @@ function cancelExpiredOrders() {
 function updatePackage(id, { name, price, requestQuota, tokenQuota, rpmLimit, description, active }) {
   const token_quota = Math.max(0, Math.floor(Number(tokenQuota) || 0));
   const credit = Math.max(0, Math.floor(Number(requestQuota) || 0));
-  const rpm_limit = Math.max(1, Math.floor(Number(rpmLimit) || 10));
+  const rpm_limit = Math.max(1, Math.floor(Number(rpmLimit) || 30));
   const amount = Math.max(0, Math.floor(Number(price) || 0));
   const result = stmts.updatePackage.run(String(name || "").trim(), amount, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, id);
   if (!result.changes) throw new Error(`Package not found: ${id}`);

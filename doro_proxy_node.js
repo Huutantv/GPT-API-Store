@@ -6901,7 +6901,7 @@ app.put("/api/admin/packages/:id", (req, res) => {
   const tokenQuota = Math.max(0, Math.floor(Number(body.token_quota) || 0));
   const requestQuota = Math.max(0, Math.floor(Number(body.request_quota) || 0));
   const price = Math.max(0, Math.floor(Number(body.price) || 0));
-  const rpmLimit = Math.max(1, Math.floor(Number(body.rpm_limit) || 10));
+  const rpmLimit = Math.max(1, Math.floor(Number(body.rpm_limit) || 30));
   const name = String(body.name || "").trim();
   if (!name || name.length > 100) return res.status(400).json({ detail: "Package name must be 1-100 characters" });
   try {
@@ -6992,7 +6992,7 @@ app.post("/api/credit/keys", (req, res) => {
     const createPayload = {
       label: String(body.label || ""),
       credit: creditAmount,
-      rpmLimit: Number(body.rpm_limit || 10),
+      rpmLimit: Number(body.rpm_limit || 30),
       expiresAt,
       tokenRemaining,
       durationDays: startFromFirstUse ? durationDays : 0,
