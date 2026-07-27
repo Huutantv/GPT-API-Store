@@ -5509,7 +5509,14 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel, customToolNames) : null;
   const chatTools = responsesToolsToChatTools(original.tools);
   if (Array.isArray(original.tools)) {
-    addLog(`responses tools ${JSON.stringify(responsesToolsSummary(original.tools))} -> ${chatTools ? chatTools.length : 0}`);
+    const summary = JSON.stringify(responsesToolsSummary(original.tools));
+    const message = `responses tools model=${publicModel} ${summary} -> ${chatTools ? chatTools.length : 0}`;
+    addLog(message);
+    // Keep only tool metadata in process logs so agent-mode requests can be
+    // diagnosed without recording prompts, API keys, or tool input.
+    printLog(`[tools] ${message}`);
+  } else {
+    printLog(`[tools] responses model=${publicModel} tools=missing`);
   }
   const requestedMaxTokens = optionalPositiveInt(original.max_output_tokens || original.max_tokens);
   const codexMinOutputTokens = chatTools ? (optionalPositiveInt(process.env.DORO_CODEX_MAX_OUTPUT_TOKENS) || 16384) : 0;
