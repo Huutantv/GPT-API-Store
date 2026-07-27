@@ -4853,9 +4853,9 @@ function responsesToolsToChatTools(tools) {
 function responsesToolChoiceToChatToolChoice(choice, customToolNames) {
   if (!choice || typeof choice !== "object") return choice;
   const name = String(choice.name || (choice.function && choice.function.name) || "").trim();
-  if (!name || !customToolNames.has(name)) return choice;
-  // The backend sees custom tools as functions, so a forced custom-tool choice
-  // must use the equivalent Chat Completions function-choice shape as well.
+  if (!name || (choice.type !== "function" && !customToolNames.has(name))) return choice;
+  // Responses API names forced tools directly; Chat Completions nests the name
+  // under function. This applies to both custom tools and local shell tools.
   return { type: "function", function: { name } };
 }
 
