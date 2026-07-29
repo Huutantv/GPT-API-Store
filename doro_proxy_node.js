@@ -1503,6 +1503,7 @@ function prependEncodingGuard(messages) {
 
 const MOJIBAKE_VI_RE = /(?:Ã|Â|Æ|Ä|áº|á»|â€|�)/;
 const SOURCE_EDIT_RE = /\b(code|source|file|patch|diff|edit|write|rewrite|replace|refactor|java|js|ts|html|css|php|py|go|cpp|cs|xml|json|yaml|yml|properties)\b|(?:sửa|sua|fix|lỗi|loi|ghi|đè|de|thay|file|mã nguồn|ma nguon)/i;
+const SOURCE_EDIT_OUTPUT_RE = /```(?:[a-z0-9_+-]+)?\s*\n|^(?:diff --git |--- [^\n]+\n\+\+\+ |@@ -\d+)/m;
 
 function contentToSearchableText(content) {
   if (typeof content === "string") return content;
@@ -1552,6 +1553,24 @@ function findMojibakeInOpenAIResponse(data) {
   return "";
 }
 
+function responseContainsSourceEditOutput(data) {
+  for (const choice of Array.isArray(data && data.choices) ? data.choices : []) {
+    const message = choice && choice.message;
+    const delta = choice && choice.delta;
+    if (
+      (Array.isArray(message && message.tool_calls) && message.tool_calls.length)
+      || (Array.isArray(delta && delta.tool_calls) && delta.tool_calls.length)
+    ) return true;
+
+    const texts = [
+      message && contentToSearchableText(message.content),
+      delta && contentToSearchableText(delta.content),
+    ];
+    if (texts.some((text) => SOURCE_EDIT_OUTPUT_RE.test(String(text || "")))) return true;
+  }
+  return false;
+}
+
 function mojibakeBlockedError(sample) {
   const err = new Error("Blocked assistant output because it appears to contain mojibake/corrupted Vietnamese text. Retry with UTF-8 preservation and a minimal patch.");
   err.status = 422;
@@ -1569,6 +1588,9 @@ function mojibakeBlockedError(sample) {
 
 function assertNoMojibakeForSourceEdit(data, messages) {
   if (!messagesLookLikeSourceEdit(messages)) return;
+  // Prompts often mention code while the response is only an explanation. Only
+  // reject corruption when the assistant is actually returning an edit payload.
+  if (!responseContainsSourceEditOutput(data)) return;
   const sample = findMojibakeInOpenAIResponse(data);
   if (sample) throw mojibakeBlockedError(sample);
 }
