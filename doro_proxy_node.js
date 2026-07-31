@@ -1770,6 +1770,24 @@ function parseBackendError(status, text) {
   return { message: fallback ? fallback.slice(0, 500) : `Backend error: ${status}`, type: "api_error" };
 }
 
+function adminBackendDiagnostic(status, text, code) {
+  const parsed = parseBackendError(status, text || "");
+  const diagnosticCode = String(code || parsed.code || "upstream_error");
+  // Retain useful upstream context for the admin monitor without storing secrets.
+  const message = String(parsed.message || "")
+    .replace(/\b(?:Bearer\s+)?(?:sk|rk|pk|api)[-_][A-Za-z0-9._~+\/-]+/gi, "[redacted-key]")
+    .replace(/https?:\/\/[^\s"'<>]+/gi, "[redacted-url]")
+    .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+){1,}\b/gi, "[redacted-host]")
+    .slice(0, 1000);
+  return `${diagnosticCode}: ${message || `Backend error: ${status}`}`;
+}
+
+function recordBackendErrorObservation(obs, status, text, backendModel, publicModel, code) {
+  if (!obs) return;
+  obs.error_message = publicBackendErrorLogMessage(status, text || "", backendModel, publicModel, code);
+  obs.admin_error_message = adminBackendDiagnostic(status, text || "", code);
+}
+
 function countTextChars(value) {
   if (typeof value === "string") return value.length;
   if (Array.isArray(value)) return value.reduce((sum, item) => sum + countTextChars(item), 0);
@@ -3836,7 +3854,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         addLog(`stream anthropic backend error status=${err.status} body=${logPreview(err.text || "")}`);
         if (obs) {
           obs.error_type = "backend";
-          obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code);
+          recordBackendErrorObservation(obs, err.status, err.text || err.message || "", backendModel, publicModel, err.code);
         }
         if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
         if (!wroteResponse && deferErrorToCaller && shouldFailoverBackend(err, true)) throw err;
@@ -4051,7 +4069,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           continue;
         }
         if (!wroteResponse && deferErrorToCaller && shouldFailoverBackend(err, true)) throw err;
-        if (obs) { obs.error_type = "backend"; obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", backendModel, publicModel, err.code); }
+        if (obs) { obs.error_type = "backend"; recordBackendErrorObservation(obs, err.status, err.text || err.message || "", backendModel, publicModel, err.code); }
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
           const clientStatus = clientBackendStatus(err.status);
@@ -4222,6 +4240,7 @@ app.use((req, res, next) => {
     stream: false,
     error_type: "",
     error_message: "",
+    admin_error_message: "",
     is_retry: false,
     retry_count: 0,
     final_backend_status: null,
@@ -4282,6 +4301,7 @@ app.use((req, res, next) => {
       bytes_out: bytesOut,
       error_type: res.statusCode >= 200 && res.statusCode < 400 ? "" : inferErrorType(res.statusCode, req.obs.error_type),
       error_message: res.statusCode >= 200 && res.statusCode < 400 ? "" : (req.obs.error_message || ""),
+      admin_error_message: res.statusCode >= 200 && res.statusCode < 400 ? "" : (req.obs.admin_error_message || ""),
       is_retry: !!req.obs.is_retry,
       retry_count: req.obs.retry_count || 0,
       final_backend_status: req.obs.final_backend_status || null,
@@ -4617,7 +4637,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   } catch (err) {
     if (err.status) {
       req.obs.error_type = "backend";
-      req.obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
+      recordBackendErrorObservation(req.obs, err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
       const clientStatus = clientBackendStatus(err.status);
@@ -5812,7 +5832,7 @@ async function openAIChatCompletionsHandler(req, res) {
   } catch (err) {
     if (err.status) {
       req.obs.error_type = "backend";
-      req.obs.error_message = publicBackendErrorLogMessage(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
+      recordBackendErrorObservation(req.obs, err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
       const clientStatus = clientBackendStatus(err.status);
@@ -6802,7 +6822,7 @@ app.get("/api/requests/recent", (req, res) => {
       key_label: keyLabel,
       api_key_full: fullKeyMap.get(rawKey) || "",
     };
-    enriched.error_copy_text = enriched.error_message || enriched.error_type || "";
+    enriched.error_copy_text = enriched.admin_error_message || enriched.error_message || enriched.error_type || "";
     enriched.debug_copy_text = monitorDebugCopyText(enriched);
     return enriched;
   });

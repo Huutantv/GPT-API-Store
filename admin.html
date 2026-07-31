@@ -1167,7 +1167,7 @@ function copyText(text, btn) {
 }
 
 function monitorErrorText(row) {
-  return (row && (row.error_copy_text || row.error_message || row.error_type)) || "";
+  return (row && (row.admin_error_message || row.error_copy_text || row.error_message || row.error_type)) || "";
 }
 
 function monitorDebugText(row) {
@@ -1190,6 +1190,7 @@ function monitorDebugText(row) {
     "Retry: " + (row.retry_count || 0),
     "Latency: " + (row.latency_ms || 0) + "ms",
     "Error type: " + (row.error_type || ""),
+    "Client error: " + (row.error_message || ""),
     "Error: " + monitorErrorText(row),
   ].join("\n");
 }
