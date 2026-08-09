@@ -916,6 +916,10 @@ function clientIp(req) {
   return forwarded || req.ip || req.socket.remoteAddress || "";
 }
 
+function isMenoHost(req) {
+  return String(req.get("host") || "").toLowerCase().split(":")[0] === "meno.zplay.io.vn";
+}
+
 function safeJsonLine(data) {
   return `${JSON.stringify(data)}\n`;
 }
@@ -5874,6 +5878,12 @@ app.get("/lookup", (_req, res) => {
 });
 
 app.get("/key-check", (_req, res) => {
+  return sendNoCacheHtml(res, "key-check.html");
+});
+
+// Customer-facing key checker is intentionally available only on the Meno API host.
+app.get("/v1/key-check", (req, res) => {
+  if (!isMenoHost(req)) return res.status(404).json({ detail: "Not found" });
   return sendNoCacheHtml(res, "key-check.html");
 });
 
