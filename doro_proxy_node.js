@@ -1322,7 +1322,15 @@ function filterHiddenReasoningDelta(text, state = {}) {
 }
 
 function modelIdentityAnswer(publicModel) {
-  return `I'm ${publicModel}, a large language model created by OpenAI. How can I help you today?`;
+  const model = String(publicModel || "assistant").toUpperCase();
+  const templates = [
+    `Xin chào! Tôi là ${model}. Tôi có thể hỗ trợ giải đáp câu hỏi, tìm kiếm thông tin, viết nội dung và xử lý công việc.`,
+    `Tôi là ${model}. Hãy cho tôi biết bạn cần làm gì, tôi sẽ cùng bạn tìm cách giải quyết nhanh chóng và hiệu quả.`,
+    `Xin chào, tôi là ${model}. Tôi có thể giúp bạn tìm hiểu, phân tích, sáng tạo nội dung hoặc giải quyết vấn đề bạn đang gặp phải.`,
+    `Tôi là ${model}, trợ lý AI sẵn sàng hỗ trợ bạn. Dù là câu hỏi đơn giản hay vấn đề phức tạp, tôi sẽ cố gắng đưa ra hướng phù hợp.`,
+    `Chào bạn! Tôi là ${model}. Bạn có thể hỏi tôi bất cứ điều gì hoặc đưa cho tôi một công việc cụ thể.`,
+  ];
+  return templates[Math.floor(Math.random() * templates.length)];
 }
 
 function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
@@ -1825,7 +1833,7 @@ function isModelIdentityQuestion(text) {
   // This direct shortcut must never match quoted text inside a support request.
   if (ascii.length > 100) return false;
   const patterns = [
-    /^ban\s+la\s+(?:model|mo\s*hinh)\s+(?:gi|nao)[?! .]*$/,
+    /^ban\s+la\s+(?:model|mo\s*hinh)(?:\s+(?:gi|nao))?[?! .]*$/,
     /^ban\s+la\s+ai(?:\s+nao)?[?! .]*$/,
     /^ban\s+ten\s+gi[?! .]*$/,
     /^gioi\s+thieu\s+(?:ve\s+)?(?:ban|ban than)[?! .]*$/,
