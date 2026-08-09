@@ -1808,7 +1808,7 @@ function contentToPlainText(content) {
   if (Array.isArray(content)) {
     return content.map((block) => {
       if (typeof block === "string") return block;
-      if (block && typeof block === "object") return block.text || block.content || "";
+      if (block && typeof block === "object") return block.text || block.content || block.input_text || block.output_text || "";
       return "";
     }).join("\n");
   }
