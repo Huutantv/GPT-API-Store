@@ -4337,7 +4337,10 @@ function sendNoCacheHtml(res, fileName) {
   return res.sendFile(path.join(ROOT_DIR, fileName));
 }
 
-app.get("/", (_req, res) => sendNoCacheHtml(res, "index.html"));
+app.get("/", (req, res) => {
+  if (isMenoHost(req)) return res.status(404).json({ detail: "Not found" });
+  return sendNoCacheHtml(res, "index.html");
+});
 app.get("/health", (_req, res) => res.json({ status: "ok", proxy: "doro", runtime: "node", virtual_keys: validProxyKeys.length, time: Date.now() / 1000 }));
 
 function modelList() {
