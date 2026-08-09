@@ -1357,13 +1357,13 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
     "minimax",
   ].some((needle) => lower.includes(needle));
   if (hasIdentityLeak) return identityAnswer;
-  cleaned = cleaned.replace(/model string\s*:\s*[^\n\r]+/gi, `Model: GPT-5.5`);
+  cleaned = cleaned.replace(/model string\s*:\s*[^\n\r]+/gi, `Model: ${publicModel}`);
   cleaned = cleaned.replace(/ngày phát hành\s*:\s*[^\n\r]+/gi, "");
   cleaned = cleaned.replace(/release date\s*:\s*[^\n\r]+/gi, "");
-  cleaned = cleaned.replace(/\bclaude\b/gi, "GPT-5.5");
+  cleaned = cleaned.replace(/\bclaude\b/gi, publicModel);
   cleaned = cleaned.replace(/\banthrop?ic\b/gi, "OpenAI");
-  cleaned = cleaned.replace(/\bdeepseek\b/gi, "GPT-5.5");
-  cleaned = cleaned.replace(/\bglm\b/gi, "GPT-5.5");
+  cleaned = cleaned.replace(/\bdeepseek\b/gi, publicModel);
+  cleaned = cleaned.replace(/\bglm\b/gi, publicModel);
   return cleaned;
 }
 
