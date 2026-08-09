@@ -16,12 +16,12 @@ const PUBLIC_MODELS = [
   { id: "gpt-5.5-turbo", object: "model", owned_by: "openai" },
   { id: "gpt-5.4", object: "model", owned_by: "openai" },
   { id: "gpt-5.3-codex", object: "model", owned_by: "openai" },
-  { id: "gpt-4o", object: "model", owned_by: "openai" },
   { id: "deepseek-v4-pro", object: "model", owned_by: "openai" },
   { id: "glm-5.2", object: "model", owned_by: "openai" },
   { id: "claude-opus-4-8", object: "model", owned_by: "openai" },
   { id: "claude-opus-4-7", object: "model", owned_by: "openai" },
   { id: "claude-opus-4-6", object: "model", owned_by: "openai" },
+  { id: "claude-opus-5", object: "model", owned_by: "openai" },
   { id: "claude-sonnet-5", object: "model", owned_by: "openai" },
   { id: "qwen-3.6", object: "model", owned_by: "openai" },
 ];
@@ -1822,35 +1822,21 @@ function isModelIdentityQuestion(text) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/đ/g, "d");
+  // This direct shortcut must never match quoted text inside a support request.
+  if (ascii.length > 100) return false;
   const patterns = [
-    /bạn\s+là\s+model\s+(gì|nào)/,
-    /bạn\s+là\s+ai/,
-    /bạn\s+tên\s+gì/,
-    /giới\s+thiệu\s+(về\s+)?(bạn|bản thân)/,
-    /bạn\s+đang\s+(chạy|dùng|sử dụng)\s+model/,
-    /bạn\s+có\s+phải\s+.*(claude|codex|gpt|chatgpt|deepseek|glm)/,
-    /model\s+(gì|nào)\s+(vậy|thế)?/,
-    /mô\s*hình\s+(gì|nào)/,
-    /ban\s+la\s+model\s+(gi|nao)/,
-    /ban\s+la\s+ai/,
-    /ban\s+ten\s+gi/,
-    /gioi\s+thieu\s+(ve\s+)?(ban|ban than)/,
-    /ban\s+dang\s+(chay|dung|su dung)\s+model/,
-    /ban\s+co\s+phai\s+.*(claude|codex|gpt|chatgpt|deepseek|glm)/,
-    /model\s+(gi|nao)\s+(vay|the)?/,
-    /mo\s*hinh\s+(gi|nao)/,
-    /what\s+model\s+are\s+you/,
-    /which\s+model\s+are\s+you/,
-    /what\s+ai\s+model\s+are\s+you/,
-    /who\s+are\s+you/,
-    /introduce\s+yourself/,
-    /are\s+you\s+.*(claude|codex|gpt|chatgpt|deepseek|glm)/,
+    /^ban\s+la\s+(?:model|mo\s*hinh)\s+(?:gi|nao)[?! .]*$/,
+    /^ban\s+la\s+ai(?:\s+nao)?[?! .]*$/,
+    /^ban\s+ten\s+gi[?! .]*$/,
+    /^gioi\s+thieu\s+(?:ve\s+)?(?:ban|ban than)[?! .]*$/,
+    /^ban\s+dang\s+(?:chay|dung|su\s+dung)\s+(?:model|mo\s*hinh)\s+(?:gi|nao)?[?! .]*$/,
+    /^ban\s+co\s+phai\s+.*(?:claude|codex|gpt|chatgpt|deepseek|glm)[?! .]*$/,
+    /^(?:what|which)\s+(?:ai\s+)?model\s+are\s+you[?! .]*$/,
+    /^who\s+are\s+you[?! .]*$/,
+    /^introduce\s+yourself[?! .]*$/,
+    /^are\s+you\s+.*(?:claude|codex|gpt|chatgpt|deepseek|glm)[?! .]*$/,
   ];
-  if (patterns.some((pattern) => pattern.test(normalized) || pattern.test(ascii))) return true;
-  return (
-    (ascii.includes("model") && ascii.length <= 100 && /(ban|you|la|dang|gi|nao|what|which)/.test(ascii)) ||
-    (/(claude code|anthropic|codex|chatgpt|gpt)/.test(ascii) && ascii.length <= 140 && /(ban|you|co phai|are|la)/.test(ascii))
-  );
+  return patterns.some((pattern) => pattern.test(ascii));
 }
 
 function requestSummary(body, rawSize, apiStyle) {
