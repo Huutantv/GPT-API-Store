@@ -96,6 +96,7 @@ const stmts = {
   updateTokenRemaining: db.prepare("UPDATE api_keys SET token_remaining = token_remaining + ? WHERE key = ?"),
   setCredit:    db.prepare("UPDATE api_keys SET credit = ? WHERE key = ?"),
   setTokenRemaining: db.prepare("UPDATE api_keys SET token_remaining = ? WHERE key = ?"),
+  setExpiry:    db.prepare("UPDATE api_keys SET expires_at = ?, duration_days = 0 WHERE key = ?"),
   setActive:    db.prepare("UPDATE api_keys SET active = ? WHERE key = ?"),
   deleteKey:    db.prepare("DELETE FROM api_keys WHERE key = ?"),
   insertTxn:    db.prepare("INSERT INTO credit_txns (key, delta, reason, tokens_in, tokens_out, model, req_id) VALUES (?, ?, ?, ?, ?, ?, ?)"),
@@ -526,6 +527,35 @@ function adjustToken(apiKey, delta, reason = "admin_token_adjustment") {
   return { key: apiKey, delta: amount, credit: updated.credit, token_remaining: updated.token_remaining };
 }
 
+function extendKeyExpiry(apiKey, days) {
+  const duration = Math.trunc(Number(days));
+  if (!Number.isSafeInteger(duration) || duration <= 0 || duration > 3650) {
+    throw new Error("Expiry extension must be between 1 and 3650 days");
+  }
+  const row = stmts.getKey.get(apiKey);
+  if (!row) throw new Error("Key not found");
+
+  const currentExpiry = parseExpiryTime(row.expires_at);
+  const base = currentExpiry && !Number.isNaN(currentExpiry.getTime()) && currentExpiry > new Date()
+    ? currentExpiry
+    : new Date();
+  base.setDate(base.getDate() + duration);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Ho_Chi_Minh",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(base);
+  const value = (type) => parts.find((part) => part.type === type).value;
+  const expiresAt = `${value("year")}-${value("month")}-${value("day")} ${value("hour")}:${value("minute")}:${value("second")}`;
+  stmts.setExpiry.run(expiresAt, apiKey);
+  return { key: apiKey, days: duration, expires_at: expiresAt };
+}
+
 /**
  * Tạo key mới
  */
@@ -629,6 +659,7 @@ module.exports = {
   topupCredit,
   adjustCredit,
   adjustToken,
+  extendKeyExpiry,
   createKey,
   createManualKey,
   deleteKey,

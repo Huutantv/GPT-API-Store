@@ -1639,6 +1639,29 @@ async function toggleKey(key, active, refreshLookup) {
   if (refreshLookup) await lookupKeyOwner();
 }
 
+async function extendKeyExpiry(key) {
+  var raw = window.prompt("Nhập số ngày muốn cộng vào hạn dùng:", "30");
+  if (raw === null) return;
+  var days = Math.floor(Number(raw));
+  if (!Number.isSafeInteger(days) || days <= 0 || days > 3650) {
+    window.alert("Số ngày phải là số nguyên từ 1 đến 3650.");
+    return;
+  }
+  try {
+    var r = await fetch(BASE + "/api/credit/extend-expiry", {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ key: key, days: days })
+    });
+    var data = await r.json();
+    if (!r.ok) throw new Error(data.detail || "Không thể cộng ngày");
+    await loadKeys();
+    await lookupKeyOwner();
+  } catch (err) {
+    window.alert(err.message || "Không thể cộng ngày");
+  }
+}
+
 async function lookupKeyOwner() {
   var input = document.getElementById("keyLookupInput");
   var box = document.getElementById("keyLookupResult");
@@ -1700,6 +1723,7 @@ async function lookupKeyOwner() {
         '<button onclick="adjustKeyCredit(\'' + keyLiteral + '\',-1,' + Number(info.credit || 0) + ',true)" class="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs font-semibold transition">C- Credit</button>' +
         '<button onclick="adjustKeyToken(\'' + keyLiteral + '\',1,' + Number(info.token_remaining || 0) + ',true)" class="px-3 py-1.5 bg-cyan-600/20 text-cyan-300 hover:bg-cyan-600/40 rounded text-xs font-semibold transition">T+ Token</button>' +
         '<button onclick="adjustKeyToken(\'' + keyLiteral + '\',-1,' + Number(info.token_remaining || 0) + ',true)" class="px-3 py-1.5 bg-orange-600/20 text-orange-300 hover:bg-orange-600/40 rounded text-xs font-semibold transition">T- Token</button>' +
+        '<button onclick="extendKeyExpiry(\'' + keyLiteral + '\')" class="px-3 py-1.5 bg-violet-600/20 text-violet-300 hover:bg-violet-600/40 rounded text-xs font-semibold transition">+ Ngày</button>' +
         '<button onclick="toggleKey(\'' + keyLiteral + '\',' + !!info.active + ',true)" class="px-3 py-1.5 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/40 rounded text-xs font-semibold transition">' + toggleText + '</button>' +
         '<button onclick="deleteLookupKey(\'' + keyLiteral + '\')" class="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs font-semibold transition">Xóa key</button>' +
       '</div>' +

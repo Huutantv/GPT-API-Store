@@ -7144,6 +7144,21 @@ app.post("/api/credit/adjust-token", (req, res) => {
   }
 });
 
+app.post("/api/credit/extend-expiry", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const key = String(body.key || "").trim();
+  const days = Number(body.days);
+  try {
+    const result = credit.extendKeyExpiry(key, days);
+    addLog(`KEY EXPIRY EXTEND ${key.slice(0, 20)} +${result.days}d -> ${result.expires_at}`);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(err.message === "Key not found" ? 404 : 400).json({ detail: err.message });
+  }
+});
+
 app.post("/api/credit/set-active", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
