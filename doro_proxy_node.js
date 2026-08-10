@@ -1516,6 +1516,7 @@ function prependEncodingGuard(messages) {
 const MOJIBAKE_VI_RE = /(?:Ã|Â|Æ|Ä|áº|á»|â€|�)/;
 const SOURCE_EDIT_RE = /\b(code|source|file|patch|diff|edit|write|rewrite|replace|refactor|java|js|ts|html|css|php|py|go|cpp|cs|xml|json|yaml|yml|properties)\b|(?:sửa|sua|fix|lỗi|loi|ghi|đè|de|thay|file|mã nguồn|ma nguon)/i;
 const SOURCE_EDIT_OUTPUT_RE = /```(?:[a-z0-9_+-]+)?\s*\n|^(?:diff --git |--- [^\n]+\n\+\+\+ |@@ -\d+)/m;
+const SOURCE_EDIT_TOOL_RE = /(?:apply[_-]?patch|edit[_-]?file|write[_-]?file|replace[_-]?file|rewrite[_-]?file|patch)/i;
 
 function contentToSearchableText(content) {
   if (typeof content === "string") return content;
@@ -1545,6 +1546,11 @@ function looksLikeVietnameseMojibake(text) {
   ].some((pattern) => pattern.test(value));
 }
 
+function isSourceEditToolCall(call) {
+  const name = call && call.function && call.function.name;
+  return SOURCE_EDIT_TOOL_RE.test(String(name || ""));
+}
+
 function findMojibakeInOpenAIResponse(data) {
   for (const choice of Array.isArray(data && data.choices) ? data.choices : []) {
     const message = choice && choice.message;
@@ -1554,10 +1560,10 @@ function findMojibakeInOpenAIResponse(data) {
       delta && contentToSearchableText(delta.content),
     ];
     for (const call of Array.isArray(message && message.tool_calls) ? message.tool_calls : []) {
-      texts.push(call && call.function && call.function.arguments);
+      if (isSourceEditToolCall(call)) texts.push(call && call.function && call.function.arguments);
     }
     for (const call of Array.isArray(delta && delta.tool_calls) ? delta.tool_calls : []) {
-      texts.push(call && call.function && call.function.arguments);
+      if (isSourceEditToolCall(call)) texts.push(call && call.function && call.function.arguments);
     }
     const found = texts.find(looksLikeVietnameseMojibake);
     if (found) return String(found).slice(0, 160);
@@ -1570,8 +1576,8 @@ function responseContainsSourceEditOutput(data) {
     const message = choice && choice.message;
     const delta = choice && choice.delta;
     if (
-      (Array.isArray(message && message.tool_calls) && message.tool_calls.length)
-      || (Array.isArray(delta && delta.tool_calls) && delta.tool_calls.length)
+      (Array.isArray(message && message.tool_calls) && message.tool_calls.some(isSourceEditToolCall))
+      || (Array.isArray(delta && delta.tool_calls) && delta.tool_calls.some(isSourceEditToolCall))
     ) return true;
 
     const texts = [
