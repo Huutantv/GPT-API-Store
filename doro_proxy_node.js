@@ -1861,6 +1861,16 @@ function payloadHasModelIdentityQuestion(value) {
     .some(payloadHasModelIdentityQuestion);
 }
 
+function latestUserAsksModelIdentity(messages) {
+  if (!Array.isArray(messages)) return payloadHasModelIdentityQuestion(messages);
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || typeof message !== "object") continue;
+    if (message.role === "user") return payloadHasModelIdentityQuestion(message);
+  }
+  return false;
+}
+
 function requestSummary(body, rawSize, apiStyle) {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   let textChars = countTextChars(body.system || "");
@@ -4521,7 +4531,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const useStream = !!body.stream;
   req.obs.model_requested = originalModel;
   req.obs.stream = useStream;
-  if (payloadHasModelIdentityQuestion(body.messages)) {
+  if (latestUserAsksModelIdentity(body.messages)) {
     const answer = modelIdentityAnswer(publicModel);
     addLog(`identity answer model=${publicModel}`);
     req.obs.backend_profile = "direct";
@@ -5646,7 +5656,7 @@ async function openAIChatCompletionsHandler(req, res) {
   const publicModel = publicModelName(originalModel);
   req.obs.model_requested = originalModel;
   req.obs.stream = !!body.stream;
-  if (payloadHasModelIdentityQuestion(body.messages)) {
+  if (latestUserAsksModelIdentity(body.messages)) {
     const answer = modelIdentityAnswer(publicModel);
     addLog(`identity answer model=${publicModel}`);
     req.obs.backend_profile = "direct";
