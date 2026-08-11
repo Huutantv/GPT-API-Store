@@ -1189,7 +1189,9 @@ function shouldFailoverBackend(err, hasNextBackend) {
 function publicModelName(requestedModel, backendModel) {
   const value = String(requestedModel || "").trim();
   if (value) return value;
-  return String(backendModel || "").trim() || "assistant";
+  return String(process.env.DORO_PUBLIC_MODEL || "").trim()
+    || String(backendModel || "").trim()
+    || "gpt-5.6-terra";
 }
 
 function sanitizeBackendText(text, backendModel, publicModel) {
@@ -6483,6 +6485,7 @@ app.get("/api/config", (req, res) => {
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
     model_daily_limit: Number(process.env.DORO_MODEL_DAILY_LIMIT || "1800"),
     model_limits: (process.env.DORO_MODEL_LIMITS || "").trim(),
+    public_model: String(process.env.DORO_PUBLIC_MODEL || "").trim() || PUBLIC_MODELS[0].id,
     token_per_request: getTokenPerRequest(),
     telegram_bot_token_set: !!String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
     telegram_bot_token_masked: maskSecret(process.env.TELEGRAM_BOT_TOKEN || ""),
@@ -6536,6 +6539,7 @@ app.put("/api/config", (req, res) => {
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_AUTH_TOKEN",
     "DORO_BACKEND_MODEL",
+    "DORO_PUBLIC_MODEL",
     "DORO_BACKEND1_MAX_TOKENS",
     "DORO_BACKEND1_USER_ASSISTANT_ONLY",
     "DORO_BACKEND1_DISABLE_TOOLS",

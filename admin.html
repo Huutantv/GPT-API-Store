@@ -517,6 +517,11 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Backend Model</label>
         <input id="cfg1Model" placeholder="gpt-5.4" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
       </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Model public mặc định</label>
+        <input id="cfgPublicModel" placeholder="gpt-5.6-terra" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        <p class="text-xs text-gray-500 mt-1">Dùng khi client không gửi model ID, ví dụ câu chào/nhận diện model.</p>
+      </div>
       <label class="flex items-start gap-2 bg-cyan-500/5 border border-cyan-500/20 rounded-lg px-3 py-2.5 cursor-pointer hover:border-cyan-400/50 transition"><input id="cfg1KeepTools" type="checkbox" class="mt-0.5 w-4 h-4 accent-cyan-500"><span><span class="text-sm font-medium text-cyan-200">Gi&#7919; tools cho Codex</span><span class="block text-xs text-gray-400 mt-0.5">Forward terminal, &#273;&#7885;c v&#224; s&#7917;a file tool calls sang backend.</span></span></label>
       <div>
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
@@ -2086,6 +2091,8 @@ async function loadBackendConfig() {
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
     if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], String(id));
   });
+  var publicModel = document.getElementById("cfgPublicModel");
+  if (publicModel) publicModel.value = data.public_model || "gpt-5.6-terra";
 
   // Backend 5 Vision (5v) profile
   var vision = data.backend5_vision || {};
@@ -2183,6 +2190,7 @@ async function saveBackend1Config() {
   var updates = {
     ANTHROPIC_BASE_URL: document.getElementById("cfg1BaseUrl").value.trim(),
     DORO_BACKEND_MODEL: document.getElementById("cfg1Model").value.trim(),
+    DORO_PUBLIC_MODEL: document.getElementById("cfgPublicModel").value.trim(),
     DORO_BACKEND1_DISABLE_TOOLS: document.getElementById("cfg1KeepTools").checked ? "0" : "1",
   };
   Object.keys(updates).forEach(function(k){ if (!updates[k]) delete updates[k]; });
