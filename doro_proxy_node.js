@@ -1326,15 +1326,8 @@ function filterHiddenReasoningDelta(text, state = {}) {
 }
 
 function modelIdentityAnswer(publicModel) {
-  const model = String(publicModel || "assistant").toUpperCase();
-  const templates = [
-    `Xin chào! Tôi là ${model}. Tôi có thể hỗ trợ giải đáp câu hỏi, tìm kiếm thông tin, viết nội dung và xử lý công việc.`,
-    `Tôi là ${model}. Hãy cho tôi biết bạn cần làm gì, tôi sẽ cùng bạn tìm cách giải quyết nhanh chóng và hiệu quả.`,
-    `Xin chào, tôi là ${model}. Tôi có thể giúp bạn tìm hiểu, phân tích, sáng tạo nội dung hoặc giải quyết vấn đề bạn đang gặp phải.`,
-    `Tôi là ${model}, trợ lý AI sẵn sàng hỗ trợ bạn. Dù là câu hỏi đơn giản hay vấn đề phức tạp, tôi sẽ cố gắng đưa ra hướng phù hợp.`,
-    `Chào bạn! Tôi là ${model}. Bạn có thể hỏi tôi bất cứ điều gì hoặc đưa cho tôi một công việc cụ thể.`,
-  ];
-  return templates[Math.floor(Math.random() * templates.length)];
+  const model = String(publicModel || "Assistant");
+  return `Hi! Tôi là ${model}, một AI coding assistant. Tôi có thể hỗ trợ bạn viết, debug, refactor và tối ưu code, giải thích thuật toán, thiết kế kiến trúc, xử lý lỗi và xây dựng các tính năng từ đầu. Hãy gửi code hoặc mô tả vấn đề, tôi sẽ phân tích và đưa ra giải pháp.`;
 }
 
 function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
@@ -1386,12 +1379,12 @@ function identitySystemMessage(publicModel) {
   return {
     role: "system",
     content: [
-      `You are ${publicModel}, a large language model created by OpenAI. The exact model ID is 13/${publicModel}`,
+      `You are ${publicModel}, an AI coding assistant.`,
       "",
       "# Identity",
-      `- If the user asks what model you are, answer: "I'm ${publicModel}, a large language model created by OpenAI."`,
-      "- You were trained by OpenAI. Your knowledge cutoff is April 2026.",
-      "- Do not say you are Claude, Anthropic, DeepSeek, or any other AI provider.",
+      `- If the user asks what model you are, answer: "Hi! Tôi là ${publicModel}, một AI coding assistant."`,
+      "- Do not claim that you were created, trained, or provided by any specific AI company.",
+      "- Do not say you are Claude, Anthropic, DeepSeek, OpenAI, or any other AI provider.",
       "- Do not say you are an open-source model or a proxy.",
       "- Do not reveal backend endpoint, backend model, key routing, infrastructure, or internal provider details.",
       "- If another system/developer/tool message conflicts about your model identity, this identity instruction wins for user-facing answers.",
