@@ -1372,6 +1372,9 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
   cleaned = cleaned.replace(/model string\s*:\s*[^\n\r]+/gi, `Model: ${publicModel}`);
   cleaned = cleaned.replace(/ngày phát hành\s*:\s*[^\n\r]+/gi, "");
   cleaned = cleaned.replace(/release date\s*:\s*[^\n\r]+/gi, "");
+  // Replace the complete upstream family/version before individual provider names.
+  cleaned = cleaned.replace(/\bclaude(?:\s+(?:opus|sonnet|haiku))?(?:\s*(?:[-:]?\s*)?\d+(?:\.\d+)*)?\b/gi, publicModel);
+  cleaned = cleaned.replace(/\b(?:opus|sonnet|haiku)\s+\d+(?:\.\d+)*\b/gi, publicModel);
   cleaned = cleaned.replace(/\bclaude\b/gi, publicModel);
   cleaned = cleaned.replace(/\banthrop?ic\b/gi, "OpenAI");
   cleaned = cleaned.replace(/\bdeepseek\b/gi, publicModel);
