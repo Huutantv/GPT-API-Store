@@ -1128,6 +1128,27 @@ function fmtVN(dateStr, opts) {
   var def = { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" };
   return d.toLocaleString("vi-VN", opts || def);
 }
+function parseUtcDate(dateStr) {
+  if (!dateStr) return null;
+  var raw = String(dateStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(raw)) {
+    var normalized = raw.replace(" ", "T");
+    return new Date((normalized.length === 16 ? normalized + ":00" : normalized) + "Z");
+  }
+  var date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+function fmtUtcVN(dateStr, opts) {
+  var d = parseUtcDate(dateStr);
+  if (!d) return "\u2014";
+  var def = { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" };
+  return d.toLocaleString("vi-VN", opts || def);
+}
+function fmtUtcDateVN(dateStr) {
+  var d = parseUtcDate(dateStr);
+  if (!d) return "\u2014";
+  return d.toLocaleDateString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
+}
 function fmtDateVN(dateStr) {
   var d = parseVNDate(dateStr, false);
   if (!d) return "\u2014";
@@ -1381,7 +1402,7 @@ function renderOverviewRecentPaid(items) {
   if (!items || !items.length) { box.innerHTML = '<p class="text-sm text-gray-500">Chưa có đơn thanh toán</p>'; return; }
   box.innerHTML = items.map(function(item) {
     return '<div class="bg-dark-900 rounded-lg p-3 flex items-start justify-between gap-3">' +
-      '<div><p class="text-sm font-semibold text-white">' + escapeHtml(item.customer_name || item.customer_email || 'Khách hàng') + '</p><p class="text-xs text-gray-500">' + escapeHtml(item.order_code || '—') + ' • ' + escapeHtml(item.package_id || '—') + '</p><p class="text-xs text-gray-600 mt-1">' + (item.paid_at ? fmtVN(item.paid_at) : '—') + '</p></div>' +
+      '<div><p class="text-sm font-semibold text-white">' + escapeHtml(item.customer_name || item.customer_email || 'Khách hàng') + '</p><p class="text-xs text-gray-500">' + escapeHtml(item.order_code || '—') + ' • ' + escapeHtml(item.package_id || '—') + '</p><p class="text-xs text-gray-600 mt-1">' + (item.paid_at ? fmtUtcVN(item.paid_at) : '—') + '</p></div>' +
       '<div class="text-right"><p class="text-sm font-bold text-green-400">' + currencyVND(item.amount || 0) + '</p><p class="text-xs text-gray-500 font-mono">' + escapeHtml(item.key_masked || '') + '</p></div>' +
     '</div>';
   }).join('');
@@ -1513,7 +1534,7 @@ async function loadKeys() {
       '<td class="px-4 py-3 text-right text-gray-300">' + k.rpm_limit + '</td>' +
       '<td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ' + sCls + '">' + sTxt + '</span></td>' +
       '<td class="px-4 py-3 text-xs text-gray-400">' + formatExpiry(k.expires_at) + '</td>' +
-      '<td class="px-4 py-3 text-xs text-gray-500">' + fmtDateVN(k.created_at) + '</td>' +
+      '<td class="px-4 py-3 text-xs text-gray-500">' + fmtUtcDateVN(k.created_at) + '</td>' +
       '<td class="px-4 py-3 text-right"><div class="flex gap-1 justify-end">' +
         '<button onclick="adjustKeyCredit(\'' + k.key + '\',1,' + Number(k.credit || 0) + ')" title="Tăng Credit" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs font-bold transition">C+</button>' +
         '<button onclick="adjustKeyCredit(\'' + k.key + '\',-1,' + Number(k.credit || 0) + ')" title="Giảm Credit" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs font-bold transition">C−</button>' +
@@ -1704,7 +1725,7 @@ async function lookupKeyOwner() {
             '<p><span class="text-gray-400">Mã đơn:</span> <b>' + escapeHtml(owner.order_code || '—') + '</b></p>' +
             '<p><span class="text-gray-400">Gói:</span> ' + escapeHtml(owner.package_id || '—') + '</p>' +
             '<p><span class="text-gray-400">Trạng thái:</span> ' + (owner.status || '—') + '</p>' +
-            '<p><span class="text-gray-400">Paid at:</span> ' + (owner.paid_at ? fmtVN(owner.paid_at) : '—') + '</p>' +
+            '<p><span class="text-gray-400">Paid at:</span> ' + (owner.paid_at ? fmtUtcVN(owner.paid_at) : '—') + '</p>' +
           '</div>' +
         '</div>'
       : '<div class="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4 text-sm text-yellow-300">Key này chưa thấy liên kết với đơn hàng nào. Có thể là key tạo tay trong admin.</div>';
@@ -1734,7 +1755,7 @@ async function lookupKeyOwner() {
         '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Trạng thái</p><p class="text-sm font-bold ' + statusCls + '">' + statusText + '</p></div>' +
       '</div>' +
       '<div class="grid grid-cols-1 md:grid-cols-3 gap-4">' +
-        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Ngày tạo</p><p class="text-sm">' + (info.created_at ? fmtVN(info.created_at) : '—') + '</p></div>' +
+        '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Ngày tạo</p><p class="text-sm">' + (info.created_at ? fmtUtcVN(info.created_at) : '—') + '</p></div>' +
         '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Hết hạn</p><p class="text-sm">' + (info.expires_at ? fmtVN(info.expires_at) : 'Không giới hạn') + '</p></div>' +
         '<div class="bg-dark-900 rounded-lg p-4"><p class="text-xs text-gray-500 mb-1">Đã dùng</p><p class="text-sm">' + Number(usage.usage_count || 0).toLocaleString('vi-VN') + ' request / ' + Number(usage.total_spent || 0).toLocaleString('vi-VN') + ' credit</p></div>' +
       '</div>' +
@@ -1785,7 +1806,7 @@ async function loadHistory() {
     var dCls = isUsage ? "text-red-400" : "text-green-400";
     var dStr = isUsage ? String(r.delta) : "+" + r.delta;
     return '<tr class="border-b border-white/5 hover:bg-white/2">' +
-      '<td class="px-4 py-2.5 text-gray-400 text-xs">' + fmtVN(r.created_at) + '</td>' +
+      '<td class="px-4 py-2.5 text-gray-400 text-xs">' + fmtUtcVN(r.created_at) + '</td>' +
       '<td class="px-4 py-2.5 font-mono text-xs text-gray-300">' + r.key.slice(0,10) + '...' + r.key.slice(-4) + '</td>' +
       '<td class="px-4 py-2.5"><span class="px-2 py-0.5 rounded text-xs ' + tCls + '">' + tLabel + '</span></td>' +
       '<td class="px-4 py-2.5 text-xs text-gray-300">' + (r.model || "\u2014") + '</td>' +
@@ -1886,7 +1907,7 @@ async function loadOrders() {
       '<td class="px-4 py-3 text-sm capitalize">' + escapeHtml(o.package_id) + '</td>' +
       '<td class="px-4 py-3 text-right font-bold">' + Number(o.amount).toLocaleString("vi-VN") + '\u0111</td>' +
       '<td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs ' + sm[0] + '">' + sm[1] + '</span></td>' +
-      '<td class="px-4 py-3 text-xs text-gray-500">' + fmtVN(o.created_at) + '</td>' +
+      '<td class="px-4 py-3 text-xs text-gray-500">' + fmtUtcVN(o.created_at) + '</td>' +
       '<td class="px-4 py-3 text-right"><div class="flex gap-1 justify-end">' + confirmBtn + cancelBtn + keySpan + '</div></td></tr>';
   }).join("");
 }
