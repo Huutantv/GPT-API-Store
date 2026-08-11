@@ -4540,18 +4540,6 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const useStream = !!body.stream;
   req.obs.model_requested = originalModel;
   req.obs.stream = useStream;
-  if (latestUserAsksModelIdentity(body.messages)) {
-    const answer = modelIdentityAnswer(publicModel);
-    addLog(`identity answer model=${publicModel}`);
-    req.obs.backend_profile = "direct";
-    req.obs.backend_model = "direct";
-    req.obs.final_backend_status = 200;
-    if (useStream) {
-      setSseHeaders(res);
-      return emitDirectAnthropicStream(res, publicModel, answer);
-    }
-    return res.json(directAnthropicResponse(publicModel, answer));
-  }
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
@@ -5665,18 +5653,6 @@ async function openAIChatCompletionsHandler(req, res) {
   const publicModel = publicModelName(originalModel);
   req.obs.model_requested = originalModel;
   req.obs.stream = !!body.stream;
-  if (latestUserAsksModelIdentity(body.messages)) {
-    const answer = modelIdentityAnswer(publicModel);
-    addLog(`identity answer model=${publicModel}`);
-    req.obs.backend_profile = "direct";
-    req.obs.backend_model = "direct";
-    req.obs.final_backend_status = 200;
-    if (body.stream) {
-      setSseHeaders(res);
-      return emitDirectOpenAIStream(res, publicModel, answer);
-    }
-    return res.json(directOpenAIResponse(publicModel, answer));
-  }
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
