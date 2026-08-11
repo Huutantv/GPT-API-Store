@@ -1079,9 +1079,10 @@ function metricsSummary() {
   const oneMin = windowRequests(60);
   const fiveMin = windowRequests(300);
   const latencies = oneMin.map((item) => item.latency_ms || 0);
-  const errors1m = oneMin.filter((item) => item.status >= 400).length;
-  const errors5m = fiveMin.filter((item) => item.status >= 400).length;
-  const success1m = oneMin.filter((item) => item.status >= 200 && item.status < 400).length;
+  const isObservedError = (item) => item.status >= 400 || !!item.error_type;
+  const errors1m = oneMin.filter(isObservedError).length;
+  const errors5m = fiveMin.filter(isObservedError).length;
+  const success1m = oneMin.filter((item) => item.status >= 200 && item.status < 400 && !item.error_type).length;
   const countStatus = (items, status) => items.filter((item) => item.status === status).length;
   return {
     total_requests: recentRequests.length,
@@ -4321,9 +4322,11 @@ app.use((req, res, next) => {
       stream: !!req.obs.stream,
       bytes_in: Number(req.get("content-length") || 0) || (req.rawBody ? req.rawBody.length : 0),
       bytes_out: bytesOut,
-      error_type: res.statusCode >= 200 && res.statusCode < 400 ? "" : inferErrorType(res.statusCode, req.obs.error_type),
-      error_message: res.statusCode >= 200 && res.statusCode < 400 ? "" : (req.obs.error_message || ""),
-      admin_error_message: res.statusCode >= 200 && res.statusCode < 400 ? "" : (req.obs.admin_error_message || ""),
+      // Streaming failures can happen after HTTP 200 has been committed. Retain the
+      // observation so the monitor does not classify an SSE error as a success.
+      error_type: req.obs.error_type || (res.statusCode >= 400 ? inferErrorType(res.statusCode, "") : ""),
+      error_message: req.obs.error_message || "",
+      admin_error_message: req.obs.admin_error_message || "",
       is_retry: !!req.obs.is_retry,
       retry_count: req.obs.retry_count || 0,
       final_backend_status: req.obs.final_backend_status || null,

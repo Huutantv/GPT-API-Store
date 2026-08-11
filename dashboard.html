@@ -544,8 +544,8 @@ window.addEventListener('resize',function(){
   if(!window.matchMedia('(max-width: 900px)').matches)toggleSidebar(false);
 });
 
-function statusClass(status){
-  if(status>=500)return 'status-5xx';
+function statusClass(status,errorType){
+  if(status>=500||errorType)return 'status-5xx';
   if(status>=400)return 'status-4xx';
   return 'status-2xx';
 }
@@ -574,7 +574,7 @@ function renderMonitorTable(){
   var cutoff=Date.now()-windowSec*1000;
   var rows=monitorRequests.filter(function(r){
     if((r.ts_epoch_ms||Date.parse(r.ts)||0)<cutoff)return false;
-    if(status==='5xx'&&!(r.status>=500))return false;
+    if(status==='5xx'&&!(r.status>=500||r.error_type))return false;
     if(status==='4xx'&&!(r.status>=400&&r.status<500))return false;
     if(status&&status!=='5xx'&&status!=='4xx'&&String(r.status)!==status)return false;
     if(ip&&String(r.client_ip||'').toLowerCase().indexOf(ip)===-1)return false;
@@ -597,7 +597,7 @@ function renderMonitorTable(){
       '<td>'+escapeHtml(r.path||'')+'</td>'+
       '<td>'+escapeHtml(r.model_requested||'')+'</td>'+
       '<td>'+(r.stream?'yes':'no')+'</td>'+
-      '<td><span class="status-pill '+statusClass(r.status)+'">'+escapeHtml(String(r.status||''))+'</span></td>'+
+      '<td><span class="status-pill '+statusClass(r.status,r.error_type)+'">'+escapeHtml(String(r.status||''))+(r.error_type?' · SSE error':'')+'</span></td>'+
       '<td>'+escapeHtml(String(r.latency_ms||0))+'ms</td>'+
       '<td class="err-cell">'+errHtml+'</td>'+
     '</tr>';
