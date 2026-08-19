@@ -1333,6 +1333,18 @@ function modelIdentityAnswer(publicModel) {
   return `Xin chào! Tôi là ${model}, trợ lý AI sẵn sàng hỗ trợ bạn. Tôi có thể giải đáp câu hỏi, tìm kiếm thông tin, viết nội dung và hỗ trợ xử lý công việc.`;
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasPublicIdentityWithUpstreamSuffix(text, publicModel) {
+  const model = String(publicModel || "").trim();
+  if (!model) return false;
+  const upstreamSuffix = "(?:claude\\s+)?(?:opus|sonnet|haiku)(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|deepseek(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|glm(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?";
+  const pattern = new RegExp(`(?:xin chào|hi|hello)[!,.\\s]*(?:tôi là|toi la|i am|i'm)\\s+${escapeRegExp(model)}\\s+${upstreamSuffix}\\b`, "i");
+  return pattern.test(String(text || ""));
+}
+
 function hasAssistantIdentityLeak(text) {
   const lower = String(text || "").toLowerCase();
   return [
@@ -1367,7 +1379,7 @@ function hasAssistantIdentityLeak(text) {
 function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
   let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel), options);
   const identityAnswer = modelIdentityAnswer(publicModel);
-  if (hasAssistantIdentityLeak(cleaned)) return identityAnswer;
+  if (hasAssistantIdentityLeak(cleaned) || hasPublicIdentityWithUpstreamSuffix(cleaned, publicModel)) return identityAnswer;
   cleaned = cleaned.replace(/model string\s*:\s*[^\n\r]+/gi, `Model: ${publicModel}`);
   cleaned = cleaned.replace(/ngày phát hành\s*:\s*[^\n\r]+/gi, "");
   cleaned = cleaned.replace(/release date\s*:\s*[^\n\r]+/gi, "");
@@ -1389,7 +1401,7 @@ function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state =
   const combined = `${state.pending || ""}${String(text || "")}`;
   state.pending = "";
   if (!combined) return "";
-  if (hasAssistantIdentityLeak(combined)) {
+  if (hasAssistantIdentityLeak(combined) || hasPublicIdentityWithUpstreamSuffix(combined, publicModel)) {
     state.identityReplaced = true;
     return modelIdentityAnswer(publicModel);
   }
