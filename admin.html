@@ -339,49 +339,49 @@ body{font-family:'Inter',sans-serif}
 <div id="tab-ops" class="tab-content hidden space-y-6">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <div>
-      <h2 class="text-xl font-bold">Ops Monitoring</h2>
-      <p class="mt-1 text-xs text-gray-500">CPU, RAM, Node.js heap, capacity va chat luong upstream. Tu dong cap nhat 5 giay.</p>
+      <h2 class="text-xl font-bold">Giám sát vận hành</h2>
+      <p class="mt-1 text-xs text-gray-500">CPU, RAM, bộ nhớ Node.js, năng lực xử lý và chất lượng upstream. Tự động cập nhật mỗi 5 giây.</p>
     </div>
     <div class="flex items-center gap-3">
-      <span id="opsUpdatedAt" class="text-xs text-gray-500">Chua cap nhat</span>
-      <button onclick="loadOps()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Lam moi</button>
+      <span id="opsUpdatedAt" class="text-xs text-gray-500">Chưa cập nhật</span>
+      <button onclick="loadOps()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Làm mới</button>
     </div>
   </div>
 
   <div id="opsNotice" class="hidden rounded-xl border px-4 py-3 text-sm"></div>
 
   <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">CPU host</p><div class="text-2xl font-bold" id="opsCpu">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsCpuMeta">&mdash;</p></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">RAM host</p><div class="text-2xl font-bold" id="opsMemory">&mdash;</div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-dark-800"><div id="opsMemoryBar" class="h-full bg-primary transition-all" style="width:0%"></div></div><p class="mt-1 text-xs text-gray-500" id="opsMemoryMeta">&mdash;</p></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Node heap</p><div class="text-2xl font-bold" id="opsHeap">&mdash;</div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-dark-800"><div id="opsHeapBar" class="h-full bg-green-400 transition-all" style="width:0%"></div></div><p class="mt-1 text-xs text-gray-500" id="opsHeapMeta">&mdash;</p></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Node RSS</p><div class="text-2xl font-bold" id="opsRss">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsProcessMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">CPU máy chủ</p><div class="text-2xl font-bold" id="opsCpu">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsCpuMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">RAM máy chủ</p><div class="text-2xl font-bold" id="opsMemory">&mdash;</div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-dark-800"><div id="opsMemoryBar" class="h-full bg-primary transition-all" style="width:0%"></div></div><p class="mt-1 text-xs text-gray-500" id="opsMemoryMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Bộ nhớ Heap Node.js</p><div class="text-2xl font-bold" id="opsHeap">&mdash;</div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-dark-800"><div id="opsHeapBar" class="h-full bg-green-400 transition-all" style="width:0%"></div></div><p class="mt-1 text-xs text-gray-500" id="opsHeapMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Bộ nhớ RSS Node.js</p><div class="text-2xl font-bold" id="opsRss">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsProcessMeta">&mdash;</p></div>
   </div>
 
   <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Upstream dang chay</p><div class="text-2xl font-bold text-blue-300" id="opsUpstream">&mdash;</div><p class="mt-1 text-xs text-gray-500">Slots dang su dung</p></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Backend queue</p><div class="text-2xl font-bold text-yellow-400" id="opsQueue">&mdash;</div><p class="mt-1 text-xs text-gray-500">Request dang cho upstream</p></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Inflight requests</p><div class="text-2xl font-bold" id="opsInflight">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsInflightMeta">&mdash;</p></div>
-    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Payload dang giu</p><div class="text-2xl font-bold" id="opsPayload">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsPayloadMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Upstream đang chạy</p><div class="text-2xl font-bold text-blue-300" id="opsUpstream">&mdash;</div><p class="mt-1 text-xs text-gray-500">Số slot đang sử dụng</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Hàng đợi backend</p><div class="text-2xl font-bold text-yellow-400" id="opsQueue">&mdash;</div><p class="mt-1 text-xs text-gray-500">Request đang chờ upstream</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Request đang xử lý</p><div class="text-2xl font-bold" id="opsInflight">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsInflightMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Payload đang giữ</p><div class="text-2xl font-bold" id="opsPayload">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsPayloadMeta">&mdash;</p></div>
   </div>
 
   <div class="grid md:grid-cols-2 gap-4">
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5">
-      <div class="flex items-center justify-between"><h3 class="font-semibold">Traffic 1 phut</h3><span class="text-xs text-gray-500">Proxy metrics</span></div>
+      <div class="flex items-center justify-between"><h3 class="font-semibold">Lưu lượng 1 phút</h3><span class="text-xs text-gray-500">Chỉ số proxy</span></div>
       <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
-        <div><dt class="text-xs text-gray-500">Requests/phut</dt><dd class="mt-1 text-lg font-bold" id="opsRpm">&mdash;</dd></div>
-        <div><dt class="text-xs text-gray-500">Error rate</dt><dd class="mt-1 text-lg font-bold" id="opsErrorRate">&mdash;</dd></div>
-        <div><dt class="text-xs text-gray-500">P95 latency</dt><dd class="mt-1 text-lg font-bold" id="opsP95">&mdash;</dd></div>
+        <div><dt class="text-xs text-gray-500">Request/phút</dt><dd class="mt-1 text-lg font-bold" id="opsRpm">&mdash;</dd></div>
+        <div><dt class="text-xs text-gray-500">Tỷ lệ lỗi</dt><dd class="mt-1 text-lg font-bold" id="opsErrorRate">&mdash;</dd></div>
+        <div><dt class="text-xs text-gray-500">Độ trễ P95</dt><dd class="mt-1 text-lg font-bold" id="opsP95">&mdash;</dd></div>
         <div><dt class="text-xs text-gray-500">Upstream 502 / 503</dt><dd class="mt-1 text-lg font-bold text-red-400" id="opsUpstreamErrors">&mdash;</dd></div>
       </dl>
     </div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5">
-      <h3 class="font-semibold">Server</h3>
+      <h3 class="font-semibold">Máy chủ</h3>
       <dl class="mt-4 space-y-3 text-sm">
-        <div class="flex justify-between gap-4"><dt class="text-gray-500">Hostname</dt><dd class="max-w-[60%] truncate font-mono text-gray-300" id="opsHost">&mdash;</dd></div>
-        <div class="flex justify-between gap-4"><dt class="text-gray-500">Platform</dt><dd class="font-mono text-gray-300" id="opsPlatform">&mdash;</dd></div>
-        <div class="flex justify-between gap-4"><dt class="text-gray-500">CPU cores</dt><dd class="font-mono text-gray-300" id="opsCores">&mdash;</dd></div>
-        <div class="flex justify-between gap-4"><dt class="text-gray-500">Host uptime</dt><dd class="font-mono text-gray-300" id="opsHostUptime">&mdash;</dd></div>
-        <div class="flex justify-between gap-4"><dt class="text-gray-500">Process uptime</dt><dd class="font-mono text-gray-300" id="opsProcessUptime">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Tên máy chủ</dt><dd class="max-w-[60%] truncate font-mono text-gray-300" id="opsHost">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Nền tảng</dt><dd class="font-mono text-gray-300" id="opsPlatform">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Số lõi CPU</dt><dd class="font-mono text-gray-300" id="opsCores">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Thời gian hoạt động máy chủ</dt><dd class="font-mono text-gray-300" id="opsHostUptime">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Thời gian hoạt động Node.js</dt><dd class="font-mono text-gray-300" id="opsProcessUptime">&mdash;</dd></div>
       </dl>
     </div>
   </div>
@@ -1965,12 +1965,12 @@ async function loadOps() {
   var notice = document.getElementById("opsNotice");
   try {
     var response = await fetch(BASE + "/api/metrics/system", { headers: authHeaders() });
-    if (!response.ok) throw new Error("Khong the tai system metrics (HTTP " + response.status + ")");
+    if (!response.ok) throw new Error("Không thể tải chỉ số hệ thống (HTTP " + response.status + ")");
     var data = await response.json();
     var cpu = data.cpu || {}, memory = data.memory || {}, proc = data.process || {}, cap = data.capacity || {}, traffic = data.traffic || {}, host = data.host || {};
-    var cpuText = cpu.usage_percent == null ? "Dang lay mau" : cpu.usage_percent.toFixed(1) + "%";
+    var cpuText = cpu.usage_percent == null ? "Đang lấy mẫu" : cpu.usage_percent.toFixed(1) + "%";
     setOpsText("opsCpu", cpuText);
-    setOpsText("opsCpuMeta", (host.cpu_cores || 0) + " cores | load " + ((cpu.load_average || []).join(" / ") || "—"));
+    setOpsText("opsCpuMeta", (host.cpu_cores || 0) + " lõi | tải " + ((cpu.load_average || []).join(" / ") || "—"));
     setOpsText("opsMemory", Number(memory.used_percent || 0).toFixed(1) + "%");
     setOpsText("opsMemoryMeta", opsMiB(memory.used_bytes) + " / " + opsMiB(memory.total_bytes));
     setOpsProgress("opsMemoryBar", memory.used_percent, 85);
@@ -1979,13 +1979,13 @@ async function loadOps() {
     setOpsText("opsHeapMeta", opsMiB(proc.heap_used_bytes) + " / " + opsMiB(proc.heap_total_bytes) + " (" + heapPercent.toFixed(1) + "%)");
     setOpsProgress("opsHeapBar", heapPercent, 85);
     setOpsText("opsRss", opsMiB(proc.rss_bytes));
-    setOpsText("opsProcessMeta", "PID " + (proc.pid || "—") + " | external " + opsMiB(proc.external_bytes));
+    setOpsText("opsProcessMeta", "PID " + (proc.pid || "—") + " | bộ nhớ ngoài " + opsMiB(proc.external_bytes));
     setOpsText("opsUpstream", (cap.active_upstream || 0) + " / " + (cap.max_upstream || 0));
     setOpsText("opsQueue", (cap.queued_upstream || 0) + " / " + (cap.max_queued_upstream || 0));
     setOpsText("opsInflight", (cap.inflight_requests || 0) + " / " + (cap.max_inflight_requests || 0));
-    setOpsText("opsInflightMeta", "Request dang giu trong process");
+    setOpsText("opsInflightMeta", "Request đang giữ trong tiến trình");
     setOpsText("opsPayload", opsMiB(cap.inflight_request_body_bytes));
-    setOpsText("opsPayloadMeta", "Gioi han " + opsMiB(cap.max_inflight_body_bytes));
+    setOpsText("opsPayloadMeta", "Giới hạn " + opsMiB(cap.max_inflight_body_bytes));
     setOpsText("opsRpm", traffic.rpm || 0);
     setOpsText("opsErrorRate", Number(traffic.error_rate_1m || 0).toFixed(2) + "%");
     setOpsText("opsP95", (traffic.p95_latency_ms || 0).toLocaleString() + " ms");
@@ -1995,10 +1995,10 @@ async function loadOps() {
     setOpsText("opsCores", host.cpu_cores || "—");
     setOpsText("opsHostUptime", opsDuration(host.uptime_seconds));
     setOpsText("opsProcessUptime", opsDuration(proc.uptime_seconds));
-    setOpsText("opsUpdatedAt", "Cap nhat " + fmtVN(data.sampled_at));
+    setOpsText("opsUpdatedAt", "Cập nhật " + fmtVN(data.sampled_at));
     notice.classList.add("hidden");
   } catch (err) {
-    notice.textContent = err.message || "Khong the tai system metrics";
+    notice.textContent = err.message || "Không thể tải chỉ số hệ thống";
     notice.className = "rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300";
   }
 }
