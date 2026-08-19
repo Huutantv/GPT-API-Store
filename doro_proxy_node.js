@@ -820,7 +820,9 @@ function trackBackendSuccess(id) {
 
 const app = express();
 const port = Number(firstEnv("DORO_PROXY_PORT", { default: "4000" }));
-const maxConcurrent = Number(process.env.DORO_MAX_CONCURRENT || "50");
+// Keep per-process in-flight work bounded: each request may retain a parsed JSON body,
+// upstream response, and retry state. Raise only after sizing the Node heap for it.
+const maxConcurrent = Math.max(1, Number(process.env.DORO_MAX_CONCURRENT || "10") || 10);
 const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "120") * 1000;
 const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT || process.env.DORO_BACKEND_TIMEOUT || "300") * 1000;
 const retryBaseDelayMs = Number(process.env.DORO_RETRY_BASE_DELAY_MS || "1000");
@@ -4332,14 +4334,27 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.status(204).end();
   return next();
 });
+// zstd request-body decompression is not supported by body-parser. Reject it before
+// parsing so malformed/compressed traffic returns a controlled 415 rather than a stack trace.
+app.use((req, res, next) => {
+  const contentEncoding = String(req.get("content-encoding") || "").trim().toLowerCase();
+  if (contentEncoding === "zstd" || contentEncoding.includes("zstd,")) {
+    addLog(`unsupported content encoding path=${req.path} encoding=${contentEncoding} ip=${clientIp(req) || "?"}`);
+    return res.status(415).json({
+      detail: "Request content encoding zstd is not supported. Send an uncompressed JSON body.",
+      code: "unsupported_content_encoding",
+    });
+  }
+  return next();
+});
 app.use(express.json({
-  limit: process.env.DORO_BODY_LIMIT || "500mb",
+  limit: process.env.DORO_BODY_LIMIT || "50mb",
   verify: (req, _res, buf) => { req.rawBody = buf; },
 }));
 
 app.use((err, req, res, next) => {
   if (!err) return next();
-  const configuredLimit = process.env.DORO_BODY_LIMIT || "500mb";
+  const configuredLimit = process.env.DORO_BODY_LIMIT || "50mb";
   const contentLength = req.get("content-length") || "unknown";
   if (err.type === "entity.too.large" || err.status === 413) {
     addLog(`payload too large path=${req.path} content_length=${contentLength} limit=${configuredLimit}`);
