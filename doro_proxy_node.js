@@ -1084,6 +1084,82 @@ function latencyByEndpoint(items) {
   }]));
 }
 
+let systemCpuSample = null;
+
+function cpuTimesSnapshot() {
+  const cpus = os.cpus();
+  let idle = 0;
+  let total = 0;
+  for (const cpu of cpus) {
+    const times = cpu.times || {};
+    idle += Number(times.idle || 0);
+    total += Number(times.user || 0) + Number(times.nice || 0) + Number(times.sys || 0) + Number(times.idle || 0) + Number(times.irq || 0);
+  }
+  return { idle, total, cores: cpus.length };
+}
+
+function updateSystemCpuSample() {
+  const current = cpuTimesSnapshot();
+  const previous = systemCpuSample;
+  systemCpuSample = { ...current, at: Date.now() };
+  if (!previous || current.total <= previous.total) return null;
+  const totalDelta = current.total - previous.total;
+  const idleDelta = current.idle - previous.idle;
+  return Math.max(0, Math.min(100, Math.round((1 - (idleDelta / totalDelta)) * 1000) / 10));
+}
+
+setInterval(updateSystemCpuSample, 5000).unref();
+updateSystemCpuSample();
+
+function bytesToMiB(value) {
+  return Math.round((Number(value || 0) / (1024 * 1024)) * 10) / 10;
+}
+
+function systemMetricsSnapshot() {
+  const cpuPercent = updateSystemCpuSample();
+  const memory = process.memoryUsage();
+  const totalMemory = os.totalmem();
+  const freeMemory = os.freemem();
+  const usedMemory = Math.max(0, totalMemory - freeMemory);
+  const summary = metricsSummary();
+  return {
+    sampled_at: new Date().toISOString(),
+    host: { hostname: os.hostname(), platform: os.platform(), arch: os.arch(), uptime_seconds: Math.floor(os.uptime()), cpu_cores: os.cpus().length },
+    cpu: { usage_percent: cpuPercent, load_average: os.loadavg().map((item) => Math.round(item * 100) / 100) },
+    memory: {
+      total_bytes: totalMemory,
+      used_bytes: usedMemory,
+      free_bytes: freeMemory,
+      used_percent: totalMemory ? Math.round((usedMemory / totalMemory) * 1000) / 10 : 0,
+    },
+    process: {
+      pid: process.pid,
+      uptime_seconds: Math.floor(process.uptime()),
+      rss_bytes: memory.rss,
+      heap_used_bytes: memory.heapUsed,
+      heap_total_bytes: memory.heapTotal,
+      external_bytes: memory.external,
+    },
+    capacity: {
+      inflight_requests: inflightRequestCount,
+      inflight_request_body_bytes: inflightRequestBodyBytes,
+      max_inflight_requests: maxInflightRequests,
+      max_inflight_body_bytes: maxInflightBodyBytes,
+      active_upstream: activeBackend,
+      max_upstream: maxConcurrent,
+      queued_upstream: backendQueue.length,
+      max_queued_upstream: maxBackendQueue,
+    },
+    traffic: {
+      rpm: summary.rpm_total,
+      error_rate_1m: summary.error_rate_1m,
+      p95_latency_ms: summary.p95_latency_ms,
+      upstream_502_1m: summary.count_502_1m,
+      upstream_503_1m: summary.count_503_1m,
+    },
+  };
+}
+
 function metricsSummary() {
   const oneMin = windowRequests(60);
   const fiveMin = windowRequests(300);
@@ -6909,6 +6985,12 @@ app.get("/api/metrics/summary", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   res.json(metricsSummary());
+});
+
+app.get("/api/metrics/system", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json(systemMetricsSnapshot());
 });
 
 app.get("/api/metrics/status-codes", (req, res) => {

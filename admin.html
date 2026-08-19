@@ -53,6 +53,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('topup');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="topup">&#x1F4B0; N&#7841;p Credit</button>
       <button onclick="showTab('history');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; L&#7883;ch s&#7917;</button>
       <button onclick="showTab('monitor');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
+      <button onclick="showTab('ops');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ops">&#x1F4BB; Ops Monitoring</button>
       <button onclick="showTab('orders');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
       <button onclick="showTab('packages');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="packages">&#x1F4E6; G&#243;i d&#7883;ch v&#7909;</button>
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
@@ -98,6 +99,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('topup')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="topup">&#x1F4B0; N&#7841;p Credit</button>
       <button onclick="showTab('history')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="history">&#x1F4CB; L&#7883;ch s&#7917;</button>
       <button onclick="showTab('monitor')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="monitor">&#x1F4F6; Monitor</button>
+      <button onclick="showTab('ops')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ops">&#x1F4BB; Ops Monitoring</button>
       <button onclick="showTab('orders')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="orders">&#x1F6D2; &#272;&#417;n h&#224;ng</button>
       <button onclick="showTab('packages')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="packages">&#x1F4E6; G&#243;i d&#7883;ch v&#7909;</button>
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
@@ -329,6 +331,58 @@ body{font-family:'Inter',sans-serif}
       </tr></thead>
       <tbody id="monitorTable"><tr><td colspan="13" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr></tbody>
     </table>
+    </div>
+  </div>
+</div>
+
+<!-- Tab: Ops Monitoring -->
+<div id="tab-ops" class="tab-content hidden space-y-6">
+  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-xl font-bold">Ops Monitoring</h2>
+      <p class="mt-1 text-xs text-gray-500">CPU, RAM, Node.js heap, capacity va chat luong upstream. Tu dong cap nhat 5 giay.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span id="opsUpdatedAt" class="text-xs text-gray-500">Chua cap nhat</span>
+      <button onclick="loadOps()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Lam moi</button>
+    </div>
+  </div>
+
+  <div id="opsNotice" class="hidden rounded-xl border px-4 py-3 text-sm"></div>
+
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">CPU host</p><div class="text-2xl font-bold" id="opsCpu">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsCpuMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">RAM host</p><div class="text-2xl font-bold" id="opsMemory">&mdash;</div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-dark-800"><div id="opsMemoryBar" class="h-full bg-primary transition-all" style="width:0%"></div></div><p class="mt-1 text-xs text-gray-500" id="opsMemoryMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Node heap</p><div class="text-2xl font-bold" id="opsHeap">&mdash;</div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-dark-800"><div id="opsHeapBar" class="h-full bg-green-400 transition-all" style="width:0%"></div></div><p class="mt-1 text-xs text-gray-500" id="opsHeapMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Node RSS</p><div class="text-2xl font-bold" id="opsRss">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsProcessMeta">&mdash;</p></div>
+  </div>
+
+  <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Upstream dang chay</p><div class="text-2xl font-bold text-blue-300" id="opsUpstream">&mdash;</div><p class="mt-1 text-xs text-gray-500">Slots dang su dung</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Backend queue</p><div class="text-2xl font-bold text-yellow-400" id="opsQueue">&mdash;</div><p class="mt-1 text-xs text-gray-500">Request dang cho upstream</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Inflight requests</p><div class="text-2xl font-bold" id="opsInflight">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsInflightMeta">&mdash;</p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Payload dang giu</p><div class="text-2xl font-bold" id="opsPayload">&mdash;</div><p class="mt-1 text-xs text-gray-500" id="opsPayloadMeta">&mdash;</p></div>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5">
+      <div class="flex items-center justify-between"><h3 class="font-semibold">Traffic 1 phut</h3><span class="text-xs text-gray-500">Proxy metrics</span></div>
+      <dl class="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
+        <div><dt class="text-xs text-gray-500">Requests/phut</dt><dd class="mt-1 text-lg font-bold" id="opsRpm">&mdash;</dd></div>
+        <div><dt class="text-xs text-gray-500">Error rate</dt><dd class="mt-1 text-lg font-bold" id="opsErrorRate">&mdash;</dd></div>
+        <div><dt class="text-xs text-gray-500">P95 latency</dt><dd class="mt-1 text-lg font-bold" id="opsP95">&mdash;</dd></div>
+        <div><dt class="text-xs text-gray-500">Upstream 502 / 503</dt><dd class="mt-1 text-lg font-bold text-red-400" id="opsUpstreamErrors">&mdash;</dd></div>
+      </dl>
+    </div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5">
+      <h3 class="font-semibold">Server</h3>
+      <dl class="mt-4 space-y-3 text-sm">
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Hostname</dt><dd class="max-w-[60%] truncate font-mono text-gray-300" id="opsHost">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Platform</dt><dd class="font-mono text-gray-300" id="opsPlatform">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">CPU cores</dt><dd class="font-mono text-gray-300" id="opsCores">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Host uptime</dt><dd class="font-mono text-gray-300" id="opsHostUptime">&mdash;</dd></div>
+        <div class="flex justify-between gap-4"><dt class="text-gray-500">Process uptime</dt><dd class="font-mono text-gray-300" id="opsProcessUptime">&mdash;</dd></div>
+      </dl>
     </div>
   </div>
 </div>
@@ -1330,6 +1384,7 @@ function showTab(name) {
   if (name === "topup") loadRequestTokenSettings();
   if (name === "history") loadHistory();
   if (name === "monitor") loadMonitor();
+  if (name === "ops") loadOps();
   if (name === "orders") loadOrders();
   if (name === "packages") loadPackages();
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
@@ -1878,6 +1933,74 @@ async function loadMonitor() {
       '<td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ' + sCls + '">' + r.status + '</span></td>' +
       '<td class="px-4 py-2 text-right text-gray-400 whitespace-nowrap">' + (r.latency_ms || 0) + 'ms</td></tr>';
   }).join("");
+}
+
+/* ===== OPS MONITORING ===== */
+function opsMiB(bytes) {
+  return (Number(bytes || 0) / (1024 * 1024)).toFixed(1) + " MiB";
+}
+
+function opsDuration(seconds) {
+  seconds = Math.max(0, Math.floor(Number(seconds || 0)));
+  var days = Math.floor(seconds / 86400);
+  var hours = Math.floor((seconds % 86400) / 3600);
+  var minutes = Math.floor((seconds % 3600) / 60);
+  return (days ? days + "d " : "") + hours + "h " + minutes + "m";
+}
+
+function setOpsText(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function setOpsProgress(id, percent, dangerAt) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var value = Math.max(0, Math.min(100, Number(percent || 0)));
+  el.style.width = value + "%";
+  el.className = "h-full transition-all " + (value >= (dangerAt || 90) ? "bg-red-400" : value >= 75 ? "bg-yellow-400" : "bg-green-400");
+}
+
+async function loadOps() {
+  var notice = document.getElementById("opsNotice");
+  try {
+    var response = await fetch(BASE + "/api/metrics/system", { headers: authHeaders() });
+    if (!response.ok) throw new Error("Khong the tai system metrics (HTTP " + response.status + ")");
+    var data = await response.json();
+    var cpu = data.cpu || {}, memory = data.memory || {}, proc = data.process || {}, cap = data.capacity || {}, traffic = data.traffic || {}, host = data.host || {};
+    var cpuText = cpu.usage_percent == null ? "Dang lay mau" : cpu.usage_percent.toFixed(1) + "%";
+    setOpsText("opsCpu", cpuText);
+    setOpsText("opsCpuMeta", (host.cpu_cores || 0) + " cores | load " + ((cpu.load_average || []).join(" / ") || "—"));
+    setOpsText("opsMemory", Number(memory.used_percent || 0).toFixed(1) + "%");
+    setOpsText("opsMemoryMeta", opsMiB(memory.used_bytes) + " / " + opsMiB(memory.total_bytes));
+    setOpsProgress("opsMemoryBar", memory.used_percent, 85);
+    var heapPercent = proc.heap_total_bytes ? (Number(proc.heap_used_bytes || 0) / Number(proc.heap_total_bytes)) * 100 : 0;
+    setOpsText("opsHeap", opsMiB(proc.heap_used_bytes));
+    setOpsText("opsHeapMeta", opsMiB(proc.heap_used_bytes) + " / " + opsMiB(proc.heap_total_bytes) + " (" + heapPercent.toFixed(1) + "%)");
+    setOpsProgress("opsHeapBar", heapPercent, 85);
+    setOpsText("opsRss", opsMiB(proc.rss_bytes));
+    setOpsText("opsProcessMeta", "PID " + (proc.pid || "—") + " | external " + opsMiB(proc.external_bytes));
+    setOpsText("opsUpstream", (cap.active_upstream || 0) + " / " + (cap.max_upstream || 0));
+    setOpsText("opsQueue", (cap.queued_upstream || 0) + " / " + (cap.max_queued_upstream || 0));
+    setOpsText("opsInflight", (cap.inflight_requests || 0) + " / " + (cap.max_inflight_requests || 0));
+    setOpsText("opsInflightMeta", "Request dang giu trong process");
+    setOpsText("opsPayload", opsMiB(cap.inflight_request_body_bytes));
+    setOpsText("opsPayloadMeta", "Gioi han " + opsMiB(cap.max_inflight_body_bytes));
+    setOpsText("opsRpm", traffic.rpm || 0);
+    setOpsText("opsErrorRate", Number(traffic.error_rate_1m || 0).toFixed(2) + "%");
+    setOpsText("opsP95", (traffic.p95_latency_ms || 0).toLocaleString() + " ms");
+    setOpsText("opsUpstreamErrors", (traffic.upstream_502_1m || 0) + " / " + (traffic.upstream_503_1m || 0));
+    setOpsText("opsHost", host.hostname || "—");
+    setOpsText("opsPlatform", (host.platform || "—") + " / " + (host.arch || "—"));
+    setOpsText("opsCores", host.cpu_cores || "—");
+    setOpsText("opsHostUptime", opsDuration(host.uptime_seconds));
+    setOpsText("opsProcessUptime", opsDuration(proc.uptime_seconds));
+    setOpsText("opsUpdatedAt", "Cap nhat " + fmtVN(data.sampled_at));
+    notice.classList.add("hidden");
+  } catch (err) {
+    notice.textContent = err.message || "Khong the tai system metrics";
+    notice.className = "rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300";
+  }
 }
 
 /* ===== ORDERS ===== */
@@ -2733,6 +2856,7 @@ window.addEventListener("DOMContentLoaded", function() {
 setInterval(function() {
   var active = document.querySelector(".tab-content:not(.hidden)");
   if (active && active.id === "tab-monitor") loadMonitor();
+  if (active && active.id === "tab-ops") loadOps();
 }, 5000);
 
 /* ===== IP GUARD ===== */
