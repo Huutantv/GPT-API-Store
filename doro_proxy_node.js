@@ -2046,6 +2046,19 @@ function backendErrorFromPayload(data, fallbackStatus = 502) {
   return err;
 }
 
+async function rejectHtmlUpstreamResponse(response, contextLabel = "backend") {
+  if (!response || !response.ok) return response;
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  if (!contentType.includes("text/html")) return response;
+
+  const text = await response.text();
+  const err = new Error(`${contextLabel} returned an HTML gateway error`);
+  err.status = 502;
+  err.text = text;
+  err.code = "html_upstream_gateway_error";
+  throw err;
+}
+
 function firstNonEmptyString(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.length > 0) return value;
@@ -3438,6 +3451,13 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
       return { resp, apiKey: orderedKeys[i] };
     } catch (err) {
       lastError = err;
+      if (obs && err.status) obs.final_backend_status = err.status;
+      if (err.status && isRetryableAcrossKeys(err.status) && i < orderedKeys.length - 1) {
+        if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
+        addLog(`backend retry(stream) status=${err.status} key=${i + 1}/${orderedKeys.length} body=${logPreview(err.text || "")}`);
+        await new Promise((r) => setTimeout(r, retryDelayMs(i + 1)));
+        continue;
+      }
       if (!err.status && i < orderedKeys.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         addLog(`backend retry(stream) network key=${i + 1}/${orderedKeys.length} error=${err.name || "Error"}: ${err.message}`);
@@ -3928,6 +3948,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           body: JSON.stringify(wirePayload),
           timeoutMs: backendStreamTimeoutMs,
         });
+        resp = await rejectHtmlUpstreamResponse(resp, "stream backend");
         if (obs) obs.final_backend_status = resp.status;
         if (!resp.ok) {
           const text = await resp.text();
@@ -3953,6 +3974,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
     } catch (err) {
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
+      if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
         if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) {
@@ -4028,6 +4050,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           body: JSON.stringify(wirePayload),
           timeoutMs: backendStreamTimeoutMs,
         });
+        resp = await rejectHtmlUpstreamResponse(resp, "stream backend");
         if (obs) obs.final_backend_status = resp.status;
         if (!resp.ok) {
           const text = await resp.text();
@@ -4188,6 +4211,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
     } catch (err) {
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
+      if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
         const failureSignal = backendFailureSignal(err.status, err.text || err.message || "", err.code);
         if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
