@@ -823,6 +823,11 @@ const port = Number(firstEnv("DORO_PROXY_PORT", { default: "4000" }));
 // Keep per-process in-flight work bounded: each request may retain a parsed JSON body,
 // upstream response, and retry state. Raise only after sizing the Node heap for it.
 const maxConcurrent = Math.max(1, Number(process.env.DORO_MAX_CONCURRENT || "10") || 10);
+// Bound queued work as well as active upstream calls. Without this, every queued
+// request retains its parsed body while waiting and can exhaust the V8 heap.
+const maxBackendQueue = Math.max(0, Number(process.env.DORO_MAX_BACKEND_QUEUE || "10") || 10);
+const maxInflightRequests = Math.max(1, Number(process.env.DORO_MAX_INFLIGHT_REQUESTS || "20") || 20);
+const maxInflightBodyBytes = Math.max(1, Number(process.env.DORO_MAX_INFLIGHT_BODY_BYTES || String(64 * 1024 * 1024)) || (64 * 1024 * 1024));
 const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "120") * 1000;
 const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT || process.env.DORO_BACKEND_TIMEOUT || "300") * 1000;
 const retryBaseDelayMs = Number(process.env.DORO_RETRY_BASE_DELAY_MS || "1000");
@@ -832,6 +837,8 @@ const backendRequestRetryCount = Math.max(0, Math.min(10, Number(process.env.DOR
 const backendStreamRetryCount = Math.max(0, Math.min(5, Number(process.env.DORO_BACKEND_STREAM_RETRIES || "1")));
 let activeBackend = 0;
 const backendQueue = [];
+let inflightRequestCount = 0;
+let inflightRequestBodyBytes = 0;
 let backendKeyCounter = 0;
 let backendRouterCounter = 0;
 const backendKeyInflight = new Map();
@@ -1979,6 +1986,12 @@ function requestSummary(body, rawSize, apiStyle) {
 
 async function withBackendSlot(fn) {
   if (activeBackend >= maxConcurrent) {
+    if (backendQueue.length >= maxBackendQueue) {
+      const err = new Error("Proxy upstream queue is full");
+      err.status = 503;
+      err.code = "proxy_queue_full";
+      throw err;
+    }
     await new Promise((resolve) => backendQueue.push(resolve));
   }
   activeBackend += 1;
@@ -4347,9 +4360,40 @@ app.use((req, res, next) => {
   }
   return next();
 });
+// Reserve a bounded amount of process memory before parsing JSON. This protects
+// the whole service from a burst of otherwise valid large requests; rejected
+// callers get a retryable 503 instead of causing an out-of-memory process crash.
+app.use((req, res, next) => {
+  const isBodyRequest = ["POST", "PUT", "PATCH"].includes(req.method);
+  const contentLength = Number(req.get("content-length") || 0);
+  const requestBytes = Number.isFinite(contentLength) && contentLength > 0 ? contentLength : 0;
+  if (!isBodyRequest) return next();
+  if (inflightRequestCount >= maxInflightRequests || inflightRequestBodyBytes + requestBytes > maxInflightBodyBytes) {
+    res.setHeader("Retry-After", "5");
+    addLog(`request admission rejected path=${req.path} bytes=${requestBytes} active=${inflightRequestCount} body_bytes=${inflightRequestBodyBytes}`);
+    return res.status(503).json({
+      detail: "The AI proxy is busy processing large requests. Please retry shortly.",
+      code: "proxy_capacity_exceeded",
+    });
+  }
+  inflightRequestCount += 1;
+  inflightRequestBodyBytes += requestBytes;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    inflightRequestCount = Math.max(0, inflightRequestCount - 1);
+    inflightRequestBodyBytes = Math.max(0, inflightRequestBodyBytes - requestBytes);
+  };
+  res.once("finish", release);
+  res.once("close", release);
+  return next();
+});
 app.use(express.json({
   limit: process.env.DORO_BODY_LIMIT || "50mb",
-  verify: (req, _res, buf) => { req.rawBody = buf; },
+  // Keep only the byte count needed by access logs. Retaining the raw Buffer
+  // duplicates every parsed request body in memory.
+  verify: (req, _res, buf) => { req.rawBodyBytes = buf.length; },
 }));
 
 app.use((err, req, res, next) => {
@@ -4470,7 +4514,7 @@ app.use((req, res, next) => {
       route_target: req.obs.route_target || "",
       route_reason: req.obs.route_reason || "",
       stream: !!req.obs.stream,
-      bytes_in: Number(req.get("content-length") || 0) || (req.rawBody ? req.rawBody.length : 0),
+      bytes_in: Number(req.get("content-length") || 0) || Number(req.rawBodyBytes || 0),
       bytes_out: bytesOut,
       // Streaming failures can happen after HTTP 200 has been committed. Retain the
       // observation so the monitor does not classify an SSE error as a success.
@@ -4682,7 +4726,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     return res.status(auth.status).json(anthropicErrorPayload(auth.status, message, auth.status === 401 ? "authentication_error" : "permission_error", auth.code, context));
   }
   const body = req.body || {};
-  addLog(requestSummary(body, req.rawBody ? req.rawBody.length : JSON.stringify(body).length, "anthropic"));
+  addLog(requestSummary(body, Number(req.rawBodyBytes || 0) || JSON.stringify(body).length, "anthropic"));
   const originalModel = body.model || "opus";
   const publicModel = publicModelName(originalModel);
   const useStream = !!body.stream;
@@ -5805,7 +5849,7 @@ async function openAIChatCompletionsHandler(req, res) {
     return res.status(auth.status).json(openaiErrorPayload(auth.status, message, auth.status === 401 ? "authentication_error" : "permission_error", auth.code, context));
   }
   const body = req.body || {};
-  addLog(requestSummary(body, req.rawBody ? req.rawBody.length : JSON.stringify(body).length, "openai"));
+  addLog(requestSummary(body, Number(req.rawBodyBytes || 0) || JSON.stringify(body).length, "openai"));
   const originalModel = body.model || "opus";
   const publicModel = publicModelName(originalModel);
   req.obs.model_requested = originalModel;
