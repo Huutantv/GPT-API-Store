@@ -1330,14 +1330,12 @@ function filterHiddenReasoningDelta(text, state = {}) {
 
 function modelIdentityAnswer(publicModel) {
   const model = String(publicModel || "Assistant");
-  return `Hi! Tôi là ${model}, một AI coding assistant. Tôi có thể hỗ trợ bạn viết, debug, refactor và tối ưu code, giải thích thuật toán, thiết kế kiến trúc, xử lý lỗi và xây dựng các tính năng từ đầu. Hãy gửi code hoặc mô tả vấn đề, tôi sẽ phân tích và đưa ra giải pháp.`;
+  return `Xin chào! Tôi là ${model}, trợ lý AI sẵn sàng hỗ trợ bạn. Tôi có thể giải đáp câu hỏi, tìm kiếm thông tin, viết nội dung và hỗ trợ xử lý công việc.`;
 }
 
-function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
-  let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel), options);
-  const identityAnswer = modelIdentityAnswer(publicModel);
-  const lower = cleaned.toLowerCase();
-  const hasIdentityLeak = [
+function hasAssistantIdentityLeak(text) {
+  const lower = String(text || "").toLowerCase();
+  return [
     "tôi là claude",
     "toi la claude",
     "i am claude",
@@ -1364,7 +1362,12 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
     "toi la glm",
     "minimax",
   ].some((needle) => lower.includes(needle));
-  if (hasIdentityLeak) return identityAnswer;
+}
+
+function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
+  let cleaned = stripHiddenReasoningText(sanitizeBackendText(text, backendModel, publicModel), options);
+  const identityAnswer = modelIdentityAnswer(publicModel);
+  if (hasAssistantIdentityLeak(cleaned)) return identityAnswer;
   cleaned = cleaned.replace(/model string\s*:\s*[^\n\r]+/gi, `Model: ${publicModel}`);
   cleaned = cleaned.replace(/ngày phát hành\s*:\s*[^\n\r]+/gi, "");
   cleaned = cleaned.replace(/release date\s*:\s*[^\n\r]+/gi, "");
@@ -1378,6 +1381,33 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
   return cleaned;
 }
 
+// Streaming may split an upstream model name across chunks (for example,
+// "Opus " followed by "4.8"). Keep a short possible suffix until the next
+// chunk so identity sanitization can see the complete name.
+function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state = {}, options = {}) {
+  if (state.identityReplaced) return "";
+  const combined = `${state.pending || ""}${String(text || "")}`;
+  state.pending = "";
+  if (!combined) return "";
+  if (hasAssistantIdentityLeak(combined)) {
+    state.identityReplaced = true;
+    return modelIdentityAnswer(publicModel);
+  }
+
+  const suffix = combined.match(/(?:\bclaude(?:\s+(?:opus|sonnet|haiku))?|\b(?:opus|sonnet|haiku))(?:\s+\d*(?:\.\d*)?)?$/i);
+  if (suffix && suffix[0].length <= 40) {
+    state.pending = suffix[0];
+    return sanitizeAssistantIdentityText(combined.slice(0, -suffix[0].length), publicModel, backendModel, options);
+  }
+  return sanitizeAssistantIdentityText(combined, publicModel, backendModel, options);
+}
+
+function flushAssistantIdentityChunk(publicModel, backendModel, state = {}, options = {}) {
+  const pending = state.pending || "";
+  state.pending = "";
+  return pending ? sanitizeAssistantIdentityText(pending, publicModel, backendModel, options) : "";
+}
+
 function identitySystemMessage(publicModel) {
   return {
     role: "system",
@@ -1385,7 +1415,7 @@ function identitySystemMessage(publicModel) {
       `You are ${publicModel}, an AI coding assistant.`,
       "",
       "# Identity",
-      `- If the user asks what model you are, answer: "Hi! Tôi là ${publicModel}, một AI coding assistant."`,
+      `- If the user asks what model you are, answer exactly: "Xin chào! Tôi là ${publicModel}, trợ lý AI sẵn sàng hỗ trợ bạn. Tôi có thể giải đáp câu hỏi, tìm kiếm thông tin, viết nội dung và hỗ trợ xử lý công việc."`,
       "- Do not claim that you were created, trained, or provided by any specific AI company.",
       "- Do not say you are Claude, Anthropic, DeepSeek, OpenAI, or any other AI provider.",
       "- Do not say you are an open-source model or a proxy.",
@@ -1874,6 +1904,40 @@ function latestUserAsksModelIdentity(messages) {
     if (message.role === "user") return payloadHasModelIdentityQuestion(message);
   }
   return false;
+}
+
+function sendModelIdentityResponse(req, res, publicModel, apiStyle, stream = false, customToolNames = new Set()) {
+  const text = modelIdentityAnswer(publicModel);
+  req.obs.backend_id = "identity";
+  req.obs.backend_profile = "identity";
+  req.obs.backend_model = publicModel;
+  req.obs.backend_base_url = "local";
+  req.obs.final_backend_status = 200;
+  addLog(`identity shortcut model=${publicModel} api=${apiStyle} stream=${stream}`);
+
+  if (apiStyle === "anthropic") {
+    if (stream) {
+      setSseHeaders(res);
+      return emitDirectAnthropicStream(res, publicModel, text);
+    }
+    return res.json(directAnthropicResponse(publicModel, text));
+  }
+
+  if (apiStyle === "responses") {
+    if (stream) {
+      setSseHeaders(res);
+      return emitResponsesStreamFromChatCompletion(res, directOpenAIResponse(publicModel, text), publicModel, customToolNames);
+    }
+    const response = chatCompletionToResponses(directOpenAIResponse(publicModel, text), publicModel, customToolNames);
+    rememberResponsesState(response);
+    return res.json(response);
+  }
+
+  if (stream) {
+    setSseHeaders(res);
+    return emitDirectOpenAIStream(res, publicModel, text);
+  }
+  return res.json(directOpenAIResponse(publicModel, text));
 }
 
 function requestSummary(body, rawSize, apiStyle) {
@@ -3561,6 +3625,7 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
   let hasToolCalls = false;
   let sawDone = false;
   const toolBlocks = new Map();
+  const identityState = {};
 
   const closeTextBlock = () => {
     if (textBlockIndex !== null) {
@@ -3622,7 +3687,8 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
       const delta = choice.delta || {};
       if (delta.content) {
         ensureTextBlock();
-        sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: sanitizeAssistantIdentityText(delta.content, model, backendModel, { preserveLeadingWhitespace: true }) } });
+        const text = sanitizeAssistantIdentityChunk(delta.content, model, backendModel, identityState, { preserveLeadingWhitespace: true });
+        if (text) sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text } });
       }
       for (const call of delta.tool_calls || []) {
         hasToolCalls = true;
@@ -3635,6 +3701,11 @@ async function pipeOpenAIStreamToAnthropic(resp, res, model, backendModel, block
     }
   }
 
+  const pendingIdentityText = flushAssistantIdentityChunk(model, backendModel, identityState, { preserveLeadingWhitespace: true });
+  if (pendingIdentityText) {
+    ensureTextBlock();
+    sseWrite(res, "content_block_delta", { type: "content_block_delta", index: textBlockIndex, delta: { type: "text_delta", text: pendingIdentityText } });
+  }
   if (finishReason == null && !sawDone) {
     throw incompleteBackendStreamError("Backend stream ended after partial output without finish_reason (OpenAI -> Anthropic pipe)");
   }
@@ -3656,6 +3727,7 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
   let inputTokens = 0;
   let outputTokens = 0;
   let sawStop = false;
+  const identityState = {};
 
   while (true) {
     const { value, done } = await reader.read();
@@ -3685,10 +3757,10 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
         outputTokens = Number(usage.output_tokens || 0);
       }
       if (event.type === "content_block_start" && event.content_block && event.content_block.type === "text") {
-        event.content_block.text = sanitizeAssistantIdentityText(event.content_block.text || "", model, backendModel, { preserveLeadingWhitespace: true });
+        event.content_block.text = sanitizeAssistantIdentityChunk(event.content_block.text || "", model, backendModel, identityState, { preserveLeadingWhitespace: true });
       }
       if (event.type === "content_block_delta" && event.delta && event.delta.type === "text_delta") {
-        event.delta.text = sanitizeAssistantIdentityText(event.delta.text || "", model, backendModel, { preserveLeadingWhitespace: true });
+        event.delta.text = sanitizeAssistantIdentityChunk(event.delta.text || "", model, backendModel, identityState, { preserveLeadingWhitespace: true });
       }
       if (event.type === "message_delta" && event.usage) {
         outputTokens = Number(event.usage.output_tokens || outputTokens || 0);
@@ -3698,6 +3770,10 @@ async function pipeAnthropicStreamToAnthropic(resp, res, model, backendModel, bl
       }
       sseWrite(res, event.type || "message", event);
     }
+  }
+  const pendingIdentityText = flushAssistantIdentityChunk(model, backendModel, identityState, { preserveLeadingWhitespace: true });
+  if (pendingIdentityText) {
+    sseWrite(res, "content_block_delta", { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: pendingIdentityText } });
   }
   if (!sawStop) {
     throw incompleteBackendStreamError("Backend stream ended after partial output without message_stop (Anthropic pipe)");
@@ -3961,6 +4037,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         let streamOpened = false;
         let sawCompletionMarker = safeBuffered;
         const hiddenReasoningState = { inThink: false };
+        const identityState = {};
         const anthropicState = {
           id: `chatcmpl_${Date.now()}`,
           created: Math.floor(Date.now() / 1000),
@@ -4022,6 +4099,13 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
               const parsedChoice = (parsedItem.choices || [])[0] || {};
               if (parsedChoice.delta && typeof parsedChoice.delta.content === "string") {
                 parsedChoice.delta.content = filterHiddenReasoningDelta(parsedChoice.delta.content, hiddenReasoningState);
+                parsedChoice.delta.content = sanitizeAssistantIdentityChunk(
+                  parsedChoice.delta.content,
+                  publicModel,
+                  backendModel,
+                  identityState,
+                  { preserveLeadingWhitespace: true },
+                );
               }
               assertNoMojibakeForSourceEdit(parsedItem, payload.messages);
               normalizeOpenAIAssistantPayload(parsedItem, publicModel, backendModel);
@@ -4038,6 +4122,21 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           if (wasPending && outbound) pendingChunks.push(outbound);
           if (hasAssistantOutput) openStream();
           if (streamOpened && !wasPending && outbound) res.write(outbound);
+        }
+        const pendingIdentityText = flushAssistantIdentityChunk(publicModel, backendModel, identityState, { preserveLeadingWhitespace: true });
+        if (pendingIdentityText) {
+          const pendingItem = {
+            id: anthropicState.id,
+            object: "chat.completion.chunk",
+            created: anthropicState.created,
+            model: publicModel,
+            choices: [{ index: 0, delta: { content: pendingIdentityText }, finish_reason: null }],
+          };
+          normalizeOpenAIAssistantPayload(pendingItem, publicModel, backendModel);
+          const pendingText = `data: ${JSON.stringify(pendingItem)}\n\n`;
+          if (streamOpened) res.write(pendingText);
+          else pendingChunks.push(pendingText);
+          hasAssistantOutput = true;
         }
         if (!hasAssistantOutput) {
           const err = new Error("Backend stream ended without assistant output");
@@ -4538,6 +4637,9 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const useStream = !!body.stream;
   req.obs.model_requested = originalModel;
   req.obs.stream = useStream;
+  if (latestUserAsksModelIdentity(body.messages)) {
+    return sendModelIdentityResponse(req, res, publicModel, "anthropic", useStream);
+  }
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
@@ -5563,6 +5665,12 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const customToolNames = new Set((Array.isArray(original.tools) ? original.tools : [])
     .filter((tool) => tool && tool.type === "custom" && String(tool.name || "").trim())
     .map((tool) => String(tool.name).trim()));
+  const identityMessages = Array.isArray(original.messages)
+    ? responsesInputToMessages(original.messages)
+    : responsesInputToMessages(original.input);
+  if (latestUserAsksModelIdentity(identityMessages)) {
+    return sendModelIdentityResponse(req, res, publicModel, "responses", wantsStream, customToolNames);
+  }
   req.obs.previous_response_id = String(original.previous_response_id || "").trim();
   const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel, customToolNames) : null;
   const chatTools = responsesToolsToChatTools(original.tools);
@@ -5651,6 +5759,9 @@ async function openAIChatCompletionsHandler(req, res) {
   const publicModel = publicModelName(originalModel);
   req.obs.model_requested = originalModel;
   req.obs.stream = !!body.stream;
+  if (latestUserAsksModelIdentity(body.messages)) {
+    return sendModelIdentityResponse(req, res, publicModel, "openai", !!body.stream);
+  }
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
