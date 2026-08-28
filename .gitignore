@@ -38,3 +38,6 @@ docker-data/
 logs/
 
 node_modules/
+
+# ── Build Output ──
+public/output.css

@@ -11,12 +11,21 @@ RUN apt-get update \
 
 # Cài dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Copy source code
 COPY doro_proxy_node.js credit.js orders.js mailer.js package_quotas.js ip-guard.js key-health.js ./
 COPY ecosystem.config.cjs ./
+COPY cache.js ./
 COPY *.html ./
+COPY src/ ./src/
+COPY tailwind.config.js postcss.config.js ./
+
+# Build CSS
+RUN npm run build:css
+
+# Remove dev dependencies
+RUN npm prune --omit=dev
 
 # Port mặc định
 EXPOSE 4000
