@@ -4472,6 +4472,9 @@ app.use(express.json({
   verify: (req, _res, buf) => { req.rawBodyBytes = buf.length; },
 }));
 
+// Serve static files from public/ directory (CSS, images, etc.)
+app.use(express.static(path.join(ROOT_DIR, "public"), { maxAge: "7d", immutable: true }));
+
 app.use((err, req, res, next) => {
   if (!err) return next();
   const configuredLimit = process.env.DORO_BODY_LIMIT || "50mb";
