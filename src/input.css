@@ -13,10 +13,13 @@
 @layer components {
   /* Gradient Text */
   .gradient-text {
-    @apply bg-clip-text text-transparent;
-    background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+    background-image: linear-gradient(135deg, #818cf8, #a78bfa, #f0abfc);
     background-size: 200% auto;
-    animation: gradientShift 3s ease-in-out infinite;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: gradientShift 4s ease-in-out infinite;
   }
 
   /* Hero Glow */
