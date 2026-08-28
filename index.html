@@ -8,11 +8,180 @@
 <script>tailwind.config={theme:{extend:{colors:{primary:'#6366f1',dark:{900:'#0a0a0f',800:'#12121a',700:'#1a1a2e',600:'#252540'}}}}}</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-body{font-family:'Inter',sans-serif}
-.gradient-text{background:linear-gradient(135deg,#6366f1,#8b5cf6,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.hero-glow{background:radial-gradient(ellipse at 50% 0%,rgba(99,102,241,0.15) 0%,transparent 60%)}
-.card-glow:hover{box-shadow:0 0 60px rgba(99,102,241,0.12)}
-pre code{display:block}
+
+:root {
+  --primary: #6366f1;
+  --primary-glow: rgba(99, 102, 241, 0.4);
+  --purple: #8b5cf6;
+  --pink: #ec4899;
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 200% auto;
+  animation: gradientShift 3s ease-in-out infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% { background-position: 0% center; }
+  50% { background-position: 100% center; }
+}
+
+.hero-glow {
+  background: radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 60%);
+}
+
+.hero-glow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+  animation: floatOrb 8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.hero-glow::after {
+  content: '';
+  position: absolute;
+  top: 100px;
+  right: 10%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(236, 72, 153, 0.08) 0%, transparent 70%);
+  animation: floatOrb 10s ease-in-out infinite reverse;
+  pointer-events: none;
+}
+
+@keyframes floatOrb {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+  25% { transform: translate(30px, -20px) scale(1.1); opacity: 0.7; }
+  50% { transform: translate(-20px, -40px) scale(0.9); opacity: 0.4; }
+  75% { transform: translate(-30px, 10px) scale(1.05); opacity: 0.6; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes badgePulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-delay-1 { transition-delay: 100ms; }
+.reveal-delay-2 { transition-delay: 200ms; }
+.reveal-delay-3 { transition-delay: 300ms; }
+.reveal-delay-4 { transition-delay: 400ms; }
+.reveal-delay-5 { transition-delay: 500ms; }
+.reveal-delay-6 { transition-delay: 600ms; }
+
+/* Card glow */
+.card-glow {
+  position: relative;
+  transition: all var(--transition-smooth);
+}
+
+.card-glow:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 40px rgba(99, 102, 241, 0.15);
+}
+
+/* Pricing card */
+.pricing-card {
+  transition: all var(--transition-smooth);
+}
+
+.pricing-card:hover {
+  transform: translateY(-8px);
+}
+
+.pricing-card-featured::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 1rem;
+  background: linear-gradient(135deg, var(--primary), var(--purple));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity var(--transition-smooth);
+}
+
+.pricing-card-featured:hover::before {
+  opacity: 1;
+}
+
+.badge-pulse {
+  animation: badgePulse 2s ease-in-out infinite;
+}
+
+/* Button glow */
+.btn-glow {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-glow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  transform: translateX(-100%);
+  transition: transform 0.5s ease;
+}
+
+.btn-glow:hover::after {
+  transform: translateX(100%);
+}
+
+/* FAQ */
+.faq-item summary .faq-icon {
+  transition: transform var(--transition-smooth);
+}
+
+.faq-item[open] summary .faq-icon {
+  transform: rotate(45deg);
+}
+
+.faq-item p {
+  animation: fadeIn 0.3s ease;
+}
+
+/* Tab */
+.tab-btn {
+  transition: all var(--transition-smooth);
+}
+
+pre code { display: block; }
 </style>
 </head>
 <body class="bg-dark-900 text-white antialiased">
@@ -39,34 +208,40 @@ pre code{display:block}
 <!-- Hero -->
 <section class="relative pt-24 md:pt-32 pb-12 md:pb-20 overflow-hidden">
 <div class="hero-glow absolute inset-0"></div>
-<div class="max-w-7xl mx-auto px-6 text-center relative">
+<div class="absolute inset-0 overflow-hidden pointer-events-none">
+<div class="absolute top-20 left-10 w-72 h-72 bg-primary/10 rounded-full blur-3xl animate-pulse"></div>
+<div class="absolute bottom-20 right-10 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse" style="animation-delay: 1s;"></div>
+</div>
+<div class="max-w-7xl mx-auto px-6 text-center relative z-10">
+<div class="reveal">
 <div class="inline-flex items-center gap-2 px-4 py-2 bg-dark-700 rounded-full text-sm text-gray-300 mb-8 border border-white/10">
 <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span> H&#7879; th&#7889;ng ho&#7841;t &#273;&#7897;ng b&#236;nh th&#432;&#7901;ng
 </div>
-<h1 class="text-3xl sm:text-4xl md:text-7xl font-black leading-tight mb-6">
+</div>
+<h1 class="reveal reveal-delay-1 text-3xl sm:text-4xl md:text-7xl font-black leading-tight mb-6">
  Truy c&#7853;p <span class="gradient-text">GPT-5.6</span> API<br>
 <span class="text-gray-400 text-2xl sm:text-3xl md:text-5xl font-bold">Kh&#244;ng gi&#7899;i h&#7841;n. Nhanh. Gi&#225; t&#7889;t.</span>
 </h1>
-<p class="text-sm md:text-xl text-gray-400 max-w-2xl mx-auto mb-8 md:mb-10 leading-relaxed">
+<p class="reveal reveal-delay-2 text-sm md:text-xl text-gray-400 max-w-2xl mx-auto mb-8 md:mb-10 leading-relaxed">
  API key truy c&#7853;p GPT-5.6, GPT-5.5, GPT-5.4, Qwen-3.6 v&#7899;i gi&#225; t&#7889;t nh&#7845;t. H&#7895; tr&#7907; streaming, function calling, vision qua backend t&#432;&#417;ng th&#237;ch. T&#432;&#417;ng th&#237;ch OpenAI SDK.
 </p>
-<div class="max-w-4xl mx-auto mt-2">
+<div class="reveal reveal-delay-3 max-w-4xl mx-auto mt-2">
   <div class="flex flex-col items-stretch gap-3 sm:items-center">
     <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 w-full sm:w-auto">
-      <a href="#pricing" class="min-w-[220px] px-8 py-4 bg-primary hover:bg-primary/90 rounded-xl text-base font-semibold text-center transition shadow-lg shadow-primary/25">Mua API Key ngay</a>
-      <a href="#docs" class="min-w-[190px] px-8 py-4 bg-dark-700 hover:bg-dark-600 border border-white/10 rounded-xl text-base font-semibold text-center transition">Xem h&#432;&#7899;ng d&#7851;n</a>
+      <a href="#pricing" class="btn-glow min-w-[220px] px-8 py-4 bg-primary hover:bg-primary/90 rounded-xl text-base font-semibold text-center transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-105">Mua API Key ngay</a>
+      <a href="#docs" class="min-w-[190px] px-8 py-4 bg-dark-700 hover:bg-dark-600 border border-white/10 rounded-xl text-base font-semibold text-center transition-all duration-300 hover:border-white/20">Xem h&#432;&#7899;ng d&#7851;n</a>
     </div>
     <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-3 w-full sm:w-auto">
-      <a href="/key-check" class="min-w-[190px] px-6 py-3.5 bg-primary/10 hover:bg-primary/15 border border-primary/30 rounded-xl text-sm font-semibold text-primary text-center transition">Kiểm tra API Key</a>
-      <a href="/lookup" class="min-w-[190px] px-6 py-3.5 bg-yellow-500/10 hover:bg-yellow-500/15 border border-yellow-500/30 rounded-xl text-sm font-semibold text-yellow-300 text-center transition">Kiểm tra đơn hàng</a>
+      <a href="/key-check" class="min-w-[190px] px-6 py-3.5 bg-primary/10 hover:bg-primary/15 border border-primary/30 rounded-xl text-sm font-semibold text-primary text-center transition-all duration-300 hover:scale-105">Ki&#7875;m tra API Key</a>
+      <a href="/lookup" class="min-w-[190px] px-6 py-3.5 bg-yellow-500/10 hover:bg-yellow-500/15 border border-yellow-500/30 rounded-xl text-sm font-semibold text-yellow-300 text-center transition-all duration-300 hover:scale-105">Ki&#7875;m tra &#273;&#417;n h&#224;ng</a>
     </div>
   </div>
 </div>
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-12 md:mt-16 max-w-3xl mx-auto">
-<div class="text-center"><div class="text-3xl font-bold">99.9%</div><div class="text-sm text-gray-500 mt-1">Uptime</div></div>
-<div class="text-center"><div class="text-3xl font-bold">&lt;2s</div><div class="text-sm text-gray-500 mt-1">Ph&#7843;n h&#7891;i</div></div>
-<div class="text-center"><div class="text-3xl font-bold">15</div><div class="text-sm text-gray-500 mt-1">Models</div></div>
-<div class="text-center"><div class="text-3xl font-bold">24/7</div><div class="text-sm text-gray-500 mt-1">H&#7895; tr&#7907;</div></div>
+<div class="reveal reveal-delay-4 grid grid-cols-2 md:grid-cols-4 gap-4 mt-12 md:mt-16 max-w-3xl mx-auto">
+<div class="text-center group"><div class="text-3xl font-bold transition-transform duration-300 group-hover:scale-110">99.9%</div><div class="text-sm text-gray-500 mt-1">Uptime</div></div>
+<div class="text-center group"><div class="text-3xl font-bold transition-transform duration-300 group-hover:scale-110">&lt;2s</div><div class="text-sm text-gray-500 mt-1">Ph&#7843;n h&#7891;i</div></div>
+<div class="text-center group"><div class="text-3xl font-bold transition-transform duration-300 group-hover:scale-110">15</div><div class="text-sm text-gray-500 mt-1">Models</div></div>
+<div class="text-center group"><div class="text-3xl font-bold transition-transform duration-300 group-hover:scale-110">24/7</div><div class="text-sm text-gray-500 mt-1">H&#7895; tr&#7907;</div></div>
 </div>
 </div>
 </section>
@@ -75,41 +250,41 @@ pre code{display:block}
 <section id="models" class="py-12 md:py-20">
 <div class="max-w-7xl mx-auto px-4 md:px-6">
 <div class="text-center mb-14">
-<h2 class="text-3xl md:text-4xl font-bold mb-4">C&#225;c Model C&#243; S&#7861;n</h2>
-<p class="text-gray-400 text-lg">Truy c&#7853;p c&#225;c model m&#7841;nh nh&#7845;t qua m&#7897;t API key duy nh&#7845;t</p>
+<h2 class="reveal text-3xl md:text-4xl font-bold mb-4">C&#225;c Model C&#243; S&#7861;n</h2>
+<p class="reveal reveal-delay-1 text-gray-400 text-lg">Truy c&#7853;p c&#225;c model m&#7841;nh nh&#7845;t qua m&#7897;t API key duy nh&#7845;t</p>
 </div>
 <div class="grid md:grid-cols-3 gap-6">
-<div class="bg-gradient-to-br from-primary/20 to-dark-700 border border-primary/40 rounded-2xl p-8 card-glow transition">
+<div class="reveal card-glow bg-gradient-to-br from-primary/20 to-dark-700 border border-primary/40 rounded-2xl p-8 transition-all duration-300">
 <div class="text-2xl mb-3">&#x1F30D;</div>
 <h3 class="text-xl font-bold mb-2">GPT-5.6 Terra</h3>
-<p class="text-gray-300 text-sm mb-4">Model đa dụng cho phân tích, lập trình và các tác vụ cần suy luận ổn định.</p>
+<p class="text-gray-300 text-sm mb-4">Model &#273;a d&#7841;ng cho ph&#226;n t&#237;ch, l&#7853;p tr&#236;nh v&#224; c&#225;c t&#225;c v&#7909; c&#7847;n suy lu&#7853;n &#7893;n &#273;&#7883;nh.</p>
 <div class="flex flex-wrap gap-2">
-<span class="px-3 py-1 bg-primary/20 text-primary text-xs rounded-full font-medium">Suy luận</span>
+<span class="px-3 py-1 bg-primary/20 text-primary text-xs rounded-full font-medium">Suy lu&#7853;n</span>
 <span class="px-3 py-1 bg-primary/20 text-primary text-xs rounded-full font-medium">Coding</span>
 <span class="px-3 py-1 bg-primary/20 text-primary text-xs rounded-full font-medium">Tools</span>
 </div>
- </div>
-<div class="bg-gradient-to-br from-violet-500/15 to-dark-700 border border-violet-400/30 rounded-2xl p-8 card-glow transition">
+</div>
+<div class="reveal reveal-delay-1 card-glow bg-gradient-to-br from-violet-500/15 to-dark-700 border border-violet-400/30 rounded-2xl p-8 transition-all duration-300">
 <div class="text-2xl mb-3">&#x1F319;</div>
 <h3 class="text-xl font-bold mb-2">GPT-5.6 Luna</h3>
-<p class="text-gray-300 text-sm mb-4">Lựa chọn linh hoạt cho hội thoại, sáng tạo nội dung và xử lý workflow hằng ngày.</p>
+<p class="text-gray-300 text-sm mb-4">L&#7921;a ch&#7885;n linh ho&#7841;t cho h&#7897;i tho&#7841;i, s&#225;ng t&#7841;o n&#7897;i dung v&#224; x&#7917; l&#253; workflow h&#224;ng ng&#224;y.</p>
 <div class="flex flex-wrap gap-2">
-<span class="px-3 py-1 bg-violet-500/15 text-violet-300 text-xs rounded-full font-medium">Hội thoại</span>
-<span class="px-3 py-1 bg-violet-500/15 text-violet-300 text-xs rounded-full font-medium">Sáng tạo</span>
+<span class="px-3 py-1 bg-violet-500/15 text-violet-300 text-xs rounded-full font-medium">H&#7897;i tho&#7841;i</span>
+<span class="px-3 py-1 bg-violet-500/15 text-violet-300 text-xs rounded-full font-medium">S&#225;ng t&#7841;o</span>
 <span class="px-3 py-1 bg-violet-500/15 text-violet-300 text-xs rounded-full font-medium">Streaming</span>
 </div>
 </div>
-<div class="bg-gradient-to-br from-amber-500/15 to-dark-700 border border-amber-400/30 rounded-2xl p-8 card-glow transition">
+<div class="reveal reveal-delay-2 card-glow bg-gradient-to-br from-amber-500/15 to-dark-700 border border-amber-400/30 rounded-2xl p-8 transition-all duration-300">
 <div class="text-2xl mb-3">&#x2600;&#xFE0F;</div>
 <h3 class="text-xl font-bold mb-2">GPT-5.6 Sol</h3>
-<p class="text-gray-300 text-sm mb-4">Tối ưu cho phản hồi nhanh, tóm tắt thông tin và các tác vụ hỗ trợ khách hàng.</p>
+<p class="text-gray-300 text-sm mb-4">T&#7889;i &#432;u cho ph&#7843;n h&#7891;i nhanh, t&#243;m t&#7855;t th&#244;ng tin v&#224; c&#225;c t&#225;c v&#7909; h&#7895; tr&#7907; kh&#225;ch h&#224;ng.</p>
 <div class="flex flex-wrap gap-2">
 <span class="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full font-medium">Nhanh</span>
-<span class="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full font-medium">Tóm tắt</span>
-<span class="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full font-medium">Hiệu quả</span>
+<span class="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full font-medium">T&#243;m t&#7855;t</span>
+<span class="px-3 py-1 bg-amber-500/15 text-amber-300 text-xs rounded-full font-medium">Hi&#7879;u qu&#7843;</span>
 </div>
 </div>
-<div class="bg-dark-700 border border-white/10 rounded-2xl p-8 card-glow transition">
+<div class="reveal reveal-delay-3 card-glow bg-dark-700 border border-white/10 rounded-2xl p-8 transition-all duration-300">
 <div class="text-2xl mb-3">&#x1F680;</div>
 <h3 class="text-xl font-bold mb-2">GPT-5.5</h3>
 <p class="text-gray-400 text-sm mb-4">Model m&#7841;nh nh&#7845;t, h&#7895; tr&#7907; vision, function calling, 200K context. Ph&#249; h&#7907;p cho m&#7885;i t&#225;c v&#7909; ph&#7913;c t&#7841;p.</p>
@@ -119,7 +294,7 @@ pre code{display:block}
 <span class="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full font-medium">Tools</span>
 </div>
 </div>
-<div class="bg-dark-700 border border-white/10 rounded-2xl p-8 card-glow transition">
+<div class="reveal reveal-delay-4 card-glow bg-dark-700 border border-white/10 rounded-2xl p-8 transition-all duration-300">
 <div class="text-2xl mb-3">&#x26A1;</div>
 <h3 class="text-xl font-bold mb-2">GPT-5.5 Turbo</h3>
 <p class="text-gray-400 text-sm mb-4">Nhanh h&#417;n GPT-5.5, t&#7889;i &#432;u cho streaming v&#224; real-time. Gi&#225; r&#7867; h&#417;n 40%.</p>
@@ -129,7 +304,7 @@ pre code{display:block}
 <span class="px-3 py-1 bg-green-500/10 text-green-400 text-xs rounded-full font-medium">Tools</span>
 </div>
 </div>
-<div class="bg-dark-700 border border-white/10 rounded-2xl p-8 card-glow transition">
+<div class="reveal reveal-delay-5 card-glow bg-dark-700 border border-white/10 rounded-2xl p-8 transition-all duration-300">
 <div class="text-2xl mb-3">&#x1F4A1;</div>
 <h3 class="text-xl font-bold mb-2">GPT-5.4</h3>
 <p class="text-gray-400 text-sm mb-4">C&#226;n b&#7857;ng gi&#7919;a hi&#7879;u n&#259;ng v&#224; chi ph&#237;. Ph&#249; h&#7907;p cho chatbot, t&#243;m t&#7855;t, Q&amp;A.</p>
@@ -147,13 +322,13 @@ pre code{display:block}
 <section id="pricing" class="py-12 md:py-20 bg-dark-800/50">
 <div class="max-w-7xl mx-auto px-4 md:px-6">
 <div class="text-center mb-14">
-<h2 class="text-3xl md:text-4xl font-bold mb-4">B&#7843;ng Gi&#225;</h2>
-<p class="text-gray-400 text-lg">Mua credit, d&#249;ng tho&#7843;i m&#225;i — kh&#244;ng lo h&#7871;t h&#7841;n th&#225;ng</p>
+<h2 class="reveal text-3xl md:text-4xl font-bold mb-4">B&#7843;ng Gi&#225;</h2>
+<p class="reveal reveal-delay-1 text-gray-400 text-lg">Mua credit, d&#249;ng tho&#7843;i m&#225;i — kh&#244;ng lo h&#7871;t h&#7841;n th&#225;ng</p>
 </div>
 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 max-w-7xl mx-auto">
-<!-- Starter — active -->
-<div class="bg-dark-700 border-2 border-primary rounded-2xl p-8 flex flex-col relative">
-<div class="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-primary rounded-full text-xs font-bold">ĐANG MỞ BÁN</div>
+<!-- Starter -->
+<div class="reveal pricing-card bg-dark-700 border-2 border-primary rounded-2xl p-8 flex flex-col relative">
+<div class="badge-pulse absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1 bg-primary rounded-full text-xs font-bold">&#272;ANG M&#7902; B&#193;N</div>
 <h3 class="text-lg font-bold mb-1">Starter</h3>
 <p class="text-gray-500 text-sm mb-2">D&#249;ng th&#7917;, c&#225; nh&#226;n</p>
 <div class="mb-1"><span class="text-4xl font-black text-red-400" data-package-price="starter">20K</span><span class="text-gray-400 text-sm ml-1">VN&#272;</span></div>
@@ -166,10 +341,10 @@ pre code{display:block}
 <li>&#x2705; Streaming, Vision, Tools</li>
 <li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>1 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=starter" class="block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition shadow-lg shadow-primary/25">Mua ngay</a>
+<a href="/checkout?pkg=starter" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
-<!-- Pro — active -->
-<div class="bg-dark-700 border border-primary/40 rounded-2xl p-8 flex flex-col relative">
+<!-- Pro -->
+<div class="reveal reveal-delay-1 pricing-card pricing-card-featured bg-dark-700 border border-primary/40 rounded-2xl p-8 flex flex-col relative">
 <div class="absolute top-3 right-3 px-2 py-0.5 bg-primary/20 border border-primary/30 rounded text-xs text-primary font-bold">M&#7902; B&#193;N</div>
 <h3 class="text-lg font-bold mb-1">Pro</h3>
 <p class="text-gray-500 text-sm mb-2">Developer, freelancer</p>
@@ -184,11 +359,11 @@ pre code{display:block}
 <li>&#x2705; Streaming, Vision, Tools</li>
 <li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=pro" class="block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition shadow-lg shadow-primary/25">Mua ngay</a>
+<a href="/checkout?pkg=pro" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
-<!-- Pro v2 — active -->
-<div class="bg-dark-700 border border-blue-400/40 rounded-2xl p-8 flex flex-col relative">
-<div class="absolute top-3 right-3 px-2 py-0.5 bg-blue-500/15 border border-blue-400/30 rounded text-xs text-blue-300 font-bold">GÓI MỚI</div>
+<!-- Pro v2 -->
+<div class="reveal reveal-delay-2 pricing-card bg-dark-700 border border-blue-400/40 rounded-2xl p-8 flex flex-col relative">
+<div class="absolute top-3 right-3 px-2 py-0.5 bg-blue-500/15 border border-blue-400/30 rounded text-xs text-blue-300 font-bold">G&#201;I M&#7898;I</div>
 <h3 class="text-lg font-bold mb-1">Pro v2</h3>
 <p class="text-gray-500 text-sm mb-2">Developer, freelancer</p>
 <div class="mb-1"><span class="text-4xl font-black" data-package-price="pro_v2">290K</span><span class="text-gray-400 text-sm ml-1">VN&#272;/th&#225;ng</span></div>
@@ -201,10 +376,10 @@ pre code{display:block}
 <li>&#x2705; Streaming, Vision, Tools</li>
 <li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=pro_v2" class="block text-center px-6 py-3 bg-blue-500 hover:bg-blue-400 rounded-xl font-semibold text-sm transition shadow-lg shadow-blue-500/20">Mua Pro v2</a>
+<a href="/checkout?pkg=pro_v2" class="btn-glow block text-center px-6 py-3 bg-blue-500 hover:bg-blue-400 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-blue-500/20">Mua Pro v2</a>
 </div>
-<!-- Ultra — locked -->
-<div class="bg-dark-700 border border-white/10 rounded-2xl p-8 flex flex-col opacity-50 relative">
+<!-- Ultra -->
+<div class="reveal reveal-delay-3 pricing-card bg-dark-700 border border-white/10 rounded-2xl p-8 flex flex-col opacity-50 relative">
 <div class="absolute top-3 right-3 px-2 py-0.5 bg-dark-600 border border-white/10 rounded text-xs text-gray-500">S&#7855;p ra m&#7855;t</div>
 <h3 class="text-lg font-bold mb-1">Ultra</h3>
 <p class="text-gray-500 text-sm mb-2">Team, doanh nghi&#7879;p</p>
@@ -219,19 +394,21 @@ pre code{display:block}
 <button disabled class="block w-full text-center px-6 py-3 bg-dark-600 border border-white/10 rounded-xl font-semibold text-sm text-gray-500 cursor-not-allowed">Ch&#432;a m&#7903; b&#225;n</button>
 </div>
 </div>
-<div class="text-center mt-10">
+<div class="reveal text-center mt-10">
 <p class="text-gray-500 text-sm mb-3">&#272;&#227; c&#243; API key?</p>
-<a href="/portal" class="inline-flex items-center gap-2 px-6 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition">
+<a href="/portal" class="inline-flex items-center gap-2 px-6 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition-all duration-300 hover:border-white/20 hover:scale-105">
 &#128274; Xem s&#7889; d&#432; &amp; l&#7883;ch s&#7917; s&#7917; d&#7909;ng
 </a>
 </div>
+</div>
+</section>
 
 <!-- Docs -->
 <section id="docs" class="py-12 md:py-20">
 <div class="max-w-5xl mx-auto px-4 md:px-6">
 <div class="text-center mb-14">
-<h2 class="text-3xl md:text-4xl font-bold mb-4">H&#432;&#7899;ng D&#7851;n C&#224;i &#272;&#7863;t</h2>
-<p class="text-gray-400 text-lg">T&#432;&#417;ng th&#237;ch OpenAI SDK, Cline, Kilo Code, OpenClaw, Codex CLI</p>
+<h2 class="reveal text-3xl md:text-4xl font-bold mb-4">H&#432;&#7899;ng D&#7851;n C&#224;i &#272;&#7863;t</h2>
+<p class="reveal reveal-delay-1 text-gray-400 text-lg">T&#432;&#417;ng th&#237;ch OpenAI SDK, Cline, Kilo Code, OpenClaw, Codex CLI</p>
 </div>
 <div class="space-y-8">
 <div class="flex flex-wrap gap-2 justify-center overflow-x-auto pb-2" id="docTabs">
@@ -277,29 +454,29 @@ for chunk in response:
 
 <!-- Cline / Kilo Code -->
 <div id="tab-cline" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">Cài đặt Cline / Kilo Code (VS Code)</h3>
+<h3 class="text-xl font-bold mb-6">C&#224;i &#273;&#7863;t Cline / Kilo Code (VS Code)</h3>
 <div class="space-y-5">
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">C&#224;i extension Cline hoặc Kilo Code</p>
-    <p class="text-xs text-gray-400">VS Code → Extensions (Ctrl+Shift+X) → T&#236;m <strong class="text-white">"Cline"</strong> hoặc <strong class="text-white">"Kilo Code"</strong> → Install</p>
+    <p class="text-sm font-semibold text-white mb-1">C&#224;i extension Cline ho&#7863;c Kilo Code</p>
+    <p class="text-xs text-gray-400">VS Code &#8594; Extensions (Ctrl+Shift+X) &#8594; T&#236;m <strong class="text-white">"Cline"</strong> ho&#7863;c <strong class="text-white">"Kilo Code"</strong> &#8594; Install</p>
   </div>
 </div>
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">M&#7903; Settings → Providers</p>
-    <p class="text-xs text-gray-400"><strong class="text-white">Cline</strong>: mở biểu tượng Cline bên trái → Settings hoặc API Configuration.<br><strong class="text-white">Kilo Code</strong>: mở biểu tượng Kilo Code bên trái → Settings → Provider / API Provider.</p>
+    <p class="text-sm font-semibold text-white mb-1">M&#7903; Settings &#8594; Providers</p>
+    <p class="text-xs text-gray-400"><strong class="text-white">Cline</strong>: m&#7903; bi&#7875;u t&#432;&#7907;ng Cline b&#234;n tr&#225;i &#8594; Settings ho&#7863;c API Configuration.<br><strong class="text-white">Kilo Code</strong>: m&#7903; bi&#7875;u t&#432;&#7907;ng Kilo Code b&#234;n tr&#225;i &#8594; Settings &#8594; Provider / API Provider.</p>
   </div>
 </div>
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-2">Nhập thông tin cấu hình</p>
+    <p class="text-sm font-semibold text-white mb-2">Nh&#7853;p th&#244;ng tin c&#7845;u h&#236;nh</p>
     <div class="bg-dark-900 rounded-xl p-4 space-y-2.5">
       <div class="flex items-center gap-3 flex-wrap">
         <span class="text-gray-500 text-xs w-28 shrink-0">API Provider</span>
@@ -324,16 +501,16 @@ for chunk in response:
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">4</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">Bật Streaming nếu có</p>
-    <p class="text-xs text-gray-400">Bật <strong class="text-white">Enable Streaming</strong> trong Settings để phản hồi nhanh hơn.</p>
+    <p class="text-sm font-semibold text-white mb-1">B&#7853;t Streaming n&#7871;u c&#243;</p>
+    <p class="text-xs text-gray-400">B&#7853;t <strong class="text-white">Enable Streaming</strong> trong Settings &#273;&#7875; ph&#7843;n h&#7891;i nhanh h&#417;n.</p>
   </div>
 </div>
 
 <div class="flex gap-3">
   <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">5</span>
   <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">Lưu cấu hình và test thử</p>
-    <p class="text-xs text-gray-400">Click <strong class="text-white">Save</strong> → Mở chat Cline hoặc Kilo Code → Gõ thử: <code class="bg-dark-900 px-1.5 py-0.5 rounded">Hello, bạn có hoạt động không?</code></p>
+    <p class="text-sm font-semibold text-white mb-1">L&#432;u c&#7845;u h&#236;nh v&#224; test th&#7917;</p>
+    <p class="text-xs text-gray-400">Click <strong class="text-white">Save</strong> &#8594; M&#7903; chat Cline ho&#7863;c Kilo Code &#8594; G&#7885; th&#7917;: <code class="bg-dark-900 px-1.5 py-0.5 rounded">Hello, b&#7841;n c&#243; ho&#7841;t &#273;&#7897;ng kh&#244;ng?</code></p>
   </div>
 </div>
 
@@ -432,27 +609,27 @@ requires_openai_auth = true</code></pre>
 <section id="faq" class="py-12 md:py-20 bg-dark-800/50">
 <div class="max-w-3xl mx-auto px-4 md:px-6">
 <div class="text-center mb-10 md:mb-14">
-<h2 class="text-3xl md:text-4xl font-bold mb-4">C&#226;u H&#7887;i Th&#432;&#7901;ng G&#7863;p</h2>
+<h2 class="reveal text-3xl md:text-4xl font-bold mb-4">C&#226;u H&#7887;i Th&#432;&#7901;ng G&#7863;p</h2>
 </div>
 <div class="space-y-4">
-<details class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
-<summary class="font-semibold cursor-pointer flex items-center justify-between">API n&#224;y t&#432;&#417;ng th&#237;ch v&#7899;i OpenAI SDK kh&#244;ng?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
+<details class="reveal faq-item bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
+<summary class="font-semibold cursor-pointer flex items-center justify-between list-none">API n&#224;y t&#432;&#417;ng th&#237;ch v&#7899;i OpenAI SDK kh&#244;ng?<span class="faq-icon text-gray-500 text-xl">+</span></summary>
 <p class="text-gray-400 text-sm mt-4">C&#243;. B&#7841;n ch&#7881; c&#7847;n thay base_url v&#224; api_key. T&#432;&#417;ng th&#237;ch ho&#224;n to&#224;n v&#7899;i openai Python/Node SDK.</p>
 </details>
-<details class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
-<summary class="font-semibold cursor-pointer flex items-center justify-between">H&#7895; tr&#7907; streaming kh&#244;ng?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
+<details class="reveal reveal-delay-1 faq-item bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
+<summary class="font-semibold cursor-pointer flex items-center justify-between list-none">H&#7895; tr&#7907; streaming kh&#244;ng?<span class="faq-icon text-gray-500 text-xl">+</span></summary>
 <p class="text-gray-400 text-sm mt-4">C&#243;. H&#7895; tr&#7907; &#273;&#7847;y &#273;&#7911; SSE streaming cho OpenAI chat completions format.</p>
 </details>
-<details class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
-<summary class="font-semibold cursor-pointer flex items-center justify-between">C&#243; h&#7895; tr&#7907; function calling / tools kh&#244;ng?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
+<details class="reveal reveal-delay-2 faq-item bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
+<summary class="font-semibold cursor-pointer flex items-center justify-between list-none">C&#243; h&#7895; tr&#7907; function calling / tools kh&#244;ng?<span class="faq-icon text-gray-500 text-xl">+</span></summary>
 <p class="text-gray-400 text-sm mt-4">C&#243;. H&#7895; tr&#7907; &#273;&#7847;y &#273;&#7911; function calling t&#432;&#417;ng th&#237;ch OpenAI format.</p>
 </details>
-<details class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
-<summary class="font-semibold cursor-pointer flex items-center justify-between">Thanh to&#225;n b&#7857;ng g&#236;?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
+<details class="reveal reveal-delay-3 faq-item bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
+<summary class="font-semibold cursor-pointer flex items-center justify-between list-none">Thanh to&#225;n b&#7857;ng g&#236;?<span class="faq-icon text-gray-500 text-xl">+</span></summary>
 <p class="text-gray-400 text-sm mt-4">Chuy&#7875;n kho&#7843;n ng&#226;n h&#224;ng, Momo, ZaloPay. Nh&#7853;n API key trong 5 ph&#250;t sau thanh to&#225;n.</p>
 </details>
-<details class="bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
-<summary class="font-semibold cursor-pointer flex items-center justify-between">D&#249;ng &#273;&#432;&#7907;c v&#7899;i Cline, Kilo Code, Cursor kh&#244;ng?<span class="text-gray-500 group-open:rotate-45 transition-transform text-xl">+</span></summary>
+<details class="reveal reveal-delay-4 faq-item bg-dark-700 border border-white/10 rounded-xl p-4 md:p-6 group">
+<summary class="font-semibold cursor-pointer flex items-center justify-between list-none">D&#249;ng &#273;&#432;&#7907;c v&#7899;i Cline, Kilo Code, Cursor kh&#244;ng?<span class="faq-icon text-gray-500 text-xl">+</span></summary>
 <p class="text-gray-400 text-sm mt-4">C&#243;. Ch&#7885;n provider OpenAI Compatible, nh&#7853;p Base URL <code class="text-primary">https://zplay.io.vn/v1</code>, API key v&#224; model <code class="text-primary">gpt-5.5</code> l&#224; xong.</p>
 </details>
 </div>
@@ -478,15 +655,38 @@ requires_openai_auth = true</code></pre>
 </footer>
 
 <script>
+// Scroll reveal
+document.addEventListener('DOMContentLoaded', function() {
+  var reveals = document.querySelectorAll('.reveal');
+  
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.1,
+    rootMargin: '0px 0px -50px 0px'
+  });
+  
+  reveals.forEach(function(el) {
+    observer.observe(el);
+  });
+});
+
+// Tab switching
 function showTab(id){
   document.querySelectorAll('.tab-content').forEach(function(el){el.classList.add('hidden')});
   document.getElementById(id).classList.remove('hidden');
   document.querySelectorAll('.tab-btn').forEach(function(btn){
-    if(btn.dataset.tab===id){btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-primary text-white';}
-    else{btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10';}
+    if(btn.dataset.tab===id){btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-primary text-white transition-all duration-300';}
+    else{btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10 transition-all duration-300';}
   });
 }
 
+// Dynamic pricing
 fetch('/api/orders/packages')
   .then(function(response) { return response.ok ? response.json() : null; })
   .then(function(data) {
