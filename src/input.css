@@ -13,13 +13,12 @@
 @layer components {
   /* Gradient Text */
   .gradient-text {
-    background-image: linear-gradient(135deg, #818cf8, #a78bfa, #f0abfc);
-    background-size: 200% auto;
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-    animation: gradientShift 4s ease-in-out infinite;
+    /* Use a solid color here so unsupported text-clipping cannot hide the title. */
+    background: none;
+    background-image: none;
+    -webkit-text-fill-color: #a78bfa;
+    color: #a78bfa;
+    text-shadow: 0 0 28px rgba(167, 139, 250, 0.22);
   }
 
   /* Hero Glow */
