@@ -59,7 +59,7 @@ const seedPkgs = [
   { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: 30, description: "30,000,000 token, 30 RPM, 1 ngày", active: 1 },
   { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: 30, description: "900,000,000 token, 30 RPM, 30 ngày", active: 1 },
   { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: 30, description: "900,000,000 token, 30 RPM, 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: 30, description: "30.000 credit (~30M token), 1 API key, 30 RPM", active: 1 },
+  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: 30, description: "1.5B token, 1 API key, 30 RPM", active: 1 },
 ];
 const insertPkg = db.prepare(`
   INSERT OR IGNORE INTO packages (id, name, price, credit, token_quota, rpm_limit, description, active)
