@@ -244,200 +244,15 @@
 <section id="docs" class="py-12 md:py-20">
 <div class="max-w-5xl mx-auto px-4 md:px-6">
 <div class="text-center mb-14">
-<h2 class="reveal text-3xl md:text-4xl font-bold mb-4">H&#432;&#7899;ng D&#7851;n C&#224;i &#272;&#7863;t</h2>
-<p class="reveal reveal-delay-1 text-gray-400 text-lg">T&#432;&#417;ng th&#237;ch OpenAI SDK, Cline, Kilo Code, OpenClaw, Codex CLI</p>
+<h2 class="reveal text-3xl md:text-4xl font-bold mb-4">H&#432;&#7899;ng D&#7851;n C&agrave;i &#272;&#7863;t</h2>
+<p class="reveal reveal-delay-1 text-gray-400 text-lg">T&#432;&#417;ng th&iacute;ch OpenAI SDK, Cline, Kilo Code, OpenClaw, Codex CLI</p>
 </div>
-<div class="space-y-8">
-<div class="flex flex-wrap gap-2 justify-center overflow-x-auto pb-2" id="docTabs">
-<button onclick="showTab('tab-quick')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-primary text-white" data-tab="tab-quick">B&#7855;t &#273;&#7847;u nhanh</button>
-<button onclick="showTab('tab-cline')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-cline">Cline / Kilo Code</button>
-<button onclick="showTab('tab-openclaw')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-openclaw">OpenClaw</button>
-<button onclick="showTab('tab-codex')" class="tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10" data-tab="tab-codex">Codex CLI</button>
-</div>
-
-<!-- Quick Start -->
-<div id="tab-quick" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8">
-<h3 class="text-xl font-bold mb-6">B&#7855;t &#273;&#7847;u nhanh - Python OpenAI SDK</h3>
-<div class="mb-6">
-<p class="text-sm text-gray-400 mb-3 font-semibold uppercase tracking-wider">1. C&#224;i &#273;&#7863;t</p>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-green-400 overflow-x-auto"><code>pip install openai</code></pre>
-</div>
-<div class="mb-6">
-<p class="text-sm text-gray-400 mb-3 font-semibold uppercase tracking-wider">2. Code Python</p>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto"><code>from openai import OpenAI
-
-client = OpenAI(
-    api_key="sk-your-api-key",
-    base_url="https://zplay.io.vn/v1"
-)
-
-response = client.chat.completions.create(
-    model="gpt-5.5",
-    messages=[{"role": "user", "content": "Xin ch&#224;o!"}],
-    stream=True
-)
-
-for chunk in response:
-    print(chunk.choices[0].delta.content or "", end="")</code></pre>
-</div>
-<div>
-<p class="text-sm text-gray-400 mb-3 font-semibold uppercase tracking-wider">3. Test b&#7857;ng cURL</p>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto"><code>curl https://zplay.io.vn/v1/chat/completions \
-  -H "Authorization: Bearer sk-your-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-5.5","messages":[{"role":"user","content":"Hi"}]}'</code></pre>
-</div>
-</div>
-
-<!-- Cline / Kilo Code -->
-<div id="tab-cline" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">C&#224;i &#273;&#7863;t Cline / Kilo Code (VS Code)</h3>
-<div class="space-y-5">
-
-<div class="flex gap-3">
-  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span>
-  <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">C&#224;i extension Cline ho&#7863;c Kilo Code</p>
-    <p class="text-xs text-gray-400">VS Code &#8594; Extensions (Ctrl+Shift+X) &#8594; T&#236;m <strong class="text-white">"Cline"</strong> ho&#7863;c <strong class="text-white">"Kilo Code"</strong> &#8594; Install</p>
-  </div>
-</div>
-
-<div class="flex gap-3">
-  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span>
-  <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">M&#7903; Settings &#8594; Providers</p>
-    <p class="text-xs text-gray-400"><strong class="text-white">Cline</strong>: m&#7903; bi&#7875;u t&#432;&#7907;ng Cline b&#234;n tr&#225;i &#8594; Settings ho&#7863;c API Configuration.<br><strong class="text-white">Kilo Code</strong>: m&#7903; bi&#7875;u t&#432;&#7907;ng Kilo Code b&#234;n tr&#225;i &#8594; Settings &#8594; Provider / API Provider.</p>
-  </div>
-</div>
-
-<div class="flex gap-3">
-  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span>
-  <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-2">Nh&#7853;p th&#244;ng tin c&#7845;u h&#236;nh</p>
-    <div class="bg-dark-900 rounded-xl p-4 space-y-2.5">
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-gray-500 text-xs w-28 shrink-0">API Provider</span>
-        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-primary text-xs font-mono">OpenAI Compatible</code>
-      </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-gray-500 text-xs w-28 shrink-0">Base URL</span>
-        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-green-400 text-xs font-mono">https://zplay.io.vn/v1</code>
-      </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-gray-500 text-xs w-28 shrink-0">API Key</span>
-        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-yellow-400 text-xs font-mono">sk-your-api-key</code>
-      </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <span class="text-gray-500 text-xs w-28 shrink-0">Model</span>
-        <code class="bg-dark-700 px-3 py-1.5 rounded-lg text-white text-xs font-mono">gpt-5.5</code>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="flex gap-3">
-  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">4</span>
-  <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">B&#7853;t Streaming n&#7871;u c&#243;</p>
-    <p class="text-xs text-gray-400">B&#7853;t <strong class="text-white">Enable Streaming</strong> trong Settings &#273;&#7875; ph&#7843;n h&#7891;i nhanh h&#417;n.</p>
-  </div>
-</div>
-
-<div class="flex gap-3">
-  <span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">5</span>
-  <div class="flex-1">
-    <p class="text-sm font-semibold text-white mb-1">L&#432;u c&#7845;u h&#236;nh v&#224; test th&#7917;</p>
-    <p class="text-xs text-gray-400">Click <strong class="text-white">Save</strong> &#8594; M&#7903; chat Cline ho&#7863;c Kilo Code &#8594; G&#7885; th&#7917;: <code class="bg-dark-900 px-1.5 py-0.5 rounded">Hello, b&#7841;n c&#243; ho&#7841;t &#273;&#7897;ng kh&#244;ng?</code></p>
-  </div>
-</div>
-
-</div>
-
-<div class="mt-5 p-3 bg-primary/10 border border-primary/20 rounded-lg text-xs text-primary">
-  C&#7845;u h&#236;nh m&#7851;u: API Provider <strong>OpenAI Compatible</strong>, Base URL <code>https://zplay.io.vn/v1</code>, Model <code>gpt-5.5</code>, Enable Streaming <strong>On</strong>.
-</div>
-
-<div class="mt-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg text-xs text-blue-300">
-  &#x2139;&#xFE0F; Model c&#243; th&#7875; ch&#7885;n: <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.6-terra</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.6-luna</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.6-sol</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.5</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.5-turbo</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-5.4</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">gpt-4o</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">deepseek-v4-pro</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">glm-5.2</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">claude-opus-4-8</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">claude-opus-4-7</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">claude-opus-4-6</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">claude-sonnet-5</code> · <code class="bg-dark-900 px-1.5 py-0.5 rounded">qwen-3.6</code>
-</div>
-<div class="mt-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-xs text-yellow-300">
-  &#x26A0;&#xFE0F; Ph&#7843;i ch&#7885;n <strong>OpenAI Compatible</strong>; kh&#244;ng ch&#7885;n Anthropic, OpenAI m&#7863;c &#273;&#7883;nh, Google Gemini ho&#7863;c OpenRouter n&#7871;u kh&#244;ng c&#243; h&#432;&#7899;ng d&#7851;n ri&#234;ng.
-</div>
-</div>
-
-<!-- OpenClaw -->
-<div id="tab-openclaw" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">C&#224;i v&#224;o OpenClaw</h3>
-<div class="space-y-4 text-sm text-gray-300 mb-6">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span><p>Trong OpenClaw, m&#7903; c&#7845;u h&#236;nh model provider v&#224; th&#234;m provider m&#7899;i, &#273;&#7863;t id: <code class="bg-dark-900 px-2 py-0.5 rounded text-green-400">gptapi</code></p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span><p>Ch&#7885;n API type: <strong class="text-white">openai-completions</strong></p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span><p>Nh&#7853;p Base URL v&#224; API Key.</p></div>
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">4</span><p>Khai b&#225;o models v&#224; d&#249;ng d&#7841;ng <code class="bg-dark-900 px-2 py-0.5 rounded text-green-400">gptapi/gpt-5.5</code> khi ch&#7885;n.</p></div>
-</div>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto"><code>{
-  models: {
-    providers: {
-      gptapi: {
-        api: "openai-completions",
-        baseUrl: "https://zplay.io.vn/v1",
-        apiKey: "sk-your-api-key",
-        models: [
-          { id: "gpt-5.5" },
-          { id: "gpt-5.5-turbo" },
-          { id: "gpt-5.4" },
-          { id: "gpt-4o" },
-          { id: "deepseek-v4-pro" },
-          { id: "glm-5.2" },
-          { id: "claude-opus-4-8" },
-          { id: "claude-opus-4-7" },
-          { id: "claude-opus-4-6" },
-          { id: "claude-sonnet-5" },
-          { id: "qwen-3.6" }
-        ]
-      }
-    }
-  },
-  agents: {
-    defaults: {
-      model: { primary: "gptapi/gpt-5.5" }
-    }
-  }
-}</code></pre>
-</div>
-
-<!-- Codex CLI -->
-<div id="tab-codex" class="tab-content bg-dark-700 border border-white/10 rounded-2xl p-4 md:p-8 hidden">
-<h3 class="text-xl font-bold mb-6">C&#7845;u h&#236;nh Codex CLI</h3>
-<div class="space-y-4 text-sm text-gray-300 mb-6">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">1</span><p>T&#7841;o th&#432; m&#7909;c <code>.codex</code> trong th&#432; m&#7909;c g&#7889;c h&#7879; th&#7889;ng.</p></div>
-</div>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-green-400 overflow-x-auto mb-6"><code>macOS/Linux: ~/.codex/
-Windows: %USERPROFILE%\.codex\</code></pre>
-<div class="space-y-4 text-sm text-gray-300 mb-6">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">2</span><p>T&#7841;o t&#7879;p <code>config.toml</code>:</p></div>
-</div>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto mb-6"><code>model_provider = "zplay"
-model = "gpt-5" #model = "gpt-5-codex"
-model_reasoning_effort = "high"
-disable_response_storage = true
-
-[model_providers.zplay]
-name = "zplay"
-base_url = "https://zplay.io.vn/v1"
-wire_api = "responses"
-requires_openai_auth = true</code></pre>
-<div class="space-y-4 text-sm text-gray-300 mb-6">
-<div class="flex gap-3"><span class="shrink-0 w-7 h-7 bg-primary/20 text-primary rounded-full flex items-center justify-center font-bold text-xs">3</span><p>T&#7841;o t&#7879;p <code>auth.json</code>:</p></div>
-</div>
-<pre class="bg-dark-900 rounded-xl p-4 text-sm text-gray-300 overflow-x-auto mb-6"><code>{
-  "auth_mode": "apikey",
-  "OPENAI_API_KEY": "your-api-key-here"
-}</code></pre>
-<div class="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg text-sm text-yellow-300">L&#432;u &#253;: B&#7841;n c&#7847;n t&#7841;o th&#432; m&#7909;c .codex th&#7911; c&#244;ng, sau &#273;&#243; t&#7841;o config.toml v&#224; auth.json b&#234;n trong.</div>
-<div class="mt-4">
-  <a href="https://docs.google.com/document/d/1CeFpdpPA6VsclU8UWWK2iunm18kWj8XyMspxKGgoYrs/edit?tab=t.0" target="_blank" rel="noopener noreferrer" class="text-center px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-sm text-primary font-semibold hover:bg-primary/20 transition">M&#7903; Google Docs chi ti&#7871;t</a>
-</div>
-</div>
+<div class="text-center reveal">
+<a href="https://docs.google.com/document/d/1CeFpdpPA6VsclU8UWWK2iunm18kWj8XyMspxKGgoYrs/edit?tab=t.0" target="_blank" rel="noopener noreferrer" class="btn-glow inline-flex items-center gap-3 px-8 py-4 bg-primary hover:bg-primary/90 rounded-xl text-base font-semibold transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40 hover:scale-105">
+<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+Xem H&#432;&#7899;ng D&#7851;n Chi Ti&#7871;t (Google Docs)
+</a>
+<p class="mt-4 text-sm text-gray-500">B&#7845;t &#273;&#7847;u nhanh, Cline / Kilo Code, OpenClaw, Codex CLI &mdash; xem t&#7845;t c&#7843; trong t&agrave;i li&#7879;u chi ti&#7871;t</p>
 </div>
 </div>
 </section>
@@ -512,16 +327,6 @@ document.addEventListener('DOMContentLoaded', function() {
     observer.observe(el);
   });
 });
-
-// Tab switching
-function showTab(id){
-  document.querySelectorAll('.tab-content').forEach(function(el){el.classList.add('hidden')});
-  document.getElementById(id).classList.remove('hidden');
-  document.querySelectorAll('.tab-btn').forEach(function(btn){
-    if(btn.dataset.tab===id){btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-primary text-white transition-all duration-300';}
-    else{btn.className='tab-btn px-3 py-2 rounded-lg text-xs md:text-sm font-medium bg-dark-700 text-gray-400 border border-white/10 transition-all duration-300';}
-  });
-}
 
 // Dynamic pricing
 fetch('/api/orders/packages')
