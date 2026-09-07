@@ -6154,10 +6154,6 @@ app.get("/portal", (_req, res) => {
   return sendNoCacheHtml(res, "portal.html");
 });
 
-app.get("/lookup", (_req, res) => {
-  return sendNoCacheHtml(res, "lookup.html");
-});
-
 app.get("/key-check", (_req, res) => {
   return sendNoCacheHtml(res, "key-check.html");
 });
@@ -6276,22 +6272,6 @@ app.get("/api/orders/status/:id", (req, res) => {
   const order = orders.getOrder(req.params.id);
   if (!order) return res.status(404).json({ detail: "Không tìm thấy đơn hàng" });
   res.json({ status: order.status, api_key: order.status === "paid" ? order.api_key : null });
-});
-
-app.get("/api/orders/lookup", (req, res) => {
-  const email = String(req.query.email || "").trim();
-  const code  = String(req.query.code  || "").trim();
-  const enrichOrders = (list) => (list || []).filter(Boolean).map((order) => {
-    if (!order.api_key) return order;
-    const keyRow = credit.getKey(order.api_key);
-    return {
-      ...order,
-      token_remaining: keyRow ? Number(keyRow.token_remaining || 0) : 0,
-    };
-  });
-  if (code)  return res.json({ orders: enrichOrders([orders.getOrderByCode(code)]) });
-  if (email) return res.json({ orders: enrichOrders(orders.listByEmail(email)) });
-  res.status(400).json({ detail: "Cần email hoặc mã đơn hàng" });
 });
 
 // ── Webhook Sepay / Casso ─────────────────────────────────────────────────────
