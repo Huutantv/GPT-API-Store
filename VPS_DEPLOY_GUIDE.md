@@ -29,7 +29,7 @@ git add .
 git commit -m "mô tả thay đổi"
 git push origin main
 
-
+ssh root@161.248.146.233 |  @Sieutoc!q1gXiAKHEcu
 cd ~/gpt-api-store
 git pull --ff-only origin main
 pm2 restart gpt-api-store --update-env
