@@ -1869,13 +1869,69 @@ function settleAuthenticatedRequest(req, tokensIn, tokensOut, model) {
   return result;
 }
 
+// Fail-closed admin auth + brute-force throttle (5 sai / 10 phút / IP -> 429).
+const _adminFailMap = new Map();
+function _adminClientIp(req) {
+  return String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim().slice(0, 80);
+}
 function checkAdminAuth(req) {
   const adminKey = String(process.env.DORO_ADMIN_KEY || "").trim();
-  if (!adminKey) return { ok: true };
+  if (!adminKey) return { ok: false, status: 503, message: "Admin not configured" };
   const token = extractAdminToken(req);
+  const ip = _adminClientIp(req);
+  const now = Date.now();
+  const entry = _adminFailMap.get(ip);
+  if (entry && now - entry.windowStart > 10 * 60 * 1000) _adminFailMap.delete(ip);
+  const cur = _adminFailMap.get(ip);
+  if (cur && cur.count >= 5) return { ok: false, status: 429, message: "Too many admin attempts. Try again later." };
   if (!token) return { ok: false, status: 401, message: "Missing admin key" };
-  if (token !== adminKey) return { ok: false, status: 403, message: "Invalid admin key" };
+  let valid = false;
+  try {
+    const a = Buffer.from(token);
+    const b = Buffer.from(adminKey);
+    valid = a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch (_) { valid = false; }
+  if (!valid) {
+    const e = _adminFailMap.get(ip) || { windowStart: now, count: 0 };
+    e.count += 1;
+    _adminFailMap.set(ip, e);
+    try { addLog(`SECURITY admin-auth-fail ip=${ip}`); } catch (_) {}
+    return { ok: false, status: 403, message: "Invalid admin key" };
+  }
+  if (cur) _adminFailMap.delete(ip);
   return { ok: true };
+}
+function maskKeyRow(row) {
+  if (!row || typeof row !== "object") return row;
+  const full = String(row.key || row.api_key || "");
+  const masked = full ? maskSecret(full) : "none";
+  const copy = { ...row };
+  if ("key" in copy) copy.key = masked;
+  if ("api_key" in copy) copy.api_key = masked;
+  copy.key_masked = masked;
+  return copy;
+}
+// Resolve admin-supplied key identifier (full key or masked preview) to full DB row.
+// Allows admin UI to operate on masked values without bulk-exposing full keys.
+function resolveAdminKeyRow(input) {
+  const s = String(input || "").trim();
+  if (!s) return null;
+  const direct = credit.getKey(s);
+  if (direct) return direct;
+  try {
+    const all = credit.listKeys() || [];
+    for (const r of all) {
+      const full = String(r.key || "");
+      if (!full) continue;
+      if (maskSecret(full) === s) return credit.getKey(full) || r;
+    }
+    // Fallback: prefix match (first 12 chars) when admin pastes preview.
+    if (s.length >= 8) {
+      const matches = all.filter((r) => String(r.key || "").startsWith(s.slice(0, 12)));
+      if (matches.length === 1) return credit.getKey(matches[0].key) || matches[0];
+    }
+  } catch (_) {}
+  return null;
 }
 
 function appendErrorContext(error, context) {
@@ -6400,7 +6456,7 @@ async function processPayment(orderCode, amount, note) {
     `\ud83d\udce7 <b>Email:</b> <code>${order.customer_email}</code>\n` +
     `\ud83d\udcf1 <b>S\u0110T:</b> ${order.customer_phone || "N/A"}\n` +
     `\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n` +
-    `\ud83d\udd11 <b>API Key (full):</b>\n<code>${keyRow.key}</code>\n` +
+    `\ud83d\udd11 <b>API Key:</b>\n<code>${maskSecret(keyRow.key)}</code> (full key sent via email)\n` +
     `\ud83d\udcc4 <b>M\u00e3 \u0111\u01a1n:</b> <code>${order.order_code}</code>\n` +
     `\ud83d\udd17 <b>Portal:</b> ${baseUrl}/portal`
   );
@@ -6474,7 +6530,7 @@ app.get("/api/orders", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const status = req.query.status;
   const list = status ? orders.listByStatus(status) : orders.listOrders("", 200);
-  res.json({ orders: list });
+  res.json({ orders: list.map(maskKeyRow) });
 });
 
 app.get("/api/orders/stats", (req, res) => {
@@ -6536,7 +6592,8 @@ app.get("/api/dashboard/analytics", (req, res) => {
     daily: dailyRows.map((r) => ({ day: r.day, revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
     monthly: monthlyRows.map((r) => ({ month: r.month, revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
     by_package: byPackage.map((r) => ({ package_id: r.package_id || "unknown", revenue: Number(r.revenue || 0), keys_sold: Number(r.keys_sold || 0) })),
-    recent_paid: recentPaid.map((r) => ({ ...r, key_masked: r.api_key ? r.api_key.slice(0, 10) + "..." + r.api_key.slice(-4) : "" })),
+    // FIX: do not spread full api_key. Return masked only.
+    recent_paid: recentPaid.map((r) => ({ order_code: r.order_code, package_id: r.package_id, amount: Number(r.amount || 0), customer_name: r.customer_name || "", customer_email: r.customer_email || "", paid_at: r.paid_at || null, key_masked: r.api_key ? maskSecret(r.api_key) : "" })),
   });
 });
 
@@ -6682,7 +6739,7 @@ app.get("/api/config", (req, res) => {
       disable_tools: !!profile.disableTools,
       backend_api_keys: profile.apiKeys.length,
       backend_api_key_masks: profile.apiKeys.map(maskSecret),
-      backend_api_keys_full: profile.apiKeys,   // full keys cho admin
+      backend_api_keys_full: [],
       api_key_masked: maskSecret(profile.apiKeys[0]),
     };
   });
@@ -6711,7 +6768,7 @@ app.get("/api/config", (req, res) => {
       disable_tools: !!profile.disableTools,
       backend_api_keys: profile.apiKeys.length,
       backend_api_key_masks: profile.apiKeys.map(maskSecret),
-      backend_api_keys_full: profile.apiKeys,
+      backend_api_keys_full: [],
       api_key_masked: maskSecret(profile.apiKeys[0]),
     };
   });
@@ -6726,7 +6783,7 @@ app.get("/api/config", (req, res) => {
     configured: visionProfile.configured,
     backend_api_keys: visionProfile.apiKeys.length,
     backend_api_key_masks: visionProfile.apiKeys.map(maskSecret),
-    backend_api_keys_full: visionProfile.apiKeys,
+    backend_api_keys_full: [],
     api_key_masked: maskSecret(visionProfile.apiKeys[0]),
   };
   res.json({
@@ -6757,7 +6814,7 @@ app.get("/api/config", (req, res) => {
     token_per_request: getTokenPerRequest(),
     telegram_bot_token_set: !!String(process.env.TELEGRAM_BOT_TOKEN || "").trim(),
     telegram_bot_token_masked: maskSecret(process.env.TELEGRAM_BOT_TOKEN || ""),
-    telegram_chat_id: String(process.env.TELEGRAM_CHAT_ID || "").trim(),
+    telegram_chat_id: maskSecret(String(process.env.TELEGRAM_CHAT_ID || "").trim()),
     telegram_alerts_enabled: true,
     backend_health: backendHealth,
     backend_router_mode: backendRouterMode(),
@@ -6767,13 +6824,13 @@ app.get("/api/config", (req, res) => {
     backend5_vision: backend5Vision,
     base_url: settings.baseUrl,
     backend_model: settings.backendModel,
-    backend_keys: settings.apiKeys,
+    backend_keys: settings.apiKeys.length,
     max_tokens: settings.maxTokens || null,
     user_assistant_only: !!settings.userAssistantOnly,
     disable_tools: !!settings.disableTools,
     api_key_masked: maskSecret(settings.apiKey),
     backend_api_key_masks: settings.apiKeys.map(maskSecret),
-    backend_api_keys_full: settings.apiKeys,     // full keys cho admin
+    backend_api_keys_full: [],
     backend_api_keys: settings.apiKeys.length,
     base_url_sources: {
       DORO_API_BASE: !!String(process.env.DORO_API_BASE || "").trim(),
@@ -7077,15 +7134,12 @@ app.get("/api/requests/recent", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const limit = Math.min(1000, Math.max(1, Number(req.query.limit || "200")));
   const ownerMap = new Map();
-  const fullKeyMap = new Map();
   for (const keyRow of credit.listKeys() || []) {
     const fullKey = keyRow.key || "";
     const maskedKey = maskSecret(fullKey);
     const owner = getRequestOwnerInfo(fullKey);
     ownerMap.set(fullKey, owner);
     ownerMap.set(maskedKey, owner);
-    fullKeyMap.set(fullKey, fullKey);
-    fullKeyMap.set(maskedKey, fullKey);
   }
   const requests = recentRequests.slice(-limit).reverse().map((item) => {
     const rawKey = String(item.api_key_masked || item.api_key || "");
@@ -7093,6 +7147,7 @@ app.get("/api/requests/recent", (req, res) => {
     const keyLabel = item.key_label || owner.key_label || "";
     const enriched = {
       ...item,
+      api_key: undefined,
       user_name: item.user_name || owner.user_name || owner.customer_name || "",
       user_email: item.user_email || owner.user_email || owner.customer_email || "",
       user_phone: item.user_phone || owner.user_phone || owner.customer_phone || "",
@@ -7103,7 +7158,9 @@ app.get("/api/requests/recent", (req, res) => {
       order_code: item.order_code || owner.order_code || "",
       package_id: item.package_id || owner.package_id || "",
       key_label: keyLabel,
-      api_key_full: fullKeyMap.get(rawKey) || "",
+      // FIX: never expose full key here. Frontend uses masked + on-demand reveal.
+      api_key_full: "",
+      copy_api_key: "",
     };
     enriched.error_copy_text = enriched.admin_error_message || enriched.error_message || enriched.error_type || "";
     enriched.debug_copy_text = monitorDebugCopyText(enriched);
@@ -7256,33 +7313,50 @@ app.put("/api/admin/packages/:id", (req, res) => {
 app.get("/api/credit/keys", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  res.json({ keys: credit.listKeys() });
+  // FIX: never bulk-expose full customer keys. List returns masked only.
+  const rows = (credit.listKeys() || []).map(maskKeyRow);
+  res.json({ keys: rows });
+});
+
+// FIX: single-key reveal on demand (audited). Admin UI calls this when Copy is clicked.
+app.get("/api/credit/key-full", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const input = String(req.query.key || "").trim();
+  if (!input) return res.status(400).json({ detail: "Missing key" });
+  const row = resolveAdminKeyRow(input);
+  if (!row || !row.key) return res.status(404).json({ detail: "Key not found" });
+  try { addLog(`SECURITY admin-reveal ip=${_adminClientIp(req)} key=${maskSecret(row.key)}`); } catch (_) {}
+  res.json({ ok: true, key: row.key, key_masked: maskSecret(row.key) });
 });
 
 app.get("/api/credit/key-lookup", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const key = String(req.query.key || "").trim();
-  if (!key) return res.status(400).json({ detail: "Missing key" });
+  const input = String(req.query.key || "").trim();
+  if (!input) return res.status(400).json({ detail: "Missing key" });
 
-  const row = credit.getKey(key);
+  const row = resolveAdminKeyRow(input);
   if (!row) return res.status(404).json({ detail: "Key not found" });
+  const key = row.key;
 
   const usage = credit.getUsageTotal(key);
   const quotaInfo = credit.getQuotaInfo(row);
   const history = credit.getHistory(key, 10);
   const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
   const order = db.prepare("SELECT * FROM orders WHERE api_key = ? ORDER BY paid_at DESC, created_at DESC LIMIT 1").get(key) || null;
+  if (order && order.api_key) order.api_key = maskSecret(order.api_key);
 
   res.json({
     ok: true,
     key: {
       ...row,
+      key: maskSecret(row.key),
       token_remaining_raw: row.token_remaining,
       token_remaining: quotaInfo.token_remaining,
       token_quota: quotaInfo.token_quota,
       token_per_request: quotaInfo.token_per_request,
-      key_masked: key.slice(0, 12) + "..." + key.slice(-4),
+      key_masked: maskSecret(key),
       active: !!row.active,
     },
     owner: order ? {
@@ -7342,11 +7416,14 @@ app.post("/api/credit/keys", (req, res) => {
 app.delete("/api/credit/keys", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const key = String((req.body || {}).key || "").trim();
+  const input = String((req.body || {}).key || "").trim();
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const key = found.key;
   try {
     credit.deleteKey(key);
-    addLog(`CREDIT KEY - ${key.slice(0, 20)}`);
-    res.json({ ok: true, removed: key });
+    addLog(`CREDIT KEY - ${maskSecret(key)}`);
+    res.json({ ok: true, removed: maskSecret(key) });
   } catch (err) {
     res.status(404).json({ detail: err.message });
   }
@@ -7356,7 +7433,10 @@ app.post("/api/credit/topup", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
-  const key = String(body.key || "").trim();
+  const input = String(body.key || "").trim();
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const key = found.key;
   const amount = Number(body.amount || 0);
   const reason = String(body.reason || "topup");
   if (!key || !amount) return res.status(400).json({ detail: "Missing key or amount" });
@@ -7365,8 +7445,8 @@ app.post("/api/credit/topup", (req, res) => {
     const tokenQuota = optionalPositiveInt(body.token_quota);
     const tokenAmount = tokenQuota || Math.max(0, Math.floor(amount * tokenPerRequest));
     const result = credit.topupCredit(key, amount, reason, tokenAmount);
-    addLog(`CREDIT TOPUP ${key.slice(0, 20)} +${amount} credit +${tokenAmount} tokens -> ${result.credit}`);
-    res.json({ ok: true, ...result });
+    addLog(`CREDIT TOPUP ${maskSecret(key)} +${amount} credit +${tokenAmount} tokens -> ${result.credit}`);
+    res.json({ ok: true, ...maskKeyRow(result) });
   } catch (err) {
     res.status(404).json({ detail: err.message });
   }
@@ -7376,7 +7456,10 @@ app.post("/api/credit/adjust", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
-  const key = String(body.key || "").trim();
+  const input = String(body.key || "").trim();
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const key = found.key;
   const delta = Number(body.delta);
   if (!key || !Number.isSafeInteger(delta) || delta === 0) {
     return res.status(400).json({ detail: "Key and a non-zero integer delta are required" });
@@ -7384,8 +7467,8 @@ app.post("/api/credit/adjust", (req, res) => {
   try {
     const reason = delta > 0 ? "admin_credit_increase" : "admin_credit_decrease";
     const result = credit.adjustCredit(key, delta, reason);
-    addLog(`CREDIT ADJUST ${key.slice(0, 20)} delta=${delta} -> ${result.credit}`);
-    res.json({ ok: true, ...result });
+    addLog(`CREDIT ADJUST ${maskSecret(key)} delta=${delta} -> ${result.credit}`);
+    res.json({ ok: true, ...maskKeyRow(result) });
   } catch (err) {
     res.status(err.message === "Key not found" ? 404 : 400).json({ detail: err.message });
   }
@@ -7395,7 +7478,10 @@ app.post("/api/credit/adjust-token", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
-  const key = String(body.key || "").trim();
+  const input = String(body.key || "").trim();
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const key = found.key;
   const delta = Number(body.delta);
   if (!key || !Number.isSafeInteger(delta) || delta === 0) {
     return res.status(400).json({ detail: "Key and a non-zero integer delta are required" });
@@ -7403,8 +7489,8 @@ app.post("/api/credit/adjust-token", (req, res) => {
   try {
     const reason = delta > 0 ? "admin_token_increase" : "admin_token_decrease";
     const result = credit.adjustToken(key, delta, reason);
-    addLog(`TOKEN ADJUST ${key.slice(0, 20)} delta=${delta} -> ${result.token_remaining}`);
-    res.json({ ok: true, ...result });
+    addLog(`TOKEN ADJUST ${maskSecret(key)} delta=${delta} -> ${result.token_remaining}`);
+    res.json({ ok: true, ...maskKeyRow(result) });
   } catch (err) {
     res.status(err.message === "Key not found" ? 404 : 400).json({ detail: err.message });
   }
@@ -7414,12 +7500,15 @@ app.post("/api/credit/extend-expiry", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
-  const key = String(body.key || "").trim();
+  const input = String(body.key || "").trim();
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const key = found.key;
   const days = Number(body.days);
   try {
     const result = credit.extendKeyExpiry(key, days);
-    addLog(`KEY EXPIRY EXTEND ${key.slice(0, 20)} +${result.days}d -> ${result.expires_at}`);
-    res.json({ ok: true, ...result });
+    addLog(`KEY EXPIRY EXTEND ${maskSecret(key)} +${result.days}d -> ${result.expires_at}`);
+    res.json({ ok: true, ...maskKeyRow(result) });
   } catch (err) {
     res.status(err.message === "Key not found" ? 404 : 400).json({ detail: err.message });
   }
@@ -7429,18 +7518,25 @@ app.post("/api/credit/set-active", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
-  const key = String(body.key || "").trim();
+  const input = String(body.key || "").trim();
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const key = found.key;
   const active = !!body.active;
   credit.setKeyActive(key, active);
-  res.json({ ok: true, key, active });
+  res.json({ ok: true, key: maskSecret(key), active });
 });
 
 app.get("/api/credit/history", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const key = String(req.query.key || "").trim();
+  const input = String(req.query.key || "").trim();
   const limit = Math.min(500, Number(req.query.limit || 100));
-  if (key) return res.json({ history: credit.getHistory(key, limit) });
+  if (input) {
+    const found = resolveAdminKeyRow(input);
+    if (!found) return res.status(404).json({ detail: "Key not found" });
+    return res.json({ history: credit.getHistory(found.key, limit) });
+  }
   res.json({ history: credit.getAllHistory(limit) });
 });
 
@@ -7482,14 +7578,14 @@ app.get("/api/credit/my-history", (req, res) => {
 app.get("/api/customers", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  // Group by email, lấy thông tin mới nhất
+  // FIX: do not GROUP_CONCAT full api_keys. Return counts + masked previews only.
   const rows = require("better-sqlite3")(require("path").join(__dirname, "credit.db"))
     .prepare(`SELECT customer_email, customer_name, customer_phone,
         COUNT(*) as total_orders,
         SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as paid_orders,
         SUM(CASE WHEN status='paid' THEN amount ELSE 0 END) as total_spent,
         MAX(created_at) as last_order_at,
-        GROUP_CONCAT(CASE WHEN status='paid' THEN api_key END, ',') as api_keys
+        GROUP_CONCAT(CASE WHEN status='paid' THEN substr(api_key,1,12) || '...' || substr(api_key,-4,4) END, ',') as api_keys
       FROM orders
       GROUP BY customer_email
       ORDER BY last_order_at DESC`).all();
@@ -7500,11 +7596,12 @@ app.get("/api/customers/:email", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const email = decodeURIComponent(req.params.email);
-  const orderList = orders.listByEmail(email);
-  // Lấy credit keys liên quan
-  const keys = orderList.filter(o => o.api_key).map(o => {
+  const orderList = (orders.listByEmail(email) || []).map(maskKeyRow);
+  // Lấy credit keys liên quan (masked only)
+  const keys = (orders.listByEmail(email) || []).filter(o => o.api_key).map(o => {
     const keyRow = credit.getKey(o.api_key);
-    return { ...keyRow, order_code: o.order_code, package_id: o.package_id, paid_at: o.paid_at };
+    if (!keyRow) return null;
+    return { ...maskKeyRow(keyRow), order_code: o.order_code, package_id: o.package_id, paid_at: o.paid_at };
   }).filter(Boolean);
   res.json({ email, orders: orderList, keys });
 });

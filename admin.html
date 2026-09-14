@@ -1150,7 +1150,16 @@ var BASE = window.location.origin;
 var logsAutoTimer = null;
 var logsAutoOn = false;
 var logsCurrentSource = "pm2-error.log";
-var ADMIN_KEY = localStorage.getItem("gpt_admin_key") || "";
+var ADMIN_KEY = sessionStorage.getItem("gpt_admin_key") || "";
+async function revealFullKey(masked, btn) {
+  try {
+    if (btn) btn.textContent = "...";
+    var r = await fetch(BASE + "/api/credit/key-full?key=" + encodeURIComponent(masked), { headers: authHeaders() });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.detail || "Không lấy được key");
+    await copyText(d.key, btn);
+  } catch (e) { alert(e.message || "Không lấy được key"); if (btn) btn.textContent = "copy"; }
+}
 var monitorRows = [];
 var monitorModalRow = null;
 
@@ -1356,7 +1365,7 @@ async function adminLogin() {
     return;
   }
   ADMIN_KEY = key;
-  localStorage.setItem("gpt_admin_key", key);
+  sessionStorage.setItem("gpt_admin_key", key);
   document.getElementById("loginOverlay").classList.add("hidden");
   document.getElementById("mainContent").classList.remove("hidden");
   showTab("overview");
@@ -1364,7 +1373,7 @@ async function adminLogin() {
 
 function adminLogout() {
   ADMIN_KEY = "";
-  localStorage.removeItem("gpt_admin_key");
+  sessionStorage.removeItem("gpt_admin_key");
   location.reload();
 }
 
@@ -1580,14 +1589,15 @@ async function loadKeys() {
     return;
   }
   tbody.innerHTML = keys.map(function(k) {
-    var masked = k.key.slice(0,12) + "..." + k.key.slice(-4);
+    var kid = k.key_masked || k.key || "";
+    var masked = kid.indexOf("...") >= 0 ? kid : (String(k.key||"").slice(0,12) + "..." + String(k.key||"").slice(-4));
     var sCls = k.active ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400";
     var sTxt = k.active ? "Ho\u1ea1t \u0111\u1ed9ng" : "B\u1ecb kh\u00f3a";
     var cCls = k.credit < 100 ? "text-red-400" : "text-green-400";
     var toggleTxt = k.active ? "Kh\u00f3a" : "M\u1edf";
     return '<tr class="border-b border-white/5 hover:bg-white/2">' +
-      '<td class="px-4 py-3 font-mono text-xs text-gray-300">' + masked +
-        ' <button onclick="copyText(\'' + k.key + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button></td>' +
+      '<td class="px-4 py-3 font-mono text-xs text-gray-300">' + escapeHtml(masked) +
+        ' <button onclick="revealFullKey(\'' + escapeJsString(kid) + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button></td>' +
       '<td class="px-4 py-3 text-sm">' + (k.label || '<span class="text-gray-500">\u2014</span>') + '</td>' +
       '<td class="px-4 py-3 text-right font-bold ' + cCls + '">' + Number(k.credit).toLocaleString() + '</td>' +
       '<td class="px-4 py-3 text-right text-cyan-300">' + Number(k.token_remaining || 0).toLocaleString("vi-VN") + '</td>' +
@@ -1893,8 +1903,8 @@ async function loadMonitor() {
   if (!rows.length) { tbody.innerHTML = '<tr><td colspan="13" class="text-center text-gray-500 py-6">Ch\u01b0a c\u00f3 request</td></tr>'; return; }
   tbody.innerHTML = rows.map(function(r, idx) {
     var sCls = r.status >= 500 ? "bg-red-500/15 text-red-400" : r.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400";
-    var copyKey = r.api_key_full || r.copy_api_key || r.api_key_masked || "";
-    var copyBtn = r.api_key_masked ? ' <button onclick="copyText(\'' + escapeJsString(copyKey) + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>' : "";
+    var copyKey = r.api_key_masked || "";
+    var copyBtn = r.api_key_masked ? ' <button onclick="revealFullKey(\'' + escapeJsString(copyKey) + '\',this)" class="ml-1 text-xs text-gray-600 hover:text-white px-1.5 py-0.5 bg-dark-600 rounded transition">copy</button>' : "";
     var backend = r.backend_profile || r.backend || r.backend_id || "\u2014";
     var backendCls = backend === "direct" ? "bg-primary/15 text-primary" : backend !== "\u2014" ? "bg-blue-500/15 text-blue-300" : "bg-gray-500/10 text-gray-500";
     var backendModel = r.backend_model || "\u2014";
@@ -2028,7 +2038,8 @@ async function loadOrders() {
     var sm = statusMap[o.status] || ["bg-gray-500/10 text-gray-400", o.status];
     var confirmBtn = o.status === "pending" ? '<button onclick="manualConfirm(\'' + o.id + '\')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs transition">X\u00e1c nh\u1eadn</button>' : "";
     var cancelBtn = o.status === "pending" ? '<button onclick="cancelOrder(\'' + o.id + '\')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition">Hu\u1ef7</button>' : "";
-    var keySpan = o.api_key ? '<span class="px-2 py-1 bg-dark-600 text-gray-400 rounded text-xs font-mono">' + o.api_key.slice(0,12) + '...</span> <button onclick="copyText(\'' + o.api_key + '\',this)" class="px-1.5 py-1 bg-dark-600 text-gray-500 hover:text-white rounded text-xs transition">copy</button>' : "";
+    var omasked = o.key_masked || o.api_key || "";
+    var keySpan = omasked ? '<span class="px-2 py-1 bg-dark-600 text-gray-400 rounded text-xs font-mono">' + escapeHtml(omasked) + '</span> <button onclick="revealFullKey(\'' + escapeJsString(omasked) + '\',this)" class="px-1.5 py-1 bg-dark-600 text-gray-500 hover:text-white rounded text-xs transition">copy</button>' : "";
     return '<tr class="border-b border-white/5 hover:bg-white/2">' +
       '<td class="px-4 py-3 font-mono text-xs text-yellow-300">' + escapeHtml(o.order_code) + '</td>' +
       '<td class="px-4 py-3"><p class="text-sm">' + escapeHtml(o.customer_name || "\u2014") + '</p><p class="text-xs text-gray-500">' + escapeHtml(o.customer_email) + '</p></td>' +
@@ -2058,14 +2069,12 @@ async function cancelOrder(orderId) {
 /* ===== BACKEND CONFIG ===== */
 function renderKeyList(listEl, keys, backendId) {
   if (!keys || !keys.length) {
-    listEl.innerHTML = '<p class="text-xs text-gray-500">Ch\u01b0a c\u00f3 key n\u00e0o</p>';
+    listEl.innerHTML = '<p class="text-xs text-gray-500">Ch\u01b0a c\u00f3 key n\u00e0o (masked - full key chỉ nằm trong .env server)</p>';
     return;
   }
   listEl.innerHTML = keys.map(function(k) {
     return '<div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">' +
-      '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + k + '</code>' +
-      '<button onclick="copyText(\'' + k + '\',this)" class="text-xs text-gray-500 hover:text-white px-2 py-0.5 bg-dark-600 rounded transition shrink-0">copy</button>' +
-      '<button onclick="removeBackendKeyDirect(\'' + backendId + '\',\'' + k + '\')" class="text-xs text-red-400 hover:text-red-300 px-2 py-0.5 bg-red-500/10 rounded transition shrink-0">X\u00f3a</button>' +
+      '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + escapeHtml(k) + '</code>' +
     '</div>';
   }).join("");
 }
@@ -2212,7 +2221,7 @@ async function loadBackendConfig() {
     if (keepTools) keepTools.checked = !profile.disable_tools;
     if (apiStyle) apiStyle.value = profile.api_style || (id === 5 ? "anthropic" : "openai");
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
-    if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], String(id));
+    if (keyList) renderKeyList(keyList, profile.backend_api_key_masks || profile.backend_api_keys_full || [], String(id));
   });
   var publicModel = document.getElementById("cfgPublicModel");
   if (publicModel) publicModel.value = data.public_model || "gpt-5.6-terra";
@@ -2230,7 +2239,7 @@ async function loadBackendConfig() {
   if (b5vStatus) b5vStatus.textContent = vision.configured
     ? ((vision.backend_api_keys || 0) + " keys · OK")
     : "Chưa cấu hình đủ";
-  if (b5vKeyList) renderKeyList(b5vKeyList, vision.backend_api_keys_full || [], "5v");
+  if (b5vKeyList) renderKeyList(b5vKeyList, vision.backend_api_key_masks || vision.backend_api_keys_full || [], "5v");
 
   var backupProfiles = data.backup_backend_profiles || [];
   var backupById = {};
@@ -2246,7 +2255,7 @@ async function loadBackendConfig() {
     if (model) model.value = profile.backend_model || "";
     if (apiStyle) apiStyle.value = profile.api_style || "openai";
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys · Model: " + (profile.backend_model || "—");
-    if (keyList) renderKeyList(keyList, profile.backend_api_keys_full || [], "backup" + id);
+    if (keyList) renderKeyList(keyList, profile.backend_api_key_masks || profile.backend_api_keys_full || [], "backup" + id);
   });
   document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
 
