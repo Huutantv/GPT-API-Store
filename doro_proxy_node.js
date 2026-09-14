@@ -6325,10 +6325,32 @@ app.post("/api/orders/create", async (req, res) => {
   }
 });
 
+// FIX: order status requires buyer email + per-IP throttle (10 req / 10 min).
+// Prevents unauthenticated full-key harvest via order-id enumeration.
+const _orderStatusHits = new Map();
 app.get("/api/orders/status/:id", (req, res) => {
-  const order = orders.getOrder(req.params.id);
-  if (!order) return res.status(404).json({ detail: "Không tìm thấy đơn hàng" });
-  res.json({ status: order.status, api_key: order.status === "paid" ? order.api_key : null });
+  try {
+    const ip = String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim().slice(0, 80);
+    const now = Date.now();
+    const e = _orderStatusHits.get(ip);
+    if (e && now - e.windowStart > 10 * 60 * 1000) _orderStatusHits.delete(ip);
+    const cur = _orderStatusHits.get(ip) || { windowStart: now, count: 0 };
+    if (cur.count >= 30) return res.status(429).json({ detail: "Too many requests. Try again later." });
+    cur.count += 1;
+    _orderStatusHits.set(ip, cur);
+    const order = orders.getOrder(req.params.id);
+    if (!order) return res.status(404).json({ detail: "Không tìm thấy đơn hàng" });
+    const email = String(req.query.email || "").trim().toLowerCase();
+    const owner = String(order.customer_email || "").trim().toLowerCase();
+    if (!email || !owner || email !== owner) {
+      try { addLog(`SECURITY order-status-denied ip=${ip} id=${String(req.params.id || "").slice(0, 20)}`); } catch (_) {}
+      return res.status(403).json({ detail: "Email không khớp đơn hàng" });
+    }
+    if (order.status !== "paid") return res.json({ status: order.status, api_key: null });
+    res.json({ status: order.status, api_key: order.api_key || null });
+  } catch (err) {
+    res.status(500).json({ detail: "Status lookup failed" });
+  }
 });
 
 // ── Webhook Sepay / Casso ─────────────────────────────────────────────────────

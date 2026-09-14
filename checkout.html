@@ -397,7 +397,7 @@ function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     if (!currentOrder) return;
-    const r = await fetch(`${BASE}/api/orders/status/${currentOrder.id}`);
+    const r = await fetch(`${BASE}/api/orders/status/${currentOrder.id}?email=${encodeURIComponent(currentOrder.customer_email || "")}`);
     const data = await r.json();
     if (data.status === "paid") {
       clearInterval(pollTimer);
