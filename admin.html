@@ -1353,7 +1353,15 @@ function getCreateKeyExpiryDays() {
   return { ok: true, days: Number(document.getElementById("newExpires").value || 0) };
 }
 
-/* ===== AUTH ===== */
+/* ===== AUTH (5-minute session) ===== */
+var ADMIN_SESSION_MS = 5 * 60 * 1000;
+function adminSessionExpired() {
+  var at = Number(sessionStorage.getItem("gpt_admin_login_at") || 0);
+  return !at || (Date.now() - at > ADMIN_SESSION_MS);
+}
+function touchAdminSession() {
+  sessionStorage.setItem("gpt_admin_login_at", String(Date.now()));
+}
 async function adminLogin() {
   var key = document.getElementById("adminKeyInput").value.trim();
   if (!key) return;
@@ -1366,6 +1374,7 @@ async function adminLogin() {
   }
   ADMIN_KEY = key;
   sessionStorage.setItem("gpt_admin_key", key);
+  touchAdminSession();
   document.getElementById("loginOverlay").classList.add("hidden");
   document.getElementById("mainContent").classList.remove("hidden");
   showTab("overview");
@@ -1374,8 +1383,23 @@ async function adminLogin() {
 function adminLogout() {
   ADMIN_KEY = "";
   sessionStorage.removeItem("gpt_admin_key");
+  sessionStorage.removeItem("gpt_admin_login_at");
   location.reload();
 }
+// Auto-lock after 5 min (check every 10s + on load)
+setInterval(function() {
+  if (ADMIN_KEY && adminSessionExpired()) {
+    alert("Phiên admin hết hạn sau 5 phút. Vui lòng đăng nhập lại.");
+    adminLogout();
+  }
+}, 10000);
+(function() {
+  if (ADMIN_KEY && adminSessionExpired()) {
+    ADMIN_KEY = "";
+    sessionStorage.removeItem("gpt_admin_key");
+    sessionStorage.removeItem("gpt_admin_login_at");
+  }
+})();
 
 function openMobileSidebar() { document.getElementById("mobileSidebarOverlay").classList.add("open"); }
 function closeMobileSidebar() { document.getElementById("mobileSidebarOverlay").classList.remove("open"); }

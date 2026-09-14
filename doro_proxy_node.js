@@ -6194,11 +6194,11 @@ async function openAIChatCompletionsHandler(req, res) {
 app.post(["/v1/chat/completions", "/chat/completions"], openAIChatCompletionsHandler);
 
 const DASHBOARD_PATH = (() => {
-  const raw = String(process.env.DORO_DASHBOARD_PATH || "/dashboard_@@admin").trim();
+  const raw = String(process.env.DORO_DASHBOARD_PATH || "/dash-88884ba7a312121a").trim();
   return raw.startsWith("/") ? raw : "/" + raw;
 })();
 const ADMIN_PANEL_PATH = (() => {
-  const raw = String(process.env.DORO_ADMIN_PATH || "/admin9797").trim();
+  const raw = String(process.env.DORO_ADMIN_PATH || "/admin-be521cdbc262634e").trim();
   return raw.startsWith("/") ? raw : "/" + raw;
 })();
 
@@ -6224,7 +6224,8 @@ app.get(ADMIN_PANEL_PATH, (_req, res) => {
   return sendNoCacheHtml(res, "admin.html");
 });
 
-app.get("/admin", (_req, res) => {
+// Old/decoy admin paths: always 404 (old /admin9797 leaked via git)
+app.get(["/admin", "/admin9797", "/dashboard", "/dashboard_@@admin"], (_req, res) => {
   return res.status(404).json({ detail: "Not found" });
 });
 

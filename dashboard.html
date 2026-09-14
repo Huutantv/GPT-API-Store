@@ -432,6 +432,10 @@ html{-webkit-text-size-adjust:100%}
 <script>
 var API='',selectedModel='claude-opus-4-8';
 var ADMIN_KEY=sessionStorage.getItem('doro_admin_key')||'';
+var ADMIN_SESSION_MS=5*60*1000;
+function adminSessionExpired(){var at=Number(sessionStorage.getItem('doro_admin_login_at')||0);return !at||(Date.now()-at>ADMIN_SESSION_MS);}
+if(ADMIN_KEY&&adminSessionExpired()){ADMIN_KEY='';sessionStorage.removeItem('doro_admin_key');sessionStorage.removeItem('doro_admin_login_at');}
+setInterval(function(){if(ADMIN_KEY&&adminSessionExpired()){alert('Phiên dashboard hết hạn sau 5 phút. Vui lòng đăng nhập lại.');lockDashboard();}},10000);
 var _fetch=window.fetch.bind(window);
 var monitorRequests=[];
 var monitorDisplayRows=[];
@@ -455,6 +459,7 @@ function hideAuth(){
 function lockDashboard(){
   ADMIN_KEY='';
   sessionStorage.removeItem('doro_admin_key');
+  sessionStorage.removeItem('doro_admin_login_at');
   document.getElementById('adminKeyInput').value='';
   showAuth('Dashboard locked. Enter admin key again.');
 }
@@ -474,6 +479,7 @@ window.fetch=function(input,init){
     if(isAdminRequest(input)&&(res.status===401||res.status===403)){
       ADMIN_KEY='';
       sessionStorage.removeItem('doro_admin_key');
+      sessionStorage.removeItem('doro_admin_login_at');
       showAuth(res.status===403?'Admin key invalid.':'Missing admin key.');
     }
     return res;
@@ -491,6 +497,7 @@ async function unlockDashboard(e){
     if(!r.ok)throw new Error(r.status===403?'Admin key invalid.':'Cannot unlock dashboard.');
     ADMIN_KEY=key;
     sessionStorage.setItem('doro_admin_key',key);
+    sessionStorage.setItem('doro_admin_login_at',String(Date.now()));
     input.value='';
     hideAuth();
     var active=document.querySelector('.panel.active');
@@ -502,6 +509,7 @@ async function unlockDashboard(e){
   }catch(err){
     ADMIN_KEY='';
     sessionStorage.removeItem('doro_admin_key');
+    sessionStorage.removeItem('doro_admin_login_at');
     setAuthMessage(err.message||'Login failed.','error');
   }finally{
     btn.disabled=false;btn.textContent='Unlock';
