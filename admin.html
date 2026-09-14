@@ -2096,9 +2096,10 @@ function renderKeyList(listEl, keys, backendId) {
     listEl.innerHTML = '<p class="text-xs text-gray-500">Ch\u01b0a c\u00f3 key n\u00e0o (masked - full key chỉ nằm trong .env server)</p>';
     return;
   }
-  listEl.innerHTML = keys.map(function(k) {
+  listEl.innerHTML = keys.map(function(k, idx) {
     return '<div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">' +
       '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + escapeHtml(k) + '</code>' +
+      '<button onclick="removeBackendKeyDirect(\'' + escapeHtml(String(backendId)) + '\',' + idx + ')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition shrink-0">X\u00f3a</button>' +
     '</div>';
   }).join("");
 }
@@ -2335,9 +2336,13 @@ async function addBackendKey(backend) {
   } else { msg.className = "text-xs text-red-400"; msg.textContent = data.detail || "L\u1ed7i"; }
 }
 
-async function removeBackendKeyDirect(backend, key) {
-  if (!confirm("X\u00f3a key " + key.slice(0,20) + "...?")) return;
-  var r = await fetch(BASE + "/api/backend-keys", { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ backend: backend, key: key }) });
+async function removeBackendKeyDirect(backend, keyOrIndex) {
+  var label = (typeof keyOrIndex === "number") ? ("key #" + (keyOrIndex + 1)) : String(keyOrIndex).slice(0, 20);
+  if (!confirm("X\u00f3a " + label + " khỏi Backend " + backend + "?")) return;
+  var payload = { backend: backend };
+  if (typeof keyOrIndex === "number") payload.key_index = keyOrIndex;
+  else payload.key = keyOrIndex;
+  var r = await fetch(BASE + "/api/backend-keys", { method: "DELETE", headers: authHeaders(), body: JSON.stringify(payload) });
   var data = await r.json();
   if (data.ok) loadBackendConfig(); else alert(data.detail || "L\u1ed7i");
 }

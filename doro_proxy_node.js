@@ -7044,17 +7044,29 @@ app.delete("/api/backend-keys", (req, res) => {
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   const body = req.body || {};
   const backend = String(body.backend || "1").trim();
-  const key = String(body.key || "").trim();
+  const key = String(body.key || body.key_mask || "").trim();
   if (!BACKEND_IDS.includes(backend) && backend !== "5v" && !BACKUP_BACKEND_IDS.includes(backend)) return res.status(400).json({ detail: "Invalid backend" });
 
   const envField = backendAuthEnvField(backend);
   const current = splitEnvList(process.env[envField] || "");
-  const idx = current.indexOf(key);
+  let idx = -1;
+  // Ưu tiên xóa theo vị trí (UI chỉ có masked key, không có full key).
+  if (body.key_index !== undefined && body.key_index !== null && String(body.key_index).trim() !== "") {
+    const parsed = Number(body.key_index);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed < current.length) idx = parsed;
+    else return res.status(400).json({ detail: "Invalid key_index" });
+  } else {
+    if (!key) return res.status(400).json({ detail: "Missing key" });
+    // 1) khớp full key (tương thích cũ), 2) khớp masked key hiển thị trên UI.
+    idx = current.indexOf(key);
+    if (idx === -1) idx = current.findIndex((k) => maskSecret(k) === key);
+  }
   if (idx === -1) return res.status(404).json({ detail: "Key not found" });
+  const removedMask = maskSecret(current[idx]);
   current.splice(idx, 1);
   saveEnvUpdates({ [envField]: current.join(",") });
-  addLog(`BACKEND KEY - b${backend} ${key.slice(0, 20)}...`);
-  res.json({ ok: true, backend, count: current.length });
+  addLog(`BACKEND KEY - b${backend} ${removedMask}`);
+  res.json({ ok: true, backend, count: current.length, removed: removedMask });
 });
 
 app.get("/api/metrics/summary", (req, res) => {
