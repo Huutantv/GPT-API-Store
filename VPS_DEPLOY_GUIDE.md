@@ -1,21 +1,8 @@
-# Huong Dan Deploy Doro Proxy Len VPS Bang GitHub11
+# Huong Dan Deploy Doro Proxy Len VPS Bang GitHub
 
-sk-f9IB44HZan0y39rqfo3onODBYtpg6MjUcBVUmNgrU7Myi5AP
-copy
-Xóa
-sk-mNIOXg3u8Z3NbrDlE5CBHJUy6kxryayMnjCCBUj1z6eqoEgQ
-copy
-Xóa
-sk-CEXC5lh8BIR8X5SdN1hBeI704bkCiw8L3oZIoI0Fjx5OX3fz
-copy
-Xóa
-sk-rr4dB0FUHhmSdUw0LHVBm6dNn_YhT3gPSOt3LE9mfHXUOnJO
-copy
-Xóa
-sk-rAnWZoh5oeSgV4x0Jdge8O0t1jx3PfK0vNXu9p62AQ9Ve6m9
-copy
-Xóa
-sk-GR3fOKvDQKfRxS1uLj970qO0uhwgEcPaBijVyPnFHm9lushg
+> ⚠️ Tuyệt đối không dán API key thật vào file tài liệu trong git.
+> Key đã từng nằm ở đây đã được xóa — hãy rotate (tạo key mới, thu hồi key cũ)
+> trên mọi backend đã cấp các key đó.
 
   cd ~/gpt-api-store
   git pull --ff-only origin main

@@ -13,6 +13,7 @@
 
 const Database = require("better-sqlite3");
 const path = require("path");
+const crypto = require("crypto");
 
 const DB_PATH = path.join(__dirname, "credit.db");
 const db = new Database(DB_PATH);
@@ -73,6 +74,9 @@ const whitelistIps = new Set();
 const whitelistCidrs = [];
 
 const ipCounters = new Map();      // ip -> { reqs: [ts...], unauth: [ts...], err4xx: [ts...] }
+const ipKeys = new Map();          // ip -> [{ h, ts }...] — key hash theo timestamp (chống share key)
+const IPKEYS_MAX_IPS = 5000;
+const IPKEYS_MAX_PER_IP = 20;
 const stats = {
   blocked_requests: 0,
   auto_bans_total: 0,
@@ -207,6 +211,9 @@ function config() {
     unauthLimit: envInt(process.env.DORO_IPGUARD_UNAUTH_LIMIT, 30),
     err4xxLimit: envInt(process.env.DORO_IPGUARD_ERR4XX_LIMIT || process.env.DORO_IPGUARD_404_LIMIT, 60),
     autoBanMinutes: envInt(process.env.DORO_IPGUARD_AUTO_BAN_MINUTES, 60),
+    multiKeyEnabled: envFlag(process.env.DORO_IPGUARD_MULTIKEY_ENABLED, true),
+    maxKeysPerIp: envInt(process.env.DORO_IPGUARD_MAX_KEYS_PER_IP, 1),
+    keyWindowSec: envInt(process.env.DORO_IPGUARD_KEY_WINDOW_SEC, 300),
     trustCfHeader: envFlag(process.env.DORO_IPGUARD_TRUST_CF, true),
     extraWhitelist: String(process.env.DORO_IPGUARD_WHITELIST || "")
       .split(",")
@@ -270,7 +277,7 @@ setInterval(() => {
   } catch (_) {}
 }, 60 * 1000);
 
-// Dọn counter cũ mỗi 30s
+// Dọn counter + key-tracker cũ mỗi 30s
 setInterval(() => {
   const cutoff = nowSec() - 60;
   for (const [ip, c] of ipCounters.entries()) {
@@ -279,6 +286,14 @@ setInterval(() => {
     c.err4xx = c.err4xx.filter((t) => t >= cutoff);
     if (!c.reqs.length && !c.unauth.length && !c.err4xx.length) ipCounters.delete(ip);
   }
+  try {
+    const keyCutoff = nowSec() - Math.max(60, Number(process.env.DORO_IPGUARD_KEY_WINDOW_SEC || "300") || 300);
+    for (const [ip, list] of ipKeys.entries()) {
+      const kept = list.filter((e) => e.ts >= keyCutoff);
+      if (kept.length) ipKeys.set(ip, kept);
+      else ipKeys.delete(ip);
+    }
+  } catch (_) {}
 }, 30 * 1000);
 
 // ── Public helpers ─────────────────────────────────────────────────────────
@@ -344,6 +359,59 @@ function countSince(arr, sinceSec) {
     else break;
   }
   return n;
+}
+
+// ── Multi-key detection (chống share key: 1 IP dùng nhiều key) ─────────────
+function hashKey(rawKey) {
+  return crypto.createHash("sha256").update(String(rawKey || ""), "utf8").digest("hex");
+}
+
+// Bóc API key từ header (Bearer xxx hoặc x-api-key). Trả "" nếu không có/không rõ.
+function extractApiKey(req) {
+  const get = (name) => (req.get ? String(req.get(name) || "").trim() : "");
+  const auth = get("authorization");
+  if (auth) {
+    const m = auth.match(/^bearer\s+(.+)$/i);
+    if (m && m[1].trim()) return m[1].trim();
+    if (auth && !/\s/.test(auth)) return auth; // key trần không scheme
+    return "";
+  }
+  return get("x-api-key");
+}
+
+// Ghi nhận key của IP, trả về số key phân biệt trong window.
+// Chỉ lưu hash (không lưu key thật) + chặn memory leak bằng cap.
+function recordIpKey(ip, rawKey, windowSec) {
+  const key = String(rawKey || "").trim();
+  if (!ip || !key) return 1;
+  const win = Math.max(1, Number(windowSec) || 300);
+  const now = nowSec();
+  const cutoff = now - win;
+  let list = ipKeys.get(ip);
+  if (!list) {
+    list = [];
+    ipKeys.set(ip, list);
+    if (ipKeys.size > IPKEYS_MAX_IPS) {
+      const first = ipKeys.keys().next().value;
+      ipKeys.delete(first);
+    }
+  }
+  let w = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    if (list[i].ts >= cutoff) list[w++] = list[i];
+  }
+  list.length = w;
+  list.push({ h: hashKey(key), ts: now });
+  if (list.length > IPKEYS_MAX_PER_IP) list.splice(0, list.length - IPKEYS_MAX_PER_IP);
+  return new Set(list.map((e) => e.h)).size;
+}
+
+// Đếm key phân biệt của IP trong N giây gần nhất (hiển thị admin, không ghi mới).
+function distinctKeys(ip, windowSec = 300) {
+  const list = ipKeys.get(ip);
+  if (!list || !list.length) return 0;
+  const cutoff = nowSec() - Math.max(1, Number(windowSec) || 300);
+  return new Set(list.filter((e) => e.ts >= cutoff).map((e) => e.h)).size;
 }
 
 function shouldAutoBan(ip) {
@@ -472,6 +540,7 @@ function topIps(limit = 50) {
       requests_5m: r5m,
       unauth_60s: unauth,
       err4xx_60s: err4xx,
+      distinct_keys: distinctKeys(ip, 300),
       whitelisted: isWhitelisted(ip),
       blocked: !!findBlock(ip),
     });
@@ -490,8 +559,12 @@ function snapshotStats() {
       unauth_limit: cfg.unauthLimit,
       err4xx_limit: cfg.err4xxLimit,
       auto_ban_minutes: cfg.autoBanMinutes,
+      multikey_enabled: cfg.multiKeyEnabled,
+      max_keys_per_ip: cfg.maxKeysPerIp,
+      key_window_sec: cfg.keyWindowSec,
       trust_cf_header: cfg.trustCfHeader,
     },
+    tracked_key_ip_count: ipKeys.size,
     blocked_ip_count: blockedIps.size,
     blocked_cidr_count: blockedCidrs.length,
     whitelist_ip_count: whitelistIps.size,
@@ -547,7 +620,32 @@ function makeMiddleware({ onAutoBan, onBlocked, whitelistPaths = [] } = {}) {
                       req.path === "/responses" || req.path === "/chat/completions";
     if (isApiPath) {
       const auth = req.get("authorization") || req.get("x-api-key") || "";
-      if (!auth) recordHit(ip, "unauth");
+      if (!auth) {
+        recordHit(ip, "unauth");
+      } else if (cfg.multiKeyEnabled && cfg.maxKeysPerIp > 0 && cfg.keyWindowSec > 0) {
+        // Chống share key: 1 IP chỉ được dùng tối đa maxKeysPerIp key trong window.
+        const apiKey = extractApiKey(req);
+        if (apiKey) {
+          const distinct = recordIpKey(ip, apiKey, cfg.keyWindowSec);
+          if (distinct > cfg.maxKeysPerIp) {
+            const reason = `multi_key>${cfg.maxKeysPerIp}/${cfg.keyWindowSec}s (got ${distinct})`;
+            const result = banIp(ip, { reason, source: "auto_multikey", minutes: cfg.autoBanMinutes });
+            if (result.ok && typeof onAutoBan === "function") {
+              try { onAutoBan({ ip, reason, source: "auto_multikey", minutes: cfg.autoBanMinutes }); } catch (_) {}
+            }
+            const retryAfter = cfg.autoBanMinutes * 60;
+            res.setHeader("Retry-After", String(retryAfter));
+            res.setHeader("X-IP-Block-Reason", reason);
+            return res.status(429).json({
+              detail: "Multiple API keys detected from a single IP. Key sharing is not allowed.",
+              code: "ip_auto_banned",
+              ip,
+              reason,
+              retry_after_seconds: retryAfter,
+            });
+          }
+        }
+      }
     }
 
     const ban = shouldAutoBan(ip);
@@ -600,4 +698,7 @@ module.exports = {
   isWhitelisted,
   findBlock,
   config,
+  extractApiKey,
+  recordIpKey,
+  distinctKeys,
 };

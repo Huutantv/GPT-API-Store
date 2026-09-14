@@ -7998,6 +7998,9 @@ app.put("/api/ipguard/config", (req, res) => {
     DORO_IPGUARD_UNAUTH_LIMIT: body.unauth_limit,
     DORO_IPGUARD_ERR4XX_LIMIT: body.err4xx_limit,
     DORO_IPGUARD_AUTO_BAN_MINUTES: body.auto_ban_minutes,
+    DORO_IPGUARD_MULTIKEY_ENABLED: body.multikey_enabled,
+    DORO_IPGUARD_MAX_KEYS_PER_IP: body.max_keys_per_ip,
+    DORO_IPGUARD_KEY_WINDOW_SEC: body.key_window_sec,
     DORO_IPGUARD_TRUST_CF: body.trust_cf_header,
   };
   for (const [k, v] of Object.entries(fields)) {

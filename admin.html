@@ -991,7 +991,16 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Th&#7901;i gian ban (ph&#250;t)</label>
         <input id="igCfgBanMin" type="number" min="1" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
       </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">S&#7889; key/IP (0 = t&#7855;t)</label>
+        <input id="igCfgMaxKeys" type="number" min="0" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Window key (gi&#226;y)</label>
+        <input id="igCfgKeyWin" type="number" min="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
     </div>
+    <p class="text-xs text-gray-500">Ch&#7889;ng share key: 1 IP d&#249;ng qu&#225; <b>S&#7889; key/IP</b> key ph&#226;n bi&#7879;t trong <b>Window key</b> s&#7869; b&#7883; auto-ban. M&#7863;c &#273;&#7883;nh 1 = key th&#7913; 2 l&#224; ban. C&#7849;n th&#7853;n NAT v&#259;n ph&#242;ng (nhi&#7873;u ng&#432;&#7901;i chung 1 IP).</p>
     <div class="flex flex-wrap items-center gap-3">
       <button onclick="saveIpGuardConfig()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u c&#7845;u h&#236;nh</button>
       <span id="igCfgMsg" class="text-sm text-gray-400"></span>
@@ -1013,10 +1022,11 @@ body{font-family:'Inter',sans-serif}
             <th class="text-right py-2 px-3">Total req</th>
             <th class="text-right py-2 px-3">Unauth</th>
             <th class="text-right py-2 px-3">4xx</th>
+            <th class="text-right py-2 px-3">Keys</th>
             <th class="text-center py-2 px-3">Action</th>
           </tr>
         </thead>
-        <tbody id="igTopBody" class="divide-y divide-white/5"><tr><td colspan="6" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
+        <tbody id="igTopBody" class="divide-y divide-white/5"><tr><td colspan="7" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2926,6 +2936,8 @@ async function loadIpGuardStatus() {
     setIfEmpty("igCfgRpm", c.rpm_limit);
     setIfEmpty("igCfgUnauth", c.unauth_limit);
     setIfEmpty("igCfgBanMin", c.auto_ban_minutes);
+    setIfEmpty("igCfgMaxKeys", c.max_keys_per_ip);
+    setIfEmpty("igCfgKeyWin", c.key_window_sec);
   } catch (e) { console.error(e); }
 }
 
@@ -2947,6 +2959,8 @@ async function saveIpGuardConfig() {
       rpm_limit: Number(document.getElementById("igCfgRpm").value) || 0,
       unauth_limit: Number(document.getElementById("igCfgUnauth").value) || 0,
       auto_ban_minutes: Number(document.getElementById("igCfgBanMin").value) || 0,
+      max_keys_per_ip: document.getElementById("igCfgMaxKeys").value === "" ? undefined : Number(document.getElementById("igCfgMaxKeys").value),
+      key_window_sec: Number(document.getElementById("igCfgKeyWin").value) || 0,
     };
     var r = await fetch(BASE + "/api/ipguard/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(body) });
     var data = await r.json();
@@ -3031,7 +3045,7 @@ async function loadIpGuardTop() {
     var data = await r.json();
     var rows = data.items || data.top || [];
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-gray-500">Khong co IP nao trong 5 phut gan day</td></tr>';
+      body.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-gray-500">Khong co IP nao trong 5 phut gan day</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function(it) {
@@ -3042,6 +3056,7 @@ async function loadIpGuardTop() {
         '<td class="py-2 px-3 text-right">' + (it.rpm || it.count || 0) + '</td>' +
         '<td class="py-2 px-3 text-right text-yellow-400">' + (it.unauth_60s || it.unauth || 0) + '</td>' +
         '<td class="py-2 px-3 text-right text-orange-400">' + (it.err4xx_60s || it.err4xx || 0) + '</td>' +
+        '<td class="py-2 px-3 text-right text-cyan-300">' + (it.distinct_keys || 0) + '</td>' +
         '<td class="py-2 px-3 text-center">' +
           '<button onclick="quickBan(\'' + escapeAttr(it.ip) + '\', 60)" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs mr-1">Ban 1h</button>' +
           '<button onclick="quickBan(\'' + escapeAttr(it.ip) + '\', 0)" class="px-2 py-1 bg-red-700/40 text-red-300 hover:bg-red-700/60 rounded text-xs">Ban vinh vien</button>' +
@@ -3049,7 +3064,7 @@ async function loadIpGuardTop() {
       '</tr>';
     }).join("");
   } catch (e) {
-    body.innerHTML = '<tr><td colspan="6" class="py-4 text-center text-red-400">Loi: ' + escapeHtml(e.message) + '</td></tr>';
+    body.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-red-400">Loi: ' + escapeHtml(e.message) + '</td></tr>';
   }
 }
 
