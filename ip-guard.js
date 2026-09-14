@@ -75,6 +75,7 @@ const whitelistCidrs = [];
 
 const ipCounters = new Map();      // ip -> { reqs: [ts...], unauth: [ts...], err4xx: [ts...] }
 const ipKeys = new Map();          // ip -> [{ h, ts }...] — key hash theo timestamp (chống share key)
+const keyIps = new Map();          // keyHash -> [{ ip, ts }...] — IP theo key (chống 1 key xài nhiều nơi)
 const IPKEYS_MAX_IPS = 5000;
 const IPKEYS_MAX_PER_IP = 20;
 const stats = {
@@ -214,6 +215,9 @@ function config() {
     multiKeyEnabled: envFlag(process.env.DORO_IPGUARD_MULTIKEY_ENABLED, true),
     maxKeysPerIp: envInt(process.env.DORO_IPGUARD_MAX_KEYS_PER_IP, 1),
     keyWindowSec: envInt(process.env.DORO_IPGUARD_KEY_WINDOW_SEC, 300),
+    keyShareEnabled: envFlag(process.env.DORO_IPGUARD_KEYSHARE_ENABLED, true),
+    maxIpsPerKey: envInt(process.env.DORO_IPGUARD_MAX_IPS_PER_KEY, 1),
+    keyIpWindowSec: envInt(process.env.DORO_IPGUARD_KEY_IP_WINDOW_SEC, 300),
     trustCfHeader: envFlag(process.env.DORO_IPGUARD_TRUST_CF, true),
     extraWhitelist: String(process.env.DORO_IPGUARD_WHITELIST || "")
       .split(",")
@@ -292,6 +296,12 @@ setInterval(() => {
       const kept = list.filter((e) => e.ts >= keyCutoff);
       if (kept.length) ipKeys.set(ip, kept);
       else ipKeys.delete(ip);
+    }
+    const keyIpCutoff = nowSec() - Math.max(60, Number(process.env.DORO_IPGUARD_KEY_IP_WINDOW_SEC || "300") || 300);
+    for (const [h, list] of keyIps.entries()) {
+      const kept = list.filter((e) => e.ts >= keyIpCutoff);
+      if (kept.length) keyIps.set(h, kept);
+      else keyIps.delete(h);
     }
   } catch (_) {}
 }, 30 * 1000);
@@ -404,6 +414,35 @@ function recordIpKey(ip, rawKey, windowSec) {
   list.push({ h: hashKey(key), ts: now });
   if (list.length > IPKEYS_MAX_PER_IP) list.splice(0, list.length - IPKEYS_MAX_PER_IP);
   return new Set(list.map((e) => e.h)).size;
+}
+
+// Ghi nhận IP của key, trả về số IP phân biệt trong window.
+// Chiều ngược multi-key: 1 key mà xuất hiện trên nhiều IP = share key.
+function recordKeyIp(keyHash, ip, windowSec) {
+  if (!keyHash || !ip) return 1;
+  const win = Math.max(1, Number(windowSec) || 300);
+  const now = nowSec();
+  const cutoff = now - win;
+  let list = keyIps.get(keyHash);
+  if (!list) {
+    list = [];
+    keyIps.set(keyHash, list);
+    if (keyIps.size > IPKEYS_MAX_IPS) {
+      const first = keyIps.keys().next().value;
+      keyIps.delete(first);
+    }
+  }
+  let w = 0;
+  for (let i = 0; i < list.length; i += 1) {
+    if (list[i].ts >= cutoff) list[w++] = list[i];
+  }
+  list.length = w;
+  if (!list.some((e) => e.ip === ip)) list.push({ ip, ts: now });
+  else {
+    for (const e of list) if (e.ip === ip) e.ts = now;
+  }
+  if (list.length > IPKEYS_MAX_PER_IP) list.splice(0, list.length - IPKEYS_MAX_PER_IP);
+  return new Set(list.map((e) => e.ip)).size;
 }
 
 // Đếm key phân biệt của IP trong N giây gần nhất (hiển thị admin, không ghi mới).
@@ -562,6 +601,9 @@ function snapshotStats() {
       multikey_enabled: cfg.multiKeyEnabled,
       max_keys_per_ip: cfg.maxKeysPerIp,
       key_window_sec: cfg.keyWindowSec,
+      keyshare_enabled: cfg.keyShareEnabled,
+      max_ips_per_key: cfg.maxIpsPerKey,
+      key_ip_window_sec: cfg.keyIpWindowSec,
       trust_cf_header: cfg.trustCfHeader,
     },
     tracked_key_ip_count: ipKeys.size,
@@ -580,7 +622,7 @@ function snapshotStats() {
 }
 
 // ── Middleware ─────────────────────────────────────────────────────────────
-function makeMiddleware({ onAutoBan, onBlocked, whitelistPaths = [] } = {}) {
+function makeMiddleware({ onAutoBan, onBlocked, onKeyShare, whitelistPaths = [] } = {}) {
   const pathSet = new Set(whitelistPaths);
   return function ipGuardMiddleware(req, res, next) {
     const cfg = config();
@@ -622,27 +664,68 @@ function makeMiddleware({ onAutoBan, onBlocked, whitelistPaths = [] } = {}) {
       const auth = req.get("authorization") || req.get("x-api-key") || "";
       if (!auth) {
         recordHit(ip, "unauth");
-      } else if (cfg.multiKeyEnabled && cfg.maxKeysPerIp > 0 && cfg.keyWindowSec > 0) {
-        // Chống share key: 1 IP chỉ được dùng tối đa maxKeysPerIp key trong window.
+      } else {
         const apiKey = extractApiKey(req);
         if (apiKey) {
-          const distinct = recordIpKey(ip, apiKey, cfg.keyWindowSec);
-          if (distinct > cfg.maxKeysPerIp) {
-            const reason = `multi_key>${cfg.maxKeysPerIp}/${cfg.keyWindowSec}s (got ${distinct})`;
-            const result = banIp(ip, { reason, source: "auto_multikey", minutes: cfg.autoBanMinutes });
-            if (result.ok && typeof onAutoBan === "function") {
-              try { onAutoBan({ ip, reason, source: "auto_multikey", minutes: cfg.autoBanMinutes }); } catch (_) {}
+          // Chống share key (chiều 1): 1 IP chỉ được dùng tối đa maxKeysPerIp key trong window.
+          if (cfg.multiKeyEnabled && cfg.maxKeysPerIp > 0 && cfg.keyWindowSec > 0) {
+            const distinct = recordIpKey(ip, apiKey, cfg.keyWindowSec);
+            if (distinct > cfg.maxKeysPerIp) {
+              const reason = `multi_key>${cfg.maxKeysPerIp}/${cfg.keyWindowSec}s (got ${distinct})`;
+              const result = banIp(ip, { reason, source: "auto_multikey", minutes: cfg.autoBanMinutes });
+              if (result.ok && typeof onAutoBan === "function") {
+                try { onAutoBan({ ip, reason, source: "auto_multikey", minutes: cfg.autoBanMinutes }); } catch (_) {}
+              }
+              const retryAfter = cfg.autoBanMinutes * 60;
+              res.setHeader("Retry-After", String(retryAfter));
+              res.setHeader("X-IP-Block-Reason", reason);
+              return res.status(429).json({
+                detail: "Multiple API keys detected from a single IP. Key sharing is not allowed.",
+                code: "ip_auto_banned",
+                ip,
+                reason,
+                retry_after_seconds: retryAfter,
+              });
             }
-            const retryAfter = cfg.autoBanMinutes * 60;
-            res.setHeader("Retry-After", String(retryAfter));
-            res.setHeader("X-IP-Block-Reason", reason);
-            return res.status(429).json({
-              detail: "Multiple API keys detected from a single IP. Key sharing is not allowed.",
-              code: "ip_auto_banned",
-              ip,
-              reason,
-              retry_after_seconds: retryAfter,
-            });
+          }
+          // Chống share key (chiều 2): 1 key chỉ được xuất hiện trên tối đa maxIpsPerKey IP trong window.
+          if (cfg.keyShareEnabled && cfg.maxIpsPerKey > 0 && cfg.keyIpWindowSec > 0) {
+            const keyHash = hashKey(apiKey);
+            const ipCount = recordKeyIp(keyHash, ip, cfg.keyIpWindowSec);
+            if (ipCount > cfg.maxIpsPerKey) {
+              const reason = `shared_key>${cfg.maxIpsPerKey}/${cfg.keyIpWindowSec}s (got ${ipCount} ips)`;
+              // Ban TẤT CẢ IP từng dùng key này trong window (cả cũ lẫn mới).
+              const involved = [];
+              for (const e of keyIps.get(keyHash) || []) {
+                if (e && e.ip && !involved.includes(e.ip)) involved.push(e.ip);
+              }
+              if (!involved.includes(ip)) involved.push(ip);
+              const bannedIps = [];
+              for (const target of involved) {
+                const result = banIp(target, { reason, source: "auto_keyshare", minutes: cfg.autoBanMinutes });
+                if (result && result.ok) {
+                  bannedIps.push(target);
+                  if (typeof onAutoBan === "function") {
+                    try { onAutoBan({ ip: target, reason, source: "auto_keyshare", minutes: cfg.autoBanMinutes }); } catch (_) {}
+                  }
+                }
+              }
+              const keyMasked = apiKey.length <= 12 ? apiKey.slice(0, 4) + "..." : apiKey.slice(0, 8) + "..." + apiKey.slice(-4);
+              if (typeof onKeyShare === "function") {
+                // Truyền full key để server quyết định khóa key (chỉ khi vi phạm, không lưu trữ).
+                try { onKeyShare({ ip, ips: involved, bannedIps, key: apiKey, keyHash, keyMasked, distinctIps: ipCount, reason, banned: bannedIps.includes(ip) }); } catch (_) {}
+              }
+              const retryAfter = cfg.autoBanMinutes * 60;
+              res.setHeader("Retry-After", String(retryAfter));
+              res.setHeader("X-IP-Block-Reason", reason);
+              return res.status(429).json({
+                detail: "This API key was used from multiple IPs. Key sharing is not allowed.",
+                code: "ip_auto_banned",
+                ip,
+                reason,
+                retry_after_seconds: retryAfter,
+              });
+            }
           }
         }
       }
@@ -700,5 +783,6 @@ module.exports = {
   config,
   extractApiKey,
   recordIpKey,
+  recordKeyIp,
   distinctKeys,
 };

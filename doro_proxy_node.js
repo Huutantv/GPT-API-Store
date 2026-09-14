@@ -76,6 +76,10 @@ try {
 
 const orderRateMap = new Map();
 
+// Lịch sử vi phạm share-key (in-memory, mất khi restart) cho trang admin tra cứu chủ key.
+const keyShareViolations = [];
+const KEYSHARE_VIOLATIONS_LIMIT = 500;
+
 function firstEnv(...names) {
   const fallback = names[names.length - 1];
   const actualNames = typeof fallback === "object" && fallback && "default" in fallback
@@ -4569,6 +4573,63 @@ app.use(ipGuard.middleware({
   onBlocked: (info) => {
     try { addLog(`IPGUARD reject ip=${info.ip} path=${info.path} reason=${info.reason}`); } catch (_) {}
   },
+  onKeyShare: (info) => {
+    // 1 key xuất hiện trên nhiều IP: mặc định ban cả IP cũ lẫn mới (xem DORO_KEYSHARE_ACTION).
+    // Chế độ disable_key/both sẽ khóa luôn key — admin mở lại trong Quản lý Keys.
+    // Mọi vi phạm được lưu vào keyShareViolations để trang admin tra cứu chủ key + cấp key mới.
+    try { addLog(`IPGUARD keyshare key=${info.keyMasked} ips=${info.distinctIps} all=[${(info.ips || [info.ip]).join(",")}] banned=[${(info.bannedIps || []).join(",")}]`); } catch (_) {}
+    const action = String(process.env.DORO_KEYSHARE_ACTION || "ban_ip").trim().toLowerCase();
+    let keyLocked = false;
+    if ((action === "disable_key" || action === "both") && info.key) {
+      try {
+        const row = credit.getKey(info.key);
+        if (row && row.active) {
+          credit.setKeyActive(info.key, 0);
+          keyLocked = true;
+          addLog(`IPGUARD keyshare DISABLED key=${info.keyMasked}`);
+          notifyTelegram(
+            `🚨 <b>Key sharing — key đã bị khóa</b>\n` +
+            `Key: <code>${info.keyMasked}</code>\n` +
+            `IPs: ${info.distinctIps} trong window\n` +
+            `IP mới: <code>${info.ip}</code>\n` +
+            `Mở lại: Admin → Quản lý Keys`
+          );
+        }
+      } catch (err) { addLog(`IPGUARD keyshare disable error=${err.message}`); }
+    }
+    try {
+      let owner = {};
+      try {
+        const order = orders.getOrderByApiKey ? orders.getOrderByApiKey(info.key) : null;
+        const keyRow = credit.getKey(info.key);
+        owner = {
+          customer_name: order ? (order.customer_name || "") : "",
+          customer_email: order ? (order.customer_email || "") : "",
+          customer_phone: order ? (order.customer_phone || "") : "",
+          order_code: order ? (order.order_code || "") : "",
+          package_id: order ? (order.package_id || "") : "",
+          key_label: keyRow ? (keyRow.label || "") : "",
+          credit: keyRow ? keyRow.credit : null,
+          token_remaining: keyRow ? keyRow.token_remaining : null,
+        };
+        owner.user_display = requestUserDisplay(owner);
+      } catch (_) { owner = {}; }
+      keyShareViolations.unshift({
+        id: nextReqId(),
+        ts: Date.now(),
+        ts_vn: vnNowText(),
+        key_masked: info.keyMasked || "",
+        ips: info.ips || [info.ip],
+        distinct_ips: info.distinctIps || (info.ips || []).length,
+        reason: info.reason || "",
+        action,
+        key_locked: keyLocked,
+        reissued_to: "",
+        owner,
+      });
+      if (keyShareViolations.length > KEYSHARE_VIOLATIONS_LIMIT) keyShareViolations.length = KEYSHARE_VIOLATIONS_LIMIT;
+    } catch (_) {}
+  },
   whitelistPaths: ["/health", "/webhook/sepay", "/webhook/casso"],
 }));
 app.use((req, res, next) => {
@@ -7925,7 +7986,7 @@ app.post("/api/ipguard/toggle", (req, res) => {
 app.get("/api/ipguard/stats", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  res.json(ipGuard.snapshotStats());
+  res.json({ ...ipGuard.snapshotStats(), keyshare_action: String(process.env.DORO_KEYSHARE_ACTION || "ban_ip").trim().toLowerCase() || "ban_ip" });
 });
 
 app.get("/api/ipguard/blocks", (req, res) => {
@@ -8021,6 +8082,10 @@ app.put("/api/ipguard/config", (req, res) => {
     DORO_IPGUARD_MULTIKEY_ENABLED: body.multikey_enabled,
     DORO_IPGUARD_MAX_KEYS_PER_IP: body.max_keys_per_ip,
     DORO_IPGUARD_KEY_WINDOW_SEC: body.key_window_sec,
+    DORO_IPGUARD_KEYSHARE_ENABLED: body.keyshare_enabled,
+    DORO_IPGUARD_MAX_IPS_PER_KEY: body.max_ips_per_key,
+    DORO_IPGUARD_KEY_IP_WINDOW_SEC: body.key_ip_window_sec,
+    DORO_KEYSHARE_ACTION: body.keyshare_action,
     DORO_IPGUARD_TRUST_CF: body.trust_cf_header,
   };
   for (const [k, v] of Object.entries(fields)) {
@@ -8028,11 +8093,76 @@ app.put("/api/ipguard/config", (req, res) => {
     if (typeof v === "boolean") updates[k] = v ? "true" : "false";
     else updates[k] = String(v);
   }
+  if (updates.DORO_KEYSHARE_ACTION !== undefined) {
+    const a = String(updates.DORO_KEYSHARE_ACTION).trim().toLowerCase();
+    if (!["ban_ip", "disable_key", "both"].includes(a)) delete updates.DORO_KEYSHARE_ACTION;
+    else updates.DORO_KEYSHARE_ACTION = a;
+  }
   if (Object.keys(updates).length === 0) return res.status(400).json({ detail: "No fields to update" });
   saveEnvUpdates(updates);
   ipGuard.reloadCache();
   addLog(`ipguard config updated: ${Object.keys(updates).join(",")}`);
   res.json({ ok: true, updated: Object.keys(updates), config: ipGuard.snapshotStats() });
+});
+
+// ── Key-share violations: tra cứu chủ key vi phạm + cấp key mới ─────────────
+app.get("/api/keyshare/violations", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+  const items = keyShareViolations.slice(0, limit).map((v) => {
+    // Refresh trạng thái key live (best-effort qua masked match).
+    let key_active = null;
+    try {
+      const found = v.key_masked ? resolveAdminKeyRow(v.key_masked) : null;
+      if (found) {
+        const live = credit.getKey(found.key);
+        if (live) key_active = !!live.active;
+      }
+    } catch (_) {}
+    return { ...v, key_active };
+  });
+  res.json({ total: keyShareViolations.length, violations: items });
+});
+
+// Cấp key mới giữ nguyên số dư hiện tại; khóa + rút cạn key cũ (chống double-spend).
+// Trả về full key MỚI 1 lần duy nhất — admin copy gửi khách ngay.
+app.post("/api/keyshare/reissue", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const input = String((req.body || {}).key || "").trim();
+  if (!input) return res.status(400).json({ detail: "Missing key" });
+  const found = resolveAdminKeyRow(input);
+  if (!found) return res.status(404).json({ detail: "Key not found" });
+  const oldRow = credit.getKey(found.key);
+  if (!oldRow) return res.status(404).json({ detail: "Key not found" });
+  const newRow = credit.createKey({
+    label: `${oldRow.label || "reissue"} (reissue)`,
+    credit: Math.max(0, Number(oldRow.credit || 0)),
+    rpmLimit: Math.max(1, Number(oldRow.rpm_limit || 30)),
+    expiresAt: oldRow.expires_at || null,
+    tokenRemaining: Math.max(0, Number(oldRow.token_remaining || 0)),
+  });
+  try {
+    if (Number(oldRow.credit || 0) > 0) credit.adjustCredit(oldRow.key, -Math.trunc(Number(oldRow.credit)));
+    if (Number(oldRow.token_remaining || 0) > 0) credit.adjustToken(oldRow.key, -Math.trunc(Number(oldRow.token_remaining)));
+  } catch (err) { addLog(`keyshare reissue drain error=${err.message}`); }
+  try { credit.setKeyActive(oldRow.key, 0); } catch (_) {}
+  const newMasked = maskSecret(newRow.key);
+  const oldMasked = maskSecret(oldRow.key);
+  for (const v of keyShareViolations) {
+    if (v.key_masked && v.key_masked === oldMasked) v.reissued_to = newMasked;
+  }
+  try { addLog(`keyshare reissue ${oldMasked} -> ${newMasked}`); } catch (_) {}
+  res.json({
+    ok: true,
+    old_key_masked: oldMasked,
+    new_key: newRow.key,
+    new_key_masked: newMasked,
+    credit: newRow.credit,
+    token_remaining: newRow.token_remaining,
+    expires_at: newRow.expires_at || null,
+  });
 });
 
 app.use((req, res) => res.status(404).json({ detail: "Not found" }));

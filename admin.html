@@ -58,7 +58,8 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('packages');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="packages">&#x1F4E6; G&#243;i d&#7883;ch v&#7909;</button>
       <button onclick="showTab('backend');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
-<button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+  <button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+  <button onclick="showTab('keyshare');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keyshare">&#x1F6A8; Vi ph&#7841;m share</button>
       <button onclick="showTab('logs');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="logs">&#x1F4DC; Logs</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
@@ -104,7 +105,8 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('packages')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="packages">&#x1F4E6; G&#243;i d&#7883;ch v&#7909;</button>
       <button onclick="showTab('backend')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="backend">&#x2699;&#xFE0F; Backend Keys</button>
       <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
-<button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+  <button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
+  <button onclick="showTab('keyshare')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keyshare">&#x1F6A8; Vi ph&#7841;m share</button>
       <button onclick="showTab('logs')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="logs">&#x1F4DC; Logs</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
@@ -999,8 +1001,20 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">Window key (gi&#226;y)</label>
         <input id="igCfgKeyWin" type="number" min="10" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
       </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">S&#7889; IP/key (0 = t&#7855;t)</label>
+        <input id="igCfgMaxIps" type="number" min="0" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">X&#7917; l&#253; share key</label>
+        <select id="igCfgKeyshareAction" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+          <option value="ban_ip">Ban cả 2 IP</option>
+          <option value="disable_key">Khóa key luôn</option>
+          <option value="both">Ban IP + khóa key</option>
+        </select>
+      </div>
     </div>
-    <p class="text-xs text-gray-500">Ch&#7889;ng share key: 1 IP d&#249;ng qu&#225; <b>S&#7889; key/IP</b> key ph&#226;n bi&#7879;t trong <b>Window key</b> s&#7869; b&#7883; auto-ban. M&#7863;c &#273;&#7883;nh 1 = key th&#7913; 2 l&#224; ban. C&#7849;n th&#7853;n NAT v&#259;n ph&#242;ng (nhi&#7873;u ng&#432;&#7901;i chung 1 IP).</p>
+    <p class="text-xs text-gray-500">Ch&#7889;ng share key 2 chi&#7873;u: 1 IP qu&#225; <b>S&#7889; key/IP</b> key &#8594; ban; 1 key qu&#225; <b>S&#7889; IP/key</b> IP &#8594; ban <b>c&#7843; IP c&#361; l&#7851;n IP m&#7899;i</b> (+ kh&#243;a key n&#7871;u ch&#7885;n). M&#7863;c &#273;&#7883;nh 1 = v&#7911;a key/IP th&#7913; 2 l&#224; ban c&#7843; 2. C&#7849;n th&#7853;n: user &#273;&#7893;i 4G/WiFi, NAT v&#259;n ph&#242;ng, IP Cloudflare/WARP xoay li&#234;n t&#7909;c.</p>
     <div class="flex flex-wrap items-center gap-3">
       <button onclick="saveIpGuardConfig()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u c&#7845;u h&#236;nh</button>
       <span id="igCfgMsg" class="text-sm text-gray-400"></span>
@@ -1097,6 +1111,44 @@ body{font-family:'Inter',sans-serif}
         <tbody id="igWhitelistBody" class="divide-y divide-white/5"><tr><td colspan="4" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
       </table>
     </div>
+  </div>
+</div>
+
+<!-- Tab: Vi pham share key -->
+<div id="tab-keyshare" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h2 class="text-xl font-bold">&#x1F6A8; Vi ph&#7841;m share key</h2>
+      <p class="text-sm text-gray-400 mt-1">1 key xu&#7845;t hi&#7879;n tr&#234;n nhi&#7873;u IP — xem ch&#7911; key &#273;&#7875; li&#234;n h&#7879;, c&#7845;p key m&#7899;i gi&#7919; nguy&#234;n s&#7889; d&#432;.</p>
+    </div>
+    <button onclick="loadKeyshare()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">L&#224;m m&#7899;i</button>
+  </div>
+  <div id="ksNewKeyBox" class="hidden bg-green-500/10 border border-green-500/30 rounded-xl p-4 space-y-2">
+    <p class="text-sm font-semibold text-green-300">Key m&#7899;i (ch&#7881; hi&#7879;n 1 l&#7847;n — copy g&#7917;i kh&#225;ch ngay):</p>
+    <div class="flex items-center gap-2">
+      <code id="ksNewKeyText" class="flex-1 text-xs font-mono text-green-200 break-all bg-dark-900 rounded-lg px-3 py-2"></code>
+      <button onclick="copyKsNewKey(this)" class="px-3 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-xs font-semibold transition shrink-0">Copy</button>
+    </div>
+    <p id="ksNewKeyMeta" class="text-xs text-gray-400"></p>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-3">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-xs text-gray-400 uppercase border-b border-white/10">
+          <tr>
+            <th class="text-left py-2 px-3">Th&#7901;i gian</th>
+            <th class="text-left py-2 px-3">Key</th>
+            <th class="text-left py-2 px-3">Ch&#7911; key (li&#234;n h&#7879;)</th>
+            <th class="text-left py-2 px-3">G&#243;i / &#272;&#417;n</th>
+            <th class="text-left py-2 px-3">C&#225;c IP</th>
+            <th class="text-center py-2 px-3">Key</th>
+            <th class="text-center py-2 px-3">Action</th>
+          </tr>
+        </thead>
+        <tbody id="ksBody" class="divide-y divide-white/5"><tr><td colspan="7" class="py-4 text-center text-gray-500">&#272;ang t&#7843;i...</td></tr></tbody>
+      </table>
+    </div>
+    <p class="text-xs text-gray-500">L&#432;u &#253; trong RAM (m&#7845;t khi restart proxy). C&#7845;p key m&#7899;i: gi&#7919; nguy&#234;n s&#7889; d&#432; hi&#7879;n t&#7841;i, kh&#243;a + r&#250;t c&#7841;n key c&#361;.</p>
   </div>
 </div>
 
@@ -1433,6 +1485,7 @@ function showTab(name) {
   if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
+  if (name === "keyshare") loadKeyshare();
   if (name === "logs") { onLogsSourceChange(); }
   if (name !== "backend") stopModelUsageRefresh();
   if (name !== "logs") stopLogsAuto();
@@ -2938,6 +2991,12 @@ async function loadIpGuardStatus() {
     setIfEmpty("igCfgBanMin", c.auto_ban_minutes);
     setIfEmpty("igCfgMaxKeys", c.max_keys_per_ip);
     setIfEmpty("igCfgKeyWin", c.key_window_sec);
+    setIfEmpty("igCfgMaxIps", c.max_ips_per_key);
+    var actEl = document.getElementById("igCfgKeyshareAction");
+    if (actEl && !actEl.dataset.synced && data.keyshare_action) {
+      actEl.value = data.keyshare_action;
+      actEl.dataset.synced = "1";
+    }
   } catch (e) { console.error(e); }
 }
 
@@ -2961,6 +3020,8 @@ async function saveIpGuardConfig() {
       auto_ban_minutes: Number(document.getElementById("igCfgBanMin").value) || 0,
       max_keys_per_ip: document.getElementById("igCfgMaxKeys").value === "" ? undefined : Number(document.getElementById("igCfgMaxKeys").value),
       key_window_sec: Number(document.getElementById("igCfgKeyWin").value) || 0,
+      max_ips_per_key: document.getElementById("igCfgMaxIps").value === "" ? undefined : Number(document.getElementById("igCfgMaxIps").value),
+      keyshare_action: document.getElementById("igCfgKeyshareAction").value,
     };
     var r = await fetch(BASE + "/api/ipguard/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(body) });
     var data = await r.json();
@@ -3105,6 +3166,95 @@ async function removeIpBlock(ip) {
     var r = await fetch(BASE + "/api/ipguard/block", { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ ip: ip }) });
     if (!r.ok) { var d = await r.json().catch(function() { return {}; }); alert("Loi: " + (d.detail || r.status)); return; }
     await Promise.all([loadIpGuardStatus(), loadIpGuardBlocks()]);
+  } catch (e) { alert("Loi: " + e.message); }
+}
+
+/* ===== KEYSHARE VIOLATIONS ===== */
+async function loadKeyshare() {
+  var body = document.getElementById("ksBody");
+  if (!body) return;
+  try {
+    var r = await fetch(BASE + "/api/keyshare/violations?limit=100", { headers: authHeaders() });
+    var data = await r.json();
+    var rows = data.violations || [];
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-gray-500">Chua co vi pham share key</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function(v) {
+      var o = v.owner || {};
+      var contact = escapeHtml(o.customer_name || o.key_label || "—");
+      var sub = [];
+      if (o.customer_email) sub.push(escapeHtml(o.customer_email));
+      if (o.customer_phone) sub.push(escapeHtml(o.customer_phone));
+      var pkg = escapeHtml((o.package_id || "") + (o.order_code ? " · " + o.order_code : ""));
+      var ips = (v.ips || []).map(function(x) { return escapeHtml(x); }).join("<br>");
+      var keyState = v.key_active === null || v.key_active === undefined
+        ? '<span class="text-gray-500">?</span>'
+        : (v.key_active
+          ? '<span class="text-green-400">Hoạt động</span>'
+          : '<span class="text-red-400">Bị khóa</span>');
+      var reissued = v.reissued_to ? '<div class="text-[11px] text-green-400 mt-1">Đã cấp mới: ' + escapeHtml(v.reissued_to) + '</div>' : "";
+      return '<tr class="hover:bg-white/5 align-top">' +
+        '<td class="py-2 px-3 text-xs text-gray-400 whitespace-nowrap">' + escapeHtml(v.ts_vn || "") + '</td>' +
+        '<td class="py-2 px-3 font-mono text-xs">' + escapeHtml(v.key_masked || "") + reissued + '</td>' +
+        '<td class="py-2 px-3"><p class="text-sm text-white">' + contact + '</p><p class="text-xs text-gray-500">' + (sub.join(" · ") || "—") + '</p></td>' +
+        '<td class="py-2 px-3 text-xs text-gray-400">' + (pkg || "—") + '</td>' +
+        '<td class="py-2 px-3 font-mono text-xs text-orange-300">' + ips + '</td>' +
+        '<td class="py-2 px-3 text-center text-xs">' + keyState + '</td>' +
+        '<td class="py-2 px-3 text-center whitespace-nowrap">' +
+          '<button onclick="reissueKey(\'' + escapeAttr(v.key_masked || "") + '\')" class="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/40 rounded text-xs mr-1">Cấp key mới</button>' +
+          '<button onclick="ksToggleKey(\'' + escapeAttr(v.key_masked || "") + '\',' + (v.key_active ? "0" : "1") + ')" class="px-2 py-1 bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 rounded text-xs mr-1">' + (v.key_active ? "Khóa" : "Mở khóa") + '</button>' +
+          '<button onclick="ksUnbanIps(this)" data-ips="' + escapeAttr((v.ips || []).join(",")) + '" class="px-2 py-1 bg-gray-600/30 text-gray-300 hover:bg-gray-600/50 rounded text-xs">Unban IPs</button>' +
+        '</td>' +
+      '</tr>';
+    }).join("");
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-red-400">Loi: ' + escapeHtml(e.message) + '</td></tr>';
+  }
+}
+
+function copyKsNewKey(btn) {
+  var el = document.getElementById("ksNewKeyText");
+  navigator.clipboard.writeText(el ? el.textContent : "").then(function() {
+    btn.textContent = "✓";
+    setTimeout(function() { btn.textContent = "Copy"; }, 1500);
+  });
+}
+
+async function reissueKey(masked) {
+  if (!confirm("Cấp key mới giữ nguyên số dư cho " + masked + "?\nKey cũ sẽ bị khóa + rút cạn.")) return;
+  try {
+    var r = await fetch(BASE + "/api/keyshare/reissue", { method: "POST", headers: authHeaders(), body: JSON.stringify({ key: masked }) });
+    var data = await r.json();
+    if (!r.ok) { alert("Loi: " + (data.detail || r.status)); return; }
+    var box = document.getElementById("ksNewKeyBox");
+    document.getElementById("ksNewKeyText").textContent = data.new_key;
+    document.getElementById("ksNewKeyMeta").textContent = "Credit: " + data.credit + " · Token: " + data.token_remaining + (data.expires_at ? " · Hết hạn: " + data.expires_at : "");
+    if (box) box.classList.remove("hidden");
+    await loadKeyshare();
+  } catch (e) { alert("Loi: " + e.message); }
+}
+
+async function ksToggleKey(masked, toActive) {
+  if (!confirm((toActive ? "Mở khóa key " : "Khóa key ") + masked + "?")) return;
+  try {
+    var r = await fetch(BASE + "/api/credit/set-active", { method: "POST", headers: authHeaders(), body: JSON.stringify({ key: masked, active: !!toActive }) });
+    var data = await r.json();
+    if (!r.ok) { alert("Loi: " + (data.detail || r.status)); return; }
+    await loadKeyshare();
+  } catch (e) { alert("Loi: " + e.message); }
+}
+
+async function ksUnbanIps(btn) {
+  var ips = String(btn.dataset.ips || "").split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+  if (!ips.length) return;
+  if (!confirm("Unban " + ips.length + " IP: " + ips.join(", ") + "?")) return;
+  try {
+    for (const ip of ips) {
+      await fetch(BASE + "/api/ipguard/block", { method: "DELETE", headers: authHeaders(), body: JSON.stringify({ ip: ip }) });
+    }
+    await loadKeyshare();
   } catch (e) { alert("Loi: " + e.message); }
 }
 
