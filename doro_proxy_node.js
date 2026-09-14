@@ -2505,7 +2505,7 @@ function serverToolSchemas() {
       type: "function",
       function: {
         name: "doro_lookup_order",
-        description: "Look up customer orders by order code or email. Read-only.",
+        description: "Look up the caller's OWN orders by order code or email (only orders paid with the API key used in this request are returned). Read-only.",
         parameters: {
           type: "object",
           properties: {
@@ -2629,7 +2629,14 @@ async function executeServerTool(name, args, auth) {
     const code = String(args.code || "").trim();
     const email = String(args.email || "").trim().toLowerCase();
     if (!code && !email) return { ok: false, error: "Missing code or email" };
-    const found = code ? [orders.getOrderByCode(code)] : orders.listByEmail(email).slice(0, 10);
+    // Privacy: chỉ trả đơn thuộc về key đang gọi (order.api_key === caller key).
+    // Không bao giờ trả đơn của khách khác dù biết email/mã đơn của họ.
+    const callerKey = auth && auth.token ? String(auth.token) : "";
+    if (!callerKey) return { ok: false, error: "No valid credit key for this request" };
+    const mine = (o) => !!o && String(o.api_key || "") !== "" && String(o.api_key) === callerKey;
+    const found = code
+      ? [orders.getOrderByCode(code)].filter(mine)
+      : orders.listByEmail(email).filter(mine).slice(0, 10);
     return { ok: true, orders: found.filter(Boolean).map(publicOrderInfo) };
   }
   if (name === "doro_check_credit_balance") {
