@@ -1874,11 +1874,24 @@ const _adminFailMap = new Map();
 function _adminClientIp(req) {
   return String(req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.socket.remoteAddress || "unknown").split(",")[0].trim().slice(0, 80);
 }
+function isAdminIpAllowed(ip) {
+  const raw = String(process.env.DORO_ADMIN_IP_WHITELIST || "").trim();
+  if (!raw) return true; // empty = allow all (set to lock down)
+  const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!list.length) return true;
+  // Always allow localhost so on-box curl/health checks keep working.
+  if (ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1") return true;
+  return list.includes(ip);
+}
 function checkAdminAuth(req) {
   const adminKey = String(process.env.DORO_ADMIN_KEY || "").trim();
   if (!adminKey) return { ok: false, status: 503, message: "Admin not configured" };
   const token = extractAdminToken(req);
   const ip = _adminClientIp(req);
+  if (!isAdminIpAllowed(ip)) {
+    try { addLog(`SECURITY admin-ip-denied ip=${ip}`); } catch (_) {}
+    return { ok: false, status: 403, message: "Admin IP not allowed" };
+  }
   const now = Date.now();
   const entry = _adminFailMap.get(ip);
   if (entry && now - entry.windowStart > 10 * 60 * 1000) _adminFailMap.delete(ip);
@@ -7341,15 +7354,29 @@ app.get("/api/credit/keys", (req, res) => {
   res.json({ keys: rows });
 });
 
-// FIX: single-key reveal on demand (audited). Admin UI calls this when Copy is clicked.
+// FIX: single-key reveal on demand (audited + throttled 10/5min/IP).
+// Without throttle, stolen admin key + masked list = full dump in ~5 min.
+const _keyRevealHits = new Map();
 app.get("/api/credit/key-full", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const ip = _adminClientIp(req);
+  const now = Date.now();
+  const e = _keyRevealHits.get(ip);
+  if (e && now - e.windowStart > 5 * 60 * 1000) _keyRevealHits.delete(ip);
+  const cur = _keyRevealHits.get(ip) || { windowStart: now, count: 0 };
+  if (cur.count >= 10) {
+    try { addLog(`SECURITY reveal-throttled ip=${ip}`); } catch (_) {}
+    try { notifyTelegram(`🚨 <b>Reveal throttle</b>\nIP <code>${ip}</code> vượt 10 reveal/5 phút — có thể đang moi key.`); } catch (_) {}
+    return res.status(429).json({ detail: "Too many reveals. Try again later." });
+  }
+  cur.count += 1;
+  _keyRevealHits.set(ip, cur);
   const input = String(req.query.key || "").trim();
   if (!input) return res.status(400).json({ detail: "Missing key" });
   const row = resolveAdminKeyRow(input);
   if (!row || !row.key) return res.status(404).json({ detail: "Key not found" });
-  try { addLog(`SECURITY admin-reveal ip=${_adminClientIp(req)} key=${maskSecret(row.key)}`); } catch (_) {}
+  try { addLog(`SECURITY admin-reveal ip=${ip} key=${maskSecret(row.key)} (${cur.count}/10)`); } catch (_) {}
   res.json({ ok: true, key: row.key, key_masked: maskSecret(row.key) });
 });
 
