@@ -8,6 +8,11 @@ const crypto = require("crypto");
 const { getPackageDurationDays } = require("./package_quotas");
 
 const db = new Database(path.join(__dirname, "credit.db"));
+// Cùng file với credit.js (2 connection): bật WAL + busy_timeout để không SQLITE_BUSY
+// khi request hot-path (getOrderByApiKey) chạy song song với ghi credit.
+db.exec("PRAGMA journal_mode = WAL;");
+db.exec("PRAGMA synchronous = NORMAL;");
+db.exec("PRAGMA busy_timeout = 5000;");
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 db.exec(`

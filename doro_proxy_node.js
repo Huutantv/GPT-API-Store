@@ -51,6 +51,29 @@ const {
 } = require("./package_quotas");
 const { ResponseCache } = require("./cache");
 
+// ── Upstream keep-alive (undici Agent) ───────────────────────────────────────
+// Global fetch mặc định đóng idle connection sau ~4s và giới hạn connection,
+// mỗi forward phải handshake TLS lại (+100-300ms). Agent này giữ connection
+// tái sử dụng cho mọi fetch tới backend + Telegram.
+let upstreamDispatcher = null;
+try {
+  const { Agent, setGlobalDispatcher } = require("undici");
+  const upstreamConnections = Math.max(10, Number(process.env.DORO_UPSTREAM_CONNECTIONS || "100") || 100);
+  const upstreamKeepAliveMs = Math.max(1000, Number(process.env.DORO_UPSTREAM_KEEPALIVE_MS || "30000") || 30000);
+  const keepAliveOff = String(process.env.DORO_UPSTREAM_KEEPALIVE || "1").trim().toLowerCase();
+  if (!["0", "false", "no", "off"].includes(keepAliveOff)) {
+    upstreamDispatcher = new Agent({
+      connections: upstreamConnections,
+      keepAliveTimeout: upstreamKeepAliveMs,
+      keepAliveMaxTimeout: upstreamKeepAliveMs * 2,
+      pipelining: 1,
+    });
+    setGlobalDispatcher(upstreamDispatcher);
+  }
+} catch (_) {
+  upstreamDispatcher = null; // undici chưa cài: fetch vẫn chạy, chỉ mất keep-alive tuning
+}
+
 const orderRateMap = new Map();
 
 function firstEnv(...names) {
@@ -500,6 +523,18 @@ function orderActiveBackendIds(ids) {
         }
       }
       result = [first, ...result.filter((id) => id !== first)];
+    } else if (latencyRoutingEnabled()) {
+      // Failover: thử backend nhanh nhất (EWMA) trước thay vì thứ tự config cứng.
+      // Backend chưa có mẫu đo giữ nguyên thứ tự tương đối (stable sort).
+      const known = result.map((id) => _backendLatency[String(id)]).filter(Boolean);
+      const fallback = known.length
+        ? known.map((s) => s.ewma).sort((a, b) => a - b)[Math.floor(known.length / 2)]
+        : 0;
+      const score = (id) => {
+        const s = _backendLatency[String(id)];
+        return s && s.samples > 0 ? s.ewma : fallback;
+      };
+      result = [...result].sort((a, b) => score(a) - score(b));
     }
   }
   return result;
@@ -818,6 +853,37 @@ function trackBackendSuccess(id) {
   }
 }
 
+// ── Backend latency routing (EWMA) + TTFB failover ───────────────────────────
+// Mỗi backend giữ trung bình trượt (EWMA) thời gian phản hồi thành công.
+// orderActiveBackendIds dùng nó để thử backend nhanh nhất trước ở chế độ failover.
+// TTFB timeout riêng giúp bỏ backend treo nhanh hơn thay vì chờ hết backendTimeoutMs.
+const _backendLatency = {}; // id -> { ewma, samples }
+const LATENCY_EWMA_ALPHA = 0.3;
+
+function latencyRoutingEnabled() {
+  return envFlag(process.env.DORO_LATENCY_ROUTING, true);
+}
+
+function trackBackendLatency(id, ms) {
+  const key = String(id || "");
+  if (!BACKEND_IDS.includes(key)) return;
+  const value = Math.max(1, Number(ms) || 0);
+  if (!Number.isFinite(value) || value <= 0) return;
+  const prev = _backendLatency[key];
+  _backendLatency[key] = prev
+    ? { ewma: prev.ewma + LATENCY_EWMA_ALPHA * (value - prev.ewma), samples: prev.samples + 1 }
+    : { ewma: value, samples: 1 };
+}
+
+function latencySnapshot() {
+  const out = {};
+  for (const id of BACKEND_IDS) {
+    const s = _backendLatency[id];
+    out[id] = s ? { ewma_ms: Math.round(s.ewma), samples: s.samples } : { ewma_ms: null, samples: 0 };
+  }
+  return out;
+}
+
 const app = express();
 const port = Number(firstEnv("DORO_PROXY_PORT", { default: "4000" }));
 // Keep per-process in-flight work bounded: each request may retain a parsed JSON body,
@@ -830,6 +896,12 @@ const maxInflightRequests = Math.max(1, Number(process.env.DORO_MAX_INFLIGHT_REQ
 const maxInflightBodyBytes = Math.max(1, Number(process.env.DORO_MAX_INFLIGHT_BODY_BYTES || String(64 * 1024 * 1024)) || (64 * 1024 * 1024));
 const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "120") * 1000;
 const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT || process.env.DORO_BACKEND_TIMEOUT || "300") * 1000;
+// TTFB timeout: fetch resolve ngay khi nhận headers nên đây chính là giới hạn
+// chờ backend bắt đầu trả lời. Nhỏ hơn timeout tổng để failover nhanh khi treo.
+function ttfbTimeoutMs() {
+  const v = Number(process.env.DORO_BACKEND_TTFB_TIMEOUT_MS || "15000") || 15000;
+  return Math.max(1000, Math.min(v, backendTimeoutMs));
+}
 const retryBaseDelayMs = Number(process.env.DORO_RETRY_BASE_DELAY_MS || "1000");
 const retryMaxDelayMs = Number(process.env.DORO_RETRY_MAX_DELAY_MS || "15000");
 const retryJitterMs = Number(process.env.DORO_RETRY_JITTER_MS || "1000");
@@ -852,7 +924,7 @@ const recentRequests = [];
 const RESPONSES_STATE_LIMIT = Number(process.env.DORO_RESPONSES_STATE_LIMIT || "1000");
 const responsesState = new Map();
 const requestOwnerCache = new Map();
-const REQUEST_OWNER_CACHE_TTL_MS = Number(process.env.DORO_REQUEST_OWNER_CACHE_TTL_MS || "60000");
+const REQUEST_OWNER_CACHE_TTL_MS = Number(process.env.DORO_REQUEST_OWNER_CACHE_TTL_MS || "300000");
 let reqCounter = 0;
 let lastLogCleanupDay = "";
 
@@ -955,9 +1027,13 @@ function cleanupAccessLogs() {
   }
 }
 
+// Tạo thư mục log 1 lần lúc boot — trước đây mkdirSync chạy trên MỌI request (block event loop).
+try {
+  fs.mkdirSync(ACCESS_LOG_DIR, { recursive: true });
+} catch (_) {}
+
 function writeAccessLog(entry) {
   try {
-    fs.mkdirSync(ACCESS_LOG_DIR, { recursive: true });
     fs.appendFile(accessLogPath(), safeJsonLine(entry), () => {});
     cleanupAccessLogs();
   } catch (err) {
@@ -2169,6 +2245,7 @@ async function fetchWithTimeout(url, options = {}) {
   try {
     const requestOptions = { ...options, signal: controller.signal };
     delete requestOptions.timeoutMs;
+    if (upstreamDispatcher && requestOptions.dispatcher === undefined) requestOptions.dispatcher = upstreamDispatcher;
     return await fetch(url, requestOptions);
   } finally {
     clearTimeout(timer);
@@ -2619,6 +2696,7 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
           method: "POST",
           headers: backendWireHeaders(ordered[i], settings, extraHeaders),
           body: JSON.stringify(payload),
+          timeoutMs: ttfbTimeoutMs(),
         });
         const text = await resp.text();
         return { resp, text };
@@ -2675,7 +2753,9 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         applyBackendToolCompatibility(payload, settings);
         const wirePayload = backendWirePayload(payload, settings);
         const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
+        const _t0 = Date.now();
         const rawResponse = await postWithKeyFailover(url, wirePayload, settings.apiKeys, {}, obs, settings);
+        trackBackendLatency(settings.profileId, Date.now() - _t0);
         const response = adaptBackendResponseToOpenAI(rawResponse, settings);
         const data = responseHandler ? responseHandler(response, settings, payload) : undefined;
         // Track thành công
@@ -2701,7 +2781,9 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
               applyBackendToolCompatibility(retryPayload, settings);
               const wirePayload = backendWirePayload(retryPayload, settings);
               const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
+              const _t0 = Date.now();
               const rawResponse = await postWithKeyFailover(url, wirePayload, settings.apiKeys, {}, obs, settings);
+              trackBackendLatency(settings.profileId, Date.now() - _t0);
               const response = adaptBackendResponseToOpenAI(rawResponse, settings);
               const data = responseHandler ? responseHandler(response, settings, retryPayload) : undefined;
               trackModelRequest(nextModel);
@@ -3592,7 +3674,7 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
   for (let i = 0; i < orderedKeys.length; i += 1) {
     try {
       const resp = await withBackendKeySlot(orderedKeys[i], async () => {
-        return fetchWithTimeout(url, { method: "POST", headers: backendWireHeaders(orderedKeys[i], settings), body: JSON.stringify(payload), timeoutMs: backendStreamTimeoutMs });
+        return fetchWithTimeout(url, { method: "POST", headers: backendWireHeaders(orderedKeys[i], settings), body: JSON.stringify(payload), timeoutMs: Math.min(backendStreamTimeoutMs, ttfbTimeoutMs()) });
       });
       if (obs) obs.final_backend_status = resp.status;
       if (isRetryableAcrossKeys(resp.status) && i < orderedKeys.length - 1) {
@@ -3658,7 +3740,9 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
         const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
         const ordered = orderedBackendKeys(settings.apiKeys);
         if (!ordered.length) throw new Error("Missing backend API key");
+        const _t0 = Date.now();
         const { resp } = await postStreamWithKeyFailover(url, wirePayload, ordered, obs, settings);
+        trackBackendLatency(settings.profileId, Date.now() - _t0);
         const data = await collectOpenAIStream(resp);
         if (!data.usage || !data.usage.total_tokens) {
           const contentText = String(((((data.choices || [])[0]) || {}).message || {}).content || "");
@@ -3690,7 +3774,9 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
               if (settings.apiStyle === "anthropic") wirePayload.stream = true;
               const url = backendChatUrl(settings, `${settings.baseUrl}${pathSuffix}`);
               const ordered = orderedBackendKeys(settings.apiKeys);
+              const _t0 = Date.now();
               const { resp } = await postStreamWithKeyFailover(url, wirePayload, ordered, obs, settings);
+              trackBackendLatency(settings.profileId, Date.now() - _t0);
               const data = await collectOpenAIStream(resp);
               if (!data.usage || !data.usage.total_tokens) {
                 const contentText = String(((((data.choices || [])[0]) || {}).message || {}).content || "");
@@ -6853,6 +6939,7 @@ app.get("/api/config", (req, res) => {
     telegram_chat_id: maskSecret(String(process.env.TELEGRAM_CHAT_ID || "").trim()),
     telegram_alerts_enabled: true,
     backend_health: backendHealth,
+    backend_latency: latencySnapshot(),
     backend_router_mode: backendRouterMode(),
     backend_weights: weights,
     backend_profiles: profiles,
@@ -7948,7 +8035,8 @@ app.listen(port, "0.0.0.0", () => {
   printLog(`  Remap     : gpt-5.5 -> ${settings.backendModel}`);
   printLog(`  Active    : ${activeBackendIds().map((id) => backendProfile(id).label).join(" + ")} (${activeBackendId()})`);
   printLog(`  Router    : ${backendRouterMode()} | ${BACKEND_IDS.map((id) => `${backendProfile(id).label} ${backendWeights()[`backend${id}`]}%`).join(" / ")}`);
-  printLog(`  Timeout   : ${backendTimeoutMs / 1000}s | Max concurrent: ${maxConcurrent}`);
+  printLog(`  Timeout   : ${backendTimeoutMs / 1000}s (ttfb ${ttfbTimeoutMs() / 1000}s) | Max concurrent: ${maxConcurrent}`);
+  printLog(`  Upstream  : keep-alive=${upstreamDispatcher ? "ON" : "OFF"} | latency-routing=${latencyRoutingEnabled() ? "ON" : "OFF"}`);
   printLog(`  Retries   : request=${backendRequestRetryCount} | base=${retryBaseDelayMs}ms | max=${retryMaxDelayMs}ms`);
   printLog(`  Stream    : force-nonstream=${forceStreamNonstreamEnabled() ? "ON" : "OFF"} | safe-failover=${safeStreamFailoverEnabled() ? "ON" : "OFF"} | max-bytes=${safeStreamBufferLimitBytes()}`);
   printLog(`  Keys      : ${validProxyKeys.length} virtual keys | ${settings.apiKeys.length} backend keys`);

@@ -16,6 +16,10 @@ const DB_PATH = process.env.DORO_DB_PATH
   ? path.resolve(process.env.DORO_DB_PATH)
   : path.join(__dirname, "credit.db");
 const db = new Database(DB_PATH);
+// Giảm block event loop khi nhiều request đồng thời: chờ lock thay vì ném SQLITE_BUSY,
+// ghi WAL bất đồng bộ hơn (NORMAL) — an toàn vì credit đã có reserve/settle transaction.
+db.exec("PRAGMA busy_timeout = 5000;");
+db.exec("PRAGMA synchronous = NORMAL;");
 
 // ── Khởi tạo schema ──────────────────────────────────────────────────────────
 db.exec(`
