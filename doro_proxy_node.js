@@ -6594,17 +6594,34 @@ async function processPayment(orderCode, amount, note) {
   return true;
 }
 
+// So sánh secret webhook chống timing-attack.
+function webhookSecretValid(provided, expected) {
+  const a = String(provided || "");
+  const b = String(expected || "");
+  if (!a || !b) return false;
+  try {
+    const ba = Buffer.from(a);
+    const bb = Buffer.from(b);
+    return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+  } catch (_) {
+    return false;
+  }
+}
+
 // Sepay webhook
 app.post("/webhook/sepay", async (req, res) => {
-  const secret = process.env.SEPAY_WEBHOOK_SECRET || "";
-  if (secret) {
-    // Sepay gửi header: Authorization: Apikey YOUR_SECRET
-    const auth = req.headers["authorization"] || "";
-    const token = auth.startsWith("Apikey ") ? auth.slice(7).trim() : auth.trim();
-    if (token !== secret) {
-      addLog(`webhook/sepay: invalid auth token`);
-      return res.status(401).json({ success: false, message: "Unauthorized" });
-    }
+  const secret = String(process.env.SEPAY_WEBHOOK_SECRET || "").trim();
+  // Fail-closed: chưa cấu hình secret thì từ chối thay vì bỏ qua xác thực.
+  if (!secret) {
+    addLog(`webhook/sepay: rejected (SEPAY_WEBHOOK_SECRET not configured)`);
+    return res.status(503).json({ success: false, message: "Webhook not configured" });
+  }
+  // Sepay gửi header: Authorization: Apikey YOUR_SECRET
+  const auth = req.headers["authorization"] || "";
+  const token = auth.startsWith("Apikey ") ? auth.slice(7).trim() : auth.trim();
+  if (!webhookSecretValid(token, secret)) {
+    addLog(`webhook/sepay: invalid auth token`);
+    return res.status(401).json({ success: false, message: "Unauthorized" });
   }
   const body = req.body || {};
   addLog(`webhook/sepay received: ${JSON.stringify(body).slice(0, 200)}`);
@@ -6623,11 +6640,14 @@ app.post("/webhook/sepay", async (req, res) => {
 
 // Casso webhook
 app.post("/webhook/casso", async (req, res) => {
-  const secret = process.env.CASSO_WEBHOOK_SECRET || "";
-  if (secret) {
-    const sig = req.headers["secure-token"] || "";
-    if (sig !== secret) return res.status(401).json({ success: false });
+  const secret = String(process.env.CASSO_WEBHOOK_SECRET || "").trim();
+  // Fail-closed: chưa cấu hình secret thì từ chối thay vì bỏ qua xác thực.
+  if (!secret) {
+    addLog(`webhook/casso: rejected (CASSO_WEBHOOK_SECRET not configured)`);
+    return res.status(503).json({ success: false, message: "Webhook not configured" });
   }
+  const sig = String(req.headers["secure-token"] || "").trim();
+  if (!webhookSecretValid(sig, secret)) return res.status(401).json({ success: false });
   const body = req.body || {};
   const records = body.data || (Array.isArray(body) ? body : [body]);
   for (const rec of records) {
