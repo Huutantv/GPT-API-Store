@@ -2017,7 +2017,7 @@ async function loadMonitor() {
     var userTitle = userTitleParts.join("\n");
     return '<tr class="border-b border-white/5 hover:bg-white/2 align-top">' +
       '<td class="px-4 py-2 whitespace-nowrap">' + fmtTimeVN(r.ts) + '</td>' +
-      '<td class="px-4 py-2 text-gray-400 whitespace-nowrap">' + (r.client_ip || "\u2014") + '</td>' +
+      '<td class="px-4 py-2 text-gray-400 whitespace-nowrap">' + escapeHtml(r.client_ip || "\u2014") + '</td>' +
       '<td class="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">' + (r.api_key_masked || "\u2014") + copyBtn + '</td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap max-w-[180px] truncate" title="' + escapeHtml(userTitle) + '">' + escapeHtml(userDisplay) + '</td>' +
       '<td class="px-4 py-2 text-gray-300 whitespace-nowrap">' + (r.path || "\u2014") + '</td>' +

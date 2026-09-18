@@ -998,6 +998,8 @@ function nextReqId() {
 
 function clientIp(req) {
   const forwarded = String(req.get("x-forwarded-for") || "").split(",")[0].trim();
+  const isValidIp = (s) => /^\d{1,3}(\.\d{1,3}){3}$/.test(s) || /^\[?[0-9a-fA-F:]+\]?$/.test(s) || /^[0-9a-fA-F:]+:[0-9a-fA-F:]+/.test(s);
+  if (forwarded && (forwarded.includes("<") || forwarded.includes(">") || forwarded.includes("\n") || forwarded.includes("\r") || !isValidIp(forwarded) && forwarded.length > 45)) return req.ip || req.socket.remoteAddress || "";
   return forwarded || req.ip || req.socket.remoteAddress || "";
 }
 
@@ -7182,6 +7184,7 @@ app.put("/api/config", (req, res) => {
     if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND(?:[2-5]|5_VISION)_AUTH_TOKEN$/.test(field) || /^DORO_BACKUP[1-2]_AUTH_TOKEN$/.test(field)) {
       value = value.replace(/\n/g, ",").split(",").map((k) => k.trim()).filter(Boolean).join(",");
     }
+    if (/[\r\n]/.test(value) || /[\r\n]/.test(field)) return res.status(400).json({ detail: "Invalid characters in " + field });
     if (value) updates[field] = value;
   }
   if (Object.keys(pendingWeights).length) {

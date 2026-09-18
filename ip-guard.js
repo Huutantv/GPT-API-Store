@@ -55,6 +55,7 @@ const stmts = {
       note = excluded.note
   `),
   incrementHits: db.prepare("UPDATE ip_blocks SET hits = hits + 1 WHERE ip = ?"),
+  isValidIpStrict: (s) => /^\d{1,3}(\.\d{1,3}){3}(\/\d{1,2})?$/.test(s) || /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(\/\d{1,3})?$/.test(s),
   deleteBlock: db.prepare("DELETE FROM ip_blocks WHERE ip = ?"),
   cleanExpired: db.prepare(
     "DELETE FROM ip_blocks WHERE expires_at IS NOT NULL AND expires_at < datetime('now')"
@@ -329,6 +330,7 @@ function isWhitelisted(ip) {
 
 function findBlock(ip) {
   if (!ip) return null;
+  if (ip && (ip.includes('<') || ip.includes('>') || ip.includes('"') || ip.includes("'") || ip.includes('`') || ip.length > 45)) return null;
   const direct = blockedIps.get(ip);
   if (direct) {
     if (direct.expiresAt !== null && direct.expiresAt < nowSec()) {
@@ -643,6 +645,7 @@ function makeMiddleware({ onAutoBan, onBlocked, onKeyShare, whitelistPaths = [] 
       const retryAfter = block.expiresAt ? Math.max(1, block.expiresAt - nowSec()) : 3600;
       res.setHeader("Retry-After", String(retryAfter));
       res.setHeader("X-IP-Block-Reason", String(block.reason || "blocked").slice(0, 200));
+      res.setHeader("Content-Disposition", 'inline; filename="blocked.json"');
       if (typeof onBlocked === "function") {
         try { onBlocked({ ip, path: req.path, reason: block.reason }); } catch (_) {}
       }
