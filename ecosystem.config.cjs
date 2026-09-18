@@ -5,7 +5,7 @@ module.exports = {
       script: "doro_proxy_node.js",
       instances: 1,          // Giữ 1 vì dùng SQLite
       exec_mode: "fork",
-      max_memory_restart: "512M",
+      max_memory_restart: "1G",
       watch: false,
       autorestart: true,
       restart_delay: 3000,
