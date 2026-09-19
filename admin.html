@@ -491,11 +491,11 @@ body{font-family:'Inter',sans-serif}
           </div>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div><label class="text-xs text-gray-400 block mb-1">Backend 1</label><input id="cfgBackend1WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
-          <div><label class="text-xs text-gray-400 block mb-1">Backend 2</label><input id="cfgBackend2WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
-          <div><label class="text-xs text-gray-400 block mb-1">Backend 3</label><input id="cfgBackend3WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
-          <div><label class="text-xs text-gray-400 block mb-1">Backend 4</label><input id="cfgBackend4WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
-          <div><label class="text-xs text-gray-400 block mb-1">Backend 5</label><input id="cfgBackend5WeightInput" type="number" min="0" max="100" step="1" value="25" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 1</label><input id="cfgBackend1WeightInput" type="number" min="0" max="100" step="1" value="20" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 2</label><input id="cfgBackend2WeightInput" type="number" min="0" max="100" step="1" value="20" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 3</label><input id="cfgBackend3WeightInput" type="number" min="0" max="100" step="1" value="20" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 4</label><input id="cfgBackend4WeightInput" type="number" min="0" max="100" step="1" value="20" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
+          <div><label class="text-xs text-gray-400 block mb-1">Backend 5</label><input id="cfgBackend5WeightInput" type="number" min="0" max="100" step="1" value="20" oninput="syncBackendWeights()" class="w-full px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px"></div>
         </div>
         <div class="space-y-2">
           <div class="h-3 bg-dark-600 rounded-full overflow-hidden flex">
@@ -524,7 +524,7 @@ body{font-family:'Inter',sans-serif}
         </label>
         <label class="flex items-center gap-2 bg-dark-900 border border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-cyan-500/50 transition">
           <input type="checkbox" id="chkAutoSwitch" class="w-4 h-4 accent-cyan-500">
-          <span class="text-sm font-medium">Auto Swicht</span>
+          <span class="text-sm font-medium">Auto Switch</span>
           <span class="text-xs text-gray-500">(main/backup)</span>
         </label>
         <span id="activeStatus" class="text-xs text-gray-500">&mdash;</span>
@@ -538,7 +538,7 @@ body{font-family:'Inter',sans-serif}
     </div>
     <div id="autoSwitchInfo" class="hidden bg-cyan-500/5 border border-cyan-500/20 rounded-lg p-3 text-xs text-cyan-300 space-y-3">
       <div>
-        <p><strong>Auto Swicht:</strong> Ch&#7841;y backend ch&#237;nh &#273;&#227; ch&#7885;n. Khi backend ch&#237;nh l&#7895;i, request m&#7899;i chuy&#7875;n sang backup &#273;&#227; ch&#7885;n.</p>
+        <p><strong>Auto Switch:</strong> Ch&#7841;y backend ch&#237;nh &#273;&#227; ch&#7885;n. Khi backend ch&#237;nh l&#7895;i, request m&#7899;i chuy&#7875;n sang backup &#273;&#227; ch&#7885;n.</p>
         <p>Sau 60s s&#7869; th&#7917; l&#7841;i backend ch&#237;nh. N&#7871;u OK s&#7869; t&#7921; quay v&#7873; backend ch&#237;nh v&#224; ng&#7915;ng d&#249;ng backup.</p>
         <p id="autoSwitchStatus"></p>
       </div>
@@ -584,12 +584,15 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend1KeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
-          <input id="newBackend1Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <input id="newBackend1Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
           <button onclick="addBackendKey('1')" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
         </div>
         <p id="backend1Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <button onclick="saveBackend1Config()" class="w-full md:w-auto px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 1</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="saveBackend1Config()" class="w-full md:w-auto px-5 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 1</button>
+        <button onclick="testBackendKey('1','backend1Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
     </div>
   </div>
 
@@ -613,12 +616,15 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend2KeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
-          <input id="newBackend2Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <input id="newBackend2Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
           <button onclick="addBackendKey('2')" class="px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
         </div>
         <p id="backend2Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <button onclick="saveBackend2Config()" class="w-full md:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 2</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="saveBackend2Config()" class="w-full md:w-auto px-5 py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 2</button>
+        <button onclick="testBackendKey('2','backend2Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
     </div>
   </div>
 
@@ -642,12 +648,15 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend3KeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
-          <input id="newBackend3Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <input id="newBackend3Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
           <button onclick="addBackendKey('3')" class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
         </div>
         <p id="backend3Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <button onclick="saveBackendConfig('3')" class="w-full md:w-auto px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 3</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="saveBackendConfig('3')" class="w-full md:w-auto px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 3</button>
+        <button onclick="testBackendKey('3','backend3Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
     </div>
   </div>
 
@@ -671,12 +680,15 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend4KeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
-          <input id="newBackend4Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <input id="newBackend4Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
           <button onclick="addBackendKey('4')" class="px-4 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
         </div>
         <p id="backend4Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <button onclick="saveBackendConfig('4')" class="w-full md:w-auto px-5 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 4</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="saveBackendConfig('4')" class="w-full md:w-auto px-5 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 4</button>
+        <button onclick="testBackendKey('4','backend4Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
     </div>
   </div>
 
@@ -708,12 +720,15 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend5KeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
-          <input id="newBackend5Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <input id="newBackend5Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
           <button onclick="addBackendKey('5')" class="px-4 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
         </div>
         <p id="backend5Msg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <button onclick="saveBackendConfig('5')" class="w-full md:w-auto px-5 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="saveBackendConfig('5')" class="w-full md:w-auto px-5 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5</button>
+        <button onclick="testBackendKey('5','backend5Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
     </div>
   </div>
 
@@ -744,20 +759,23 @@ body{font-family:'Inter',sans-serif}
         <label class="text-xs text-gray-400 block mb-1">API Keys</label>
         <div id="backend5vKeysList" class="space-y-2 mb-2"></div>
         <div class="flex gap-2">
-          <input id="newBackend5vKey" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+          <input id="newBackend5vKey" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
           <button onclick="addBackendKey('5v')" class="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
         </div>
         <p id="backend5vMsg" class="text-xs text-gray-400 mt-1"></p>
       </div>
-      <button onclick="saveBackend5VisionConfig()" class="w-full md:w-auto px-5 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5 Vision</button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="saveBackend5VisionConfig()" class="w-full md:w-auto px-5 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 rounded-lg text-sm font-semibold transition">L&#432;u Backend 5 Vision</button>
+        <button onclick="testBackendKey('5v','backend5vMsg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
     </div>
   </div>
 
-  <!-- Auto Swicht Backup Backends -->
+  <!-- Auto Switch Backup Backends -->
   <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
     <div class="bg-dark-700 border border-cyan-500/20 rounded-xl p-5 space-y-4">
       <div class="flex items-center justify-between">
-        <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-cyan-400 rounded-full"></span> Backup 1 <span class="text-xs font-normal text-gray-400">&middot; Auto Swicht</span></h3>
+        <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-cyan-400 rounded-full"></span> Backup 1 <span class="text-xs font-normal text-gray-400">&middot; Auto Switch</span></h3>
         <span class="text-xs text-gray-500" id="backup1Status">&mdash;</span>
       </div>
       <div class="space-y-3">
@@ -780,18 +798,21 @@ body{font-family:'Inter',sans-serif}
           <label class="text-xs text-gray-400 block mb-1">API Keys</label>
           <div id="backup1KeysList" class="space-y-2 mb-2"></div>
           <div class="flex gap-2">
-            <input id="newBackendbackup1Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+            <input id="newBackendbackup1Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
             <button onclick="addBackendKey('backup1')" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
           </div>
           <p id="backendbackup1Msg" class="text-xs text-gray-400 mt-1"></p>
         </div>
+        <div class="flex flex-wrap gap-2">
         <button onclick="saveBackupConfig('1')" class="w-full md:w-auto px-5 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition">L&#432;u Backup 1</button>
+        <button onclick="testBackendKey('backup1','backendbackup1Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
       </div>
     </div>
 
     <div class="bg-dark-700 border border-cyan-500/20 rounded-xl p-5 space-y-4">
       <div class="flex items-center justify-between">
-        <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-cyan-300 rounded-full"></span> Backup 2 <span class="text-xs font-normal text-gray-400">&middot; Auto Swicht</span></h3>
+        <h3 class="font-bold text-base flex items-center gap-2"><span class="w-2 h-2 bg-cyan-300 rounded-full"></span> Backup 2 <span class="text-xs font-normal text-gray-400">&middot; Auto Switch</span></h3>
         <span class="text-xs text-gray-500" id="backup2Status">&mdash;</span>
       </div>
       <div class="space-y-3">
@@ -814,12 +835,15 @@ body{font-family:'Inter',sans-serif}
           <label class="text-xs text-gray-400 block mb-1">API Keys</label>
           <div id="backup2KeysList" class="space-y-2 mb-2"></div>
           <div class="flex gap-2">
-            <input id="newBackendbackup2Key" placeholder="sk-new-key..." class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+            <input id="newBackendbackup2Key" placeholder="sk-... (nhiều key: cách nhau bởi dấu phẩy/xuống dòng)" class="flex-1 px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
             <button onclick="addBackendKey('backup2')" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition shrink-0">Th&#234;m</button>
           </div>
           <p id="backendbackup2Msg" class="text-xs text-gray-400 mt-1"></p>
         </div>
+      <div class="flex flex-wrap gap-2">
         <button onclick="saveBackupConfig('2')" class="w-full md:w-auto px-5 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm font-semibold transition">L&#432;u Backup 2</button>
+        <button onclick="testBackendKey('backup2','backendbackup2Msg')" class="w-full md:w-auto px-5 py-2 bg-dark-600 hover:bg-dark-500 border border-white/10 rounded-lg text-sm font-semibold transition">Test</button>
+      </div>
       </div>
     </div>
   </div>
@@ -2159,17 +2183,61 @@ async function cancelOrder(orderId) {
 
 <script>
 /* ===== BACKEND CONFIG ===== */
-function renderKeyList(listEl, keys, backendId) {
+function renderKeyList(listEl, keys, backendId, health) {
   if (!keys || !keys.length) {
     listEl.innerHTML = '<p class="text-xs text-gray-500">Ch\u01b0a c\u00f3 key n\u00e0o (masked - full key chỉ nằm trong .env server)</p>';
     return;
   }
+  var healthByIdx = {};
+  (health || []).forEach(function(h) { healthByIdx[h.index] = h; });
   listEl.innerHTML = keys.map(function(k, idx) {
+    var h = healthByIdx[idx];
+    var badge = "";
+    var resetBtn = "";
+    if (h) {
+      if (h.status === "sick") {
+        badge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 font-semibold shrink-0" title="' + escapeHtml(h.last_error || "sick") + '">sick · ' + escapeHtml(h.last_error || "") + '</span>';
+        resetBtn = '<button onclick="resetBackendKeyHealth(\'' + escapeHtml(String(backendId)) + '\',' + idx + ')" class="px-2 py-1 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/40 rounded text-xs transition shrink-0" title="Xóa sick/cooldown, cho key chạy lại ngay">Reset</button>';
+      } else if (h.status === "cooldown") {
+        badge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 font-semibold shrink-0">cooldown 429</span>';
+        resetBtn = '<button onclick="resetBackendKeyHealth(\'' + escapeHtml(String(backendId)) + '\',' + idx + ')" class="px-2 py-1 bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/40 rounded text-xs transition shrink-0" title="Xóa sick/cooldown, cho key chạy lại ngay">Reset</button>';
+      } else {
+        var reqTxt = (h.daily_count || 0) + " req h\u00f4m nay";
+        if (h.total_errors) reqTxt += " · " + h.total_errors + " l\u1ed7i";
+        badge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-green-500/15 text-green-400 font-semibold shrink-0" title="' + escapeHtml(reqTxt) + '">OK · ' + Number(h.daily_count || 0) + '</span>';
+      }
+    }
     return '<div class="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2">' +
-      '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + escapeHtml(k) + '</code>' +
+      '<code class="text-xs font-mono text-gray-300 flex-1 break-all">' + escapeHtml(k) + '</code>' + badge + resetBtn +
       '<button onclick="removeBackendKeyDirect(\'' + escapeHtml(String(backendId)) + '\',' + idx + ')" class="px-2 py-1 bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded text-xs transition shrink-0">X\u00f3a</button>' +
     '</div>';
   }).join("");
+}
+
+async function resetBackendKeyHealth(backend, idx) {
+  var r = await fetch(BASE + "/api/key-health/reset", { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend: backend, key_index: idx }) });
+  var data = await r.json();
+  if (data.ok) loadBackendConfig(); else alert(data.detail || "L\u1ed7i");
+}
+
+async function testBackendKey(backend, msgId) {
+  var msg = document.getElementById(msgId);
+  if (msg) { msg.className = "text-xs text-gray-400 mt-1"; msg.textContent = "Đang test 1 request thật (max_tokens=1)..."; }
+  try {
+    var r = await fetch(BASE + "/api/backend-test", { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend: backend }) });
+    var data = await r.json();
+    if (!msg) return;
+    if (data.ok) {
+      msg.className = "text-xs text-green-400 mt-1";
+      msg.textContent = "OK · HTTP " + data.status + " · " + data.latency_ms + "ms · " + (data.model || "");
+    } else {
+      msg.className = "text-xs text-red-400 mt-1";
+      msg.textContent = "Lỗi" + (data.status ? " HTTP " + data.status : "") + ": " + (data.error || data.detail || "unknown");
+    }
+    loadBackendConfig();
+  } catch (e) {
+    if (msg) { msg.className = "text-xs text-red-400 mt-1"; msg.textContent = "Lỗi kết nối tới proxy"; }
+  }
 }
 
 function normalizeWeight(value) {
@@ -2227,6 +2295,11 @@ function updateBackendRouterStatus(data) {
 
 async function loadBackendConfig() {
   var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
+  var keyHealthByBackend = {};
+  try {
+    var kh = await fetch(BASE + "/api/key-health", { headers: authHeaders() }).then(function(r) { return r.json(); });
+    (kh.backends || []).forEach(function(b) { keyHealthByBackend[b.id] = b.keys || []; });
+  } catch (e) { /* key-health optional: badges ẩn khi lỗi */ }
 
   // Active backend → checkbox state
   var active = data.active_backend || "1";
@@ -2314,7 +2387,7 @@ async function loadBackendConfig() {
     if (keepTools) keepTools.checked = !profile.disable_tools;
     if (apiStyle) apiStyle.value = profile.api_style || (id === 5 ? "anthropic" : "openai");
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys";
-    if (keyList) renderKeyList(keyList, profile.backend_api_key_masks || profile.backend_api_keys_full || [], String(id));
+    if (keyList) renderKeyList(keyList, profile.backend_api_key_masks || profile.backend_api_keys_full || [], String(id), keyHealthByBackend[String(id)]);
   });
   var publicModel = document.getElementById("cfgPublicModel");
   if (publicModel) publicModel.value = data.public_model || "gpt-5.6-terra";
@@ -2332,7 +2405,7 @@ async function loadBackendConfig() {
   if (b5vStatus) b5vStatus.textContent = vision.configured
     ? ((vision.backend_api_keys || 0) + " keys · OK")
     : "Chưa cấu hình đủ";
-  if (b5vKeyList) renderKeyList(b5vKeyList, vision.backend_api_key_masks || vision.backend_api_keys_full || [], "5v");
+  if (b5vKeyList) renderKeyList(b5vKeyList, vision.backend_api_key_masks || vision.backend_api_keys_full || [], "5v", keyHealthByBackend["5v"]);
 
   var backupProfiles = data.backup_backend_profiles || [];
   var backupById = {};
@@ -2348,7 +2421,7 @@ async function loadBackendConfig() {
     if (model) model.value = profile.backend_model || "";
     if (apiStyle) apiStyle.value = profile.api_style || "openai";
     if (status) status.textContent = (profile.backend_api_keys || 0) + " keys · Model: " + (profile.backend_model || "—");
-    if (keyList) renderKeyList(keyList, profile.backend_api_key_masks || profile.backend_api_keys_full || [], "backup" + id);
+    if (keyList) renderKeyList(keyList, profile.backend_api_key_masks || profile.backend_api_keys_full || [], "backup" + id, keyHealthByBackend["backup" + id]);
   });
   document.getElementById("activeStatus").textContent = "Hi\u1ec7n t\u1ea1i: " + (data.active_backend_label || "—");
 
@@ -2391,17 +2464,26 @@ document.addEventListener("DOMContentLoaded", function() {
 
 async function addBackendKey(backend) {
   var input = document.getElementById("newBackend" + backend + "Key");
-  var key = input.value.trim();
+  var raw = input.value.trim();
   var msg = document.getElementById("backend" + backend + "Msg");
-  if (!key) { msg.className = "text-xs text-red-400"; msg.textContent = "Vui l\u00f2ng nh\u1eadp key"; return; }
-  var r = await fetch(BASE + "/api/backend-keys", { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend: backend, key: key }) });
-  var data = await r.json();
-  if (data.ok) {
+  // Cho paste nhiều key 1 lần: cách nhau bởi dấu phẩy, chấm phẩy hoặc xuống dòng.
+  var keys = raw.split(/[\s,;]+/).map(function(k){ return k.trim(); }).filter(Boolean);
+  if (!keys.length) { msg.className = "text-xs text-red-400"; msg.textContent = "Vui l\u00f2ng nh\u1eadp key"; return; }
+  var added = 0, total = 0, lastErr = "";
+  for (var i = 0; i < keys.length; i += 1) {
+    try {
+      var r = await fetch(BASE + "/api/backend-keys", { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend: backend, key: keys[i] }) });
+      var data = await r.json();
+      if (data.ok) { added += 1; total = data.count; }
+      else lastErr = data.detail || "L\u1ed7i";
+    } catch (e) { lastErr = "L\u1ed7i k\u1ebft n\u1ed1i"; }
+  }
+  if (added) {
     msg.className = "text-xs text-green-400";
-    msg.textContent = "\u0110\u00e3 th\u00eam. T\u1ed5ng: " + data.count + " keys";
+    msg.textContent = "\u0110\u00e3 th\u00eam " + added + "/" + keys.length + " keys. T\u1ed5ng: " + total + " keys" + (lastErr && added < keys.length ? " (" + lastErr + ")" : "");
     input.value = "";
     loadBackendConfig();
-  } else { msg.className = "text-xs text-red-400"; msg.textContent = data.detail || "L\u1ed7i"; }
+  } else { msg.className = "text-xs text-red-400"; msg.textContent = lastErr || "L\u1ed7i"; }
 }
 
 async function removeBackendKeyDirect(backend, keyOrIndex) {
@@ -2426,7 +2508,7 @@ async function saveBackend1Config() {
   if (!Object.keys(updates).length) { alert("Kh\u00f4ng c\u00f3 g\u00ec thay \u0111\u1ed5i"); return; }
   var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
   var data = await r.json();
-  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 1. C\u1ea7n restart proxy \u0111\u1ec3 \u00e1p d\u1ee5ng."); loadBackendConfig(); }
+  if (data.ok) { alert("\u0110\u00e3 l\u01b0u Backend 1. C\u1ea5u h\u00ecnh \u0111\u00e3 \u00e1p d\u1ee5ng cho request m\u1edbi."); loadBackendConfig(); }
   else alert(data.detail || "L\u1ed7i");
 }
 
@@ -2906,7 +2988,7 @@ async function saveActiveBackend() {
     var el = document.getElementById("chk" + id.charAt(0).toUpperCase() + id.slice(1));
     return el && el.checked;
   });
-  if (autoSwitch && !selectedBackups.length) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backup khi b\u1eadt Auto Swicht"); return; }
+  if (autoSwitch && !selectedBackups.length) { alert("Ph\u1ea3i ch\u1ecdn \u00edt nh\u1ea5t 1 backup khi b\u1eadt Auto Switch"); return; }
   var updates = {
     DORO_ACTIVE_BACKEND: active,
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,

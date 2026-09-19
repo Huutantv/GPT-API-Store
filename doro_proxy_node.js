@@ -52,6 +52,7 @@ const credit = require("./credit");
 const orders = require("./orders");
 const mailer = require("./mailer");
 const ipGuard = require("./ip-guard");
+const keyHealth = require("./key-health");
 const {
   getTokenPerRequest,
 } = require("./package_quotas");
@@ -1297,18 +1298,61 @@ function isValidProxyKeyFormat(value) {
 }
 
 function orderedBackendKeys(apiKeys) {
-  if (!apiKeys.length) return [];
-  const start = backendKeyCounter++ % apiKeys.length;
-  return apiKeys
+  const list = Array.isArray(apiKeys) ? apiKeys : [];
+  if (!list.length) return [];
+  // Bỏ key đang sick/cooldown (key-health), ưu tiên key ít dùng nhất.
+  // Nếu TẤT CẢ key đều bận/bệnh vẫn thử hết thay vì trả 503 ngay.
+  let candidates = list;
+  try {
+    const ranked = keyHealth.rankKeys(list, backendKeyInflight);
+    if (ranked.available.length) {
+      candidates = ranked.available;
+      if (ranked.skipped.length && shouldLogKeyHealthSkip()) {
+        addLog(`key-health skip ${ranked.skipped.length}/${list.length} keys (${ranked.skipped.map((s) => s.reason).join(" | ").slice(0, 180)})`);
+      }
+    } else {
+      if (shouldLogKeyHealthSkip()) addLog(`key-health all ${list.length} keys unavailable, trying anyway`);
+    }
+  } catch (_) { candidates = list; }
+  const start = backendKeyCounter++ % candidates.length;
+  return candidates
     .map((key, index) => ({
       key,
       index,
       load: backendKeyInflight.get(key) || 0,
-      turn: (index - start + apiKeys.length) % apiKeys.length,
+      turn: (index - start + candidates.length) % candidates.length,
     }))
     .sort((a, b) => (a.load - b.load) || (a.turn - b.turn))
     .map((entry) => entry.key);
 }
+
+// ── Per-backend-key health (key-health.js) ───────────────────────────────────
+// Ghi nhận kết quả mỗi lần dùng key upstream: sick khi 401/402/403/quota,
+// cooldown ngắn khi 429, đếm daily để cân tải. 5xx/timeout chỉ đếm, không mark.
+let _keyHealthSkipLogAt = 0;
+function shouldLogKeyHealthSkip() {
+  const now = Date.now();
+  if (now - _keyHealthSkipLogAt < 60000) return false;
+  _keyHealthSkipLogAt = now;
+  return true;
+}
+
+function trackBackendKeyResult(apiKey, err) {
+  try {
+    if (!apiKey) return;
+    if (!err) { keyHealth.recordSuccess(apiKey); return; }
+    keyHealth.recordError(apiKey, Number(err.status) || 0, err.text || err.message || "");
+  } catch (_) {}
+}
+
+try {
+  keyHealth.setSickListener((info) => {
+    addLog(`key-health SICK key=${maskSecret(info.key)} reason=${info.lastError} until=${new Date(info.sickUntilMs).toISOString()}`);
+  });
+  keyHealth.setCooldownListener((info) => {
+    addLog(`key-health cooldown key=${maskSecret(info.key)} ${info.cooldownSec}s (429)`);
+  });
+} catch (_) {}
 
 function backendHeaders(apiKey, extra = {}) {
   return {
@@ -2898,6 +2942,7 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
       });
       if (obs) obs.final_backend_status = resp.status;
       if (isRetryableStatus(resp.status) && i < ordered.length - 1) {
+        trackBackendKeyResult(ordered[i], { status: resp.status, text });
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
       addLog(`backend retry status=${resp.status} key=${i + 1}/${ordered.length} body=${logPreview(text)}`);
         await new Promise(r => setTimeout(r, retryDelayMs(i + 1))); // exponential backoff + jitter
@@ -2909,8 +2954,10 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
         err.text = text;
         throw err;
       }
+      trackBackendKeyResult(ordered[i], null);
       return { status: resp.status, text, apiKey: ordered[i] };
     } catch (err) {
+      trackBackendKeyResult(ordered[i], err);
       lastError = err;
       if (!err.status && i < ordered.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
@@ -3873,6 +3920,7 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
       });
       if (obs) obs.final_backend_status = resp.status;
       if (isRetryableAcrossKeys(resp.status) && i < orderedKeys.length - 1) {
+        trackBackendKeyResult(orderedKeys[i], { status: resp.status });
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
         addLog(`backend retry(stream) status=${resp.status} key=${i + 1}/${orderedKeys.length}`);
         await new Promise((r) => setTimeout(r, retryDelayMs(i + 1)));
@@ -3885,8 +3933,10 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
         err.text = text;
         throw err;
       }
+      trackBackendKeyResult(orderedKeys[i], null);
       return { resp, apiKey: orderedKeys[i] };
     } catch (err) {
+      trackBackendKeyResult(orderedKeys[i], err);
       lastError = err;
       if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status && isRetryableAcrossKeys(err.status) && i < orderedKeys.length - 1) {
@@ -4411,8 +4461,10 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       credit.settleRequest(reqId || "", tokensIn, tokensOut, modelName || "");
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
+      trackBackendKeyResult(ordered[i], null);
       return res.end();
     } catch (err) {
+      trackBackendKeyResult(ordered[i], err);
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
       if (obs && err.status) obs.final_backend_status = err.status;
@@ -4648,8 +4700,10 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         credit.settleRequest(reqId || "", Math.floor(estTokens * 0.7), Math.ceil(estTokens * 0.3), modelName || "");
       }
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
+      trackBackendKeyResult(ordered[i], null);
       return res.end();
     } catch (err) {
+      trackBackendKeyResult(ordered[i], err);
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
       if (obs && err.status) obs.final_backend_status = err.status;
@@ -7380,6 +7434,14 @@ app.put("/api/config", (req, res) => {
     }
   }
   if (!Object.keys(updates).length) return res.status(400).json({ detail: "No valid fields to update" });
+  // Auto Mode và Auto Switch loại trừ nhau (UI đã ngăn, chặn luôn ở server khi gọi API trực tiếp).
+  const effAutoMode = Object.prototype.hasOwnProperty.call(updates, "DORO_AUTO_MODE")
+    ? updates.DORO_AUTO_MODE : (String(process.env.DORO_AUTO_MODE || "0") === "1" ? "1" : "0");
+  const effAutoSwitch = Object.prototype.hasOwnProperty.call(updates, "DORO_AUTO_SWITCH")
+    ? updates.DORO_AUTO_SWITCH : (String(process.env.DORO_AUTO_SWITCH || "0") === "1" ? "1" : "0");
+  if (effAutoMode === "1" && effAutoSwitch === "1") {
+    return res.status(400).json({ detail: "DORO_AUTO_MODE và DORO_AUTO_SWITCH không được bật cùng lúc (chỉ chọn 1)" });
+  }
   saveEnvUpdates(updates);
   addLog(`CONFIG updated: ${Object.keys(updates).join(", ")}`);
   res.json({ ok: true, updated: Object.keys(updates), restart_required: true });
@@ -7431,6 +7493,115 @@ app.delete("/api/backend-keys", (req, res) => {
   saveEnvUpdates({ [envField]: current.join(",") });
   addLog(`BACKEND KEY - b${backend} ${removedMask}`);
   res.json({ ok: true, backend, count: current.length, removed: removedMask });
+});
+
+// ── Per-backend-key health (key còn sống / sick / cooldown + lưu lượng) ───────
+function keyHealthProfileGroups() {
+  const groups = BACKEND_IDS.map((id) => {
+    const profile = backendProfile(id);
+    return { id: profile.id, label: profile.label, apiKeys: profile.apiKeys };
+  });
+  const vision = backend5VisionProfile();
+  groups.push({ id: vision.id, label: vision.label, apiKeys: vision.apiKeys });
+  for (const id of BACKUP_BACKEND_IDS) {
+    const profile = backendProfile(id);
+    groups.push({ id: profile.id, label: profile.label, apiKeys: profile.apiKeys });
+  }
+  return groups;
+}
+
+function publicKeyHealthSnapshot(apiKeys) {
+  // Không trả key_full ra client: UI khớp theo index/mask, reset cũng theo index.
+  return keyHealth.snapshot(apiKeys).map((entry, index) => ({
+    index,
+    key_masked: entry.key_masked,
+    status: entry.status,
+    available: entry.available,
+    unavailable_reason: entry.unavailable_reason,
+    daily_count: entry.daily_count,
+    total_reqs: entry.total_reqs,
+    total_errors: entry.total_errors,
+    last_error: entry.last_error,
+    last_error_at: entry.last_error_at,
+    last_used_at: entry.last_used_at,
+    sick_until: entry.sick_until,
+    cooldown_until: entry.cooldown_until,
+  }));
+}
+
+app.get("/api/key-health", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  res.json({
+    config: keyHealth.getConfig(),
+    backends: keyHealthProfileGroups().map((group) => ({
+      id: group.id,
+      label: group.label,
+      key_count: group.apiKeys.length,
+      keys: publicKeyHealthSnapshot(group.apiKeys),
+    })),
+  });
+});
+
+app.post("/api/key-health/reset", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const backend = String(body.backend || "").trim().toLowerCase();
+  const group = keyHealthProfileGroups().find((g) => g.id === backend);
+  if (!group) return res.status(400).json({ detail: "Invalid backend" });
+  const idx = Number(body.key_index);
+  if (!Number.isInteger(idx) || idx < 0 || idx >= group.apiKeys.length) {
+    return res.status(400).json({ detail: "Invalid key_index" });
+  }
+  const reset = keyHealth.resetKey(group.apiKeys[idx]);
+  addLog(`key-health reset b${backend} key=${maskSecret(group.apiKeys[idx])} existed=${!!reset}`);
+  res.json({ ok: true, backend, key_index: idx, key_masked: maskSecret(group.apiKeys[idx]) });
+});
+
+// ── Test backend thật bằng 1 request nhỏ (không trừ credit khách) ─────────────
+app.post("/api/backend-test", async (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const body = req.body || {};
+  const backend = String(body.backend || "").trim().toLowerCase();
+  const group = keyHealthProfileGroups().find((g) => g.id === backend);
+  if (!group) return res.status(400).json({ detail: "Invalid backend" });
+  const profile = backend === "5v" ? backend5VisionProfile() : backendProfile(backend);
+  if (!profile.baseUrl || !profile.backendModel || !profile.apiKeys.length) {
+    return res.status(400).json({ ok: false, backend, error: "Thiếu Base URL / Model / API Key — chưa cấu hình đủ" });
+  }
+  const settings = profileToSettings(profile, profile.backendModel);
+  const ranked = keyHealth.rankKeys(profile.apiKeys, backendKeyInflight);
+  const testKeys = ranked.available.length ? ranked.available : profile.apiKeys;
+  const testKey = testKeys[0];
+  const isAnthropic = settings.apiStyle === "anthropic";
+  const url = isAnthropic ? backendChatUrl(settings, `${settings.baseUrl}/messages`) : `${String(settings.baseUrl).replace(/\/+$/, "")}/chat/completions`;
+  const payload = isAnthropic
+    ? { model: settings.backendModel, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }
+    : { model: settings.backendModel, max_tokens: 1, messages: [{ role: "user", content: "ping" }], stream: false };
+  const started = Date.now();
+  try {
+    const resp = await withBackendKeySlot(testKey, async () => fetchWithTimeout(url, {
+      method: "POST",
+      headers: backendWireHeaders(testKey, settings),
+      body: JSON.stringify(payload),
+      timeoutMs: 30000,
+    }));
+    const text = await resp.text();
+    const latencyMs = Date.now() - started;
+    if (!resp.ok) {
+      trackBackendKeyResult(testKey, { status: resp.status, text });
+      const parsed = publicBackendError(resp.status, text, settings.backendModel, settings.backendModel);
+      return res.status(200).json({ ok: false, backend, status: resp.status, latency_ms: latencyMs, error: parsed.message });
+    }
+    trackBackendKeyResult(testKey, null);
+    addLog(`backend-test OK b${backend} status=${resp.status} latency=${latencyMs}ms`);
+    return res.json({ ok: true, backend, status: resp.status, latency_ms: latencyMs, model: settings.backendModel });
+  } catch (err) {
+    trackBackendKeyResult(testKey, err);
+    return res.status(200).json({ ok: false, backend, latency_ms: Date.now() - started, error: `Network/timeout: ${err.message || err.name || "unknown"}` });
+  }
 });
 
 app.get("/api/metrics/summary", (req, res) => {
