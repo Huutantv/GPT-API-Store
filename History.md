@@ -1,5 +1,17 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Chống flapping auto-mode bằng hysteresis (thay cách ém tin)
+- Rút kinh nghiệm: cách ém tin flapping tuy hết spam nhưng giấu tin đúng → bỏ hoàn toàn, không chặn bất kỳ tin Telegram nào.
+- `doro_proxy_node.js`: hồi phục giờ đòi chuỗi thành công LIÊN TIẾP (lỗi xen giữa reset đếm) và giãn cách tối thiểu `DORO_AUTO_WARMUP_MIN_SPREAD_MS` (mặc định 60s), không giới hạn window trên (tránh deadlock khi window < spread). Xóa `backendWarmupPass` (hết dùng); `DORO_AUTO_SOFT_RECOVERY_WINDOW_MS` không còn dùng.
+- `.env.example` + whitelist `PUT /api/config`: `DORO_AUTO_WARMUP_MIN_SPREAD_MS` (live, không cần restart); xóa 3 biến `DORO_TELEGRAM_FLAP_*`.
+- Verify: `node --check` OK; test mô phỏng case spam thật (3 lỗi → DOWN, 2 OK cách 2s, lỗi tiếp) không còn hồi phục sớm.
+
+## 2026-09-20 (superseded — đã revert, không ém tin nữa) — Chống spam Telegram khi backend flapping (auto-mode)
+- Vấn đề: backend chập chờn (3 lỗi 502 → ngắt → 2 request OK là hồi → lại lỗi) khiến mỗi lần chuyển trạng thái gửi 1 tin Telegram (🔴/✅ liên tục).
+- `doro_proxy_node.js`: thêm `allowAutoModeTelegram(id, kind)` bọc cả 3 điểm gửi tin auto-mode (DOWN 🔴, recovered ✅, thử lại ℹ️). Quá `DORO_TELEGRAM_FLAP_THRESHOLD` (mặc định 3) lần DOWN trong `DORO_TELEGRAM_FLAP_WINDOW_MS` (10p) → gửi đúng 1 tin "flapping" rồi ngưng tin auto-mode trong `DORO_TELEGRAM_FLAP_COOLDOWN_MS` (15p). Failover/recovery/log vẫn chạy bình thường. Config đọc live từ env + thêm vào whitelist `PUT /api/config`.
+- `.env.example`: thêm 3 biến `DORO_TELEGRAM_FLAP_*`. `admin.html`: ghi chú anti-spam trong panel Auto Mode.
+- Verify: `node --check` OK; 14 test logic flap pass (đếm đúng, suppress đúng, hết cooldown mở lại, isolated down không trigger).
+
 ## 2026-09-19 (backend-tab) — Key health + Test backend + guard Auto Mode/Switch
 - Phát hiện: `key-health.js` trước đây là module chết (viết xong nhưng proxy chưa từng require) — failover key thực tế chỉ round-robin least-inflight, không skip key 401/429.
 - `doro_proxy_node.js`

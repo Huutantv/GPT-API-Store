@@ -754,7 +754,9 @@ const AUTO_ERROR_THRESHOLD = Number(process.env.DORO_AUTO_ERROR_THRESHOLD || "3"
 const AUTO_ERROR_WINDOW_MS = 60 * 1000;
 const AUTO_RECOVERY_MS = Number(process.env.DORO_AUTO_RECOVERY_MS || "120000");    // 2 phút mới thử lại
 const AUTO_SOFT_RECOVERY_SUCCESS = Number(process.env.DORO_AUTO_SOFT_RECOVERY_SUCCESS || "2");
-const AUTO_SOFT_RECOVERY_WINDOW_MS = Number(process.env.DORO_AUTO_SOFT_RECOVERY_WINDOW_MS || "30000");
+// DORO_AUTO_SOFT_RECOVERY_WINDOW_MS không còn dùng (warmup giờ chỉ cần liên
+// tiếp + giãn cách tối thiểu, không giới hạn window trên để tránh deadlock
+// khi window < spread). Giữ env để tương thích, không đọc nữa.
 
 // (dead code removed: old isBackendHealthy/trackBackendError/trackBackendSuccess v1 - replaced by signal-aware versions below)
 
@@ -783,6 +785,18 @@ function resetBackendHealthState(state) {
   state.lastErrorAt = null;
   state.warmupSuccess = 0;
   state.warmupStart = null;
+}
+
+// ── Hysteresis hồi phục: chỉ báo HỒI khi backend ỔN ĐỊNH THẬT ────────────────
+// Nguyên nhân flapping cũ: đang DOWN mà có 2 request OK liên tiếp (dù chỉ cách
+// nhau 2 giây) là báo hồi ngay → DOWN/UP liên tục, Telegram spam mà tin nào
+// cũng "đúng" từng khoảnh khắc. Cơ chế mới (không ém tin nào):
+// - Lỗi xen giữa lúc warmup → reset đếm về 0 (đòi THÀNH CÔNG LIÊN TIẾP).
+// - Chuỗi thành công phải giãn cách tối thiểu DORO_AUTO_WARMUP_MIN_SPREAD_MS
+//   (mặc định 60s) thì mới hồi phục + gửi tin ✅.
+// Kết quả: mỗi tin DOWN/✅ đều phản ánh trạng thái bền, hết spam mà không mất tin.
+function autoWarmupMinSpreadMs() {
+  return Math.max(10000, Number(process.env.DORO_AUTO_WARMUP_MIN_SPREAD_MS || "60000") || 60000);
 }
 
 function isBackendHealthy(id) {
@@ -820,6 +834,11 @@ function trackBackendError(id, status, text = "", code = "") {
   state.lastStatus = Number(status) || 0;
   state.lastReason = signal.reason;
   state.lastErrorAt = now;
+  // Đang DOWN mà lỗi tiếp → chuỗi warmup đứt, đếm lại từ 0 (đòi thành công LIÊN TIẾP mới được hồi).
+  if (state.downSince && (state.warmupSuccess || state.warmupStart)) {
+    state.warmupSuccess = 0;
+    state.warmupStart = null;
+  }
 
   const threshold = signal.immediate ? 1 : AUTO_ERROR_THRESHOLD;
   if (state.errors >= threshold && !state.downSince) {
@@ -842,12 +861,21 @@ function trackBackendSuccess(id) {
   if (!_backendHealth[id]) return;
   const state = _backendHealth[id];
   if (state.downSince) {
-    backendWarmupPass(id);
     const now = Date.now();
-    const warmupSuccess = state.warmupSuccess || 0;
-    const warmupStart = state.warmupStart || now;
-    if (now - warmupStart <= AUTO_SOFT_RECOVERY_WINDOW_MS && warmupSuccess < AUTO_SOFT_RECOVERY_SUCCESS) {
-      addLog(`auto-mode: backend ${id} warmup ${warmupSuccess}/${AUTO_SOFT_RECOVERY_SUCCESS}`);
+    // Chưa có chuỗi warmup (vừa DOWN hoặc vừa bị lỗi reset) → bắt đầu chuỗi mới.
+    // Không giới hạn window trên: chừng nào không có lỗi xen vào thì backend
+    // đang thật sự ổn, success dù thưa cũng được cộng dồn cho tới khi đủ.
+    if (!state.warmupStart) {
+      state.warmupStart = now;
+      state.warmupSuccess = 1;
+      addLog(`auto-mode: backend ${id} warmup 1/${AUTO_SOFT_RECOVERY_SUCCESS}`);
+      return;
+    }
+    state.warmupSuccess = (state.warmupSuccess || 0) + 1;
+    const spreadMs = now - state.warmupStart;
+    // Chưa đủ số lần HOẶC chuỗi OK chưa giãn đủ lâu → ở yên DOWN, không gửi tin.
+    if (state.warmupSuccess < AUTO_SOFT_RECOVERY_SUCCESS || spreadMs < autoWarmupMinSpreadMs()) {
+      addLog(`auto-mode: backend ${id} warmup ${state.warmupSuccess}/${AUTO_SOFT_RECOVERY_SUCCESS} spread=${Math.round(spreadMs / 1000)}s`);
       return;
     }
     state.downSince = null;
@@ -975,18 +1003,6 @@ function retryDelayMs(attempt) {
   const exp = Math.min(retryMaxDelayMs, retryBaseDelayMs * (2 ** Math.max(0, attempt - 1)));
   const jitter = Math.floor(Math.random() * Math.max(0, retryJitterMs));
   return exp + jitter;
-}
-
-function backendWarmupPass(id) {
-  const state = _backendHealth[id];
-  if (!state) return;
-  const now = Date.now();
-  state.warmupSuccess = (state.warmupSuccess || 0) + 1;
-  if (!state.warmupStart) state.warmupStart = now;
-  if (now - state.warmupStart > AUTO_SOFT_RECOVERY_WINDOW_MS) {
-    state.warmupStart = now;
-    state.warmupSuccess = 1;
-  }
 }
 
 function printLog(message) {
@@ -7389,6 +7405,7 @@ app.put("/api/config", (req, res) => {
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID",
     "TELEGRAM_ALERTS_ENABLED",
+    "DORO_AUTO_WARMUP_MIN_SPREAD_MS",
   ]) {
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") {
