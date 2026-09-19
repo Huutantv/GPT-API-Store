@@ -2996,8 +2996,11 @@ async function saveActiveBackend() {
     DORO_BACKUP_ACTIVE_BACKEND: selectedBackups.join(","),
     DORO_AUTO_SWITCH_RECOVERY_MS: document.getElementById("cfgAutoSwitchRecoveryMs").value,
   };
+  // Gui dung nhung gi checkbox dang hien, chi khi user doi (dirty) hoac khac server.
+  // Khong tu y flip: truoc day co dong `if (autoSwitch) nextAutoMode = "0"` khien
+  // moi lan Luu deu tat Auto Mode khi 2 o cung bat (state cu) du user khong dung gi.
+  // Loai tru nhau da duoc xu ly luc click (uncheck o kia) + server tra 400 neu ca 2 = 1.
   var nextAutoMode = autoMode ? "1" : "0";
-  if (autoSwitch) nextAutoMode = "0";
   if (autoModeEl.dataset.dirty === "1" || autoModeEl.dataset.loadedValue !== nextAutoMode) {
     updates.DORO_AUTO_MODE = nextAutoMode;
   }

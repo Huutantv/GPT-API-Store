@@ -20,6 +20,14 @@ cd ~/gpt-api-store
 git pull --ff-only origin main
 pm2 restart gpt-api-store --update-env
 
+cd ~/gpt-api-store
+git pull --ff-only origin main
+npm install --omit=dev
+pm2 restart gpt-api-store --update-env
+curl -s http://127.0.0.1:4000/health
+
+
+
 Quy trinh moi:
 
 1. Sua code tren may Windows.

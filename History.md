@@ -1,5 +1,9 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Fix Auto Mode tự tắt mỗi lần Lưu (admin.html)
+- Bug: `saveActiveBackend` có dòng `if (autoSwitch) nextAutoMode = "0"` — khi server đang ở state cũ cả 2 cùng bật (=1), UI hiện cả 2 ON, bấm Lưu (không đụng gì) vẫn âm thầm gửi `DORO_AUTO_MODE=0` → Auto Mode tự tắt. Tái hiện + fix bằng cách xóa đúng 1 dòng đó: chỉ gửi đúng trạng thái checkbox khi dirty/khác server; loại trừ nhau giữ ở click-time + server 400.
+- Verify: mô phỏng 6 case (stale both untouched, on/off thủ công, tắt từng cái) pass; `node --check` 5 script inline admin.html OK.
+
 ## 2026-09-20 — Chống flapping auto-mode bằng hysteresis (thay cách ém tin)
 - Rút kinh nghiệm: cách ém tin flapping tuy hết spam nhưng giấu tin đúng → bỏ hoàn toàn, không chặn bất kỳ tin Telegram nào.
 - `doro_proxy_node.js`: hồi phục giờ đòi chuỗi thành công LIÊN TIẾP (lỗi xen giữa reset đếm) và giãn cách tối thiểu `DORO_AUTO_WARMUP_MIN_SPREAD_MS` (mặc định 60s), không giới hạn window trên (tránh deadlock khi window < spread). Xóa `backendWarmupPass` (hết dùng); `DORO_AUTO_SOFT_RECOVERY_WINDOW_MS` không còn dùng.
