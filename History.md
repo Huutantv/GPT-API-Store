@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Chống lộ tên backend model khi khách hỏi (dynamic theo model)
+- Audit với backend `composer-2.5`: hỏi trực tiếp → shortcut trả local, không lộ. Còn 2 kẽ: backend tự xưng họ ("Tôi là Composer", không kèm version) và stream chẻ đôi tên ("composer-" + "2.5").
+- `doro_proxy_node.js`: thêm `backendModelFamily()` (tự tách họ model đang dùng) + `hasBackendFamilyIdentityClaim()` (chỉ bắt dạng tự nhận, không bắt từ lẻ như composer.json) + `identitySuffixPattern()` (giữ họ model cuối chunk stream để ghép đủ tên rồi sanitize). Đổi model sau vẫn được bảo vệ, không hardcode tên.
+- Fix kèm bug cascade: backend echo đúng tên public ("Tôi là claude-opus-5") trước đây bị xé thành "claude-opus-5-opus-5..." — giờ giữ nguyên.
+- Verify: `node --check` OK; 15 test pass (claim/họ/stream/echo/trick/sai tên/cũ). Tồn dư đã biết: câu mang tên provider lẻ ("so sánh Qwen...") vẫn bị rewrite thành tên public theo policy white-label hiện tại; vendor-slip kèm echo đúng tên được chấp nhận.
+
 ## 2026-09-20 — Nới IP Guard + RPM theo gói (chống ban nhầm, hết ép 30 RPM)
 - IP Guard (`ip-guard.js`, `.env.example`): `MAX_KEYS_PER_IP 1→3`, `MAX_IPS_PER_KEY 1→3`, `AUTO_BAN_MINUTES 60→20`. Khách đổi wifi/4G/VPN, xài 2-3 máy, văn quán chung IP không còn bị ban oan; share tràn lan (4+ IP/key) vẫn ban. Lưu ý: VPS `.env` cũ giữ giá trị cũ — phải sửa tay 3 dòng rồi restart.
 - RPM (`package_quotas.js` mới `PACKAGE_RPM_TIERS` + `getPackageRpm`): starter 30, pro 60, pro_v2 90, ultra 120. `orders.js` seed + migration chỉ NÂNG lên tier (packages/orders/api_keys qua paid orders), không hạ custom của admin; sửa luôn text "30 RPM" cũ. Xóa ép cứng `rpm_limit=30` mỗi boot ở `orders.js` + `credit.js:92` (trước đây xóa cả custom admin).
