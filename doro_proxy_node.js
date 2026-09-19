@@ -898,8 +898,8 @@ const maxConcurrent = Math.max(1, Number(process.env.DORO_MAX_CONCURRENT || "10"
 const maxBackendQueue = Math.max(0, Number(process.env.DORO_MAX_BACKEND_QUEUE || "10") || 10);
 const maxInflightRequests = Math.max(1, Number(process.env.DORO_MAX_INFLIGHT_REQUESTS || "20") || 20);
 const maxInflightBodyBytes = Math.max(1, Number(process.env.DORO_MAX_INFLIGHT_BODY_BYTES || String(64 * 1024 * 1024)) || (64 * 1024 * 1024));
-const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "120") * 1000;
-const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT || process.env.DORO_BACKEND_TIMEOUT || "300") * 1000;
+const backendTimeoutMs = Number(process.env.DORO_BACKEND_TIMEOUT || "90") * 1000;
+const backendStreamTimeoutMs = Number(process.env.DORO_BACKEND_STREAM_TIMEOUT || "300") * 1000;
 // TTFB timeout: fetch resolve ngay khi nhận headers nên đây chính là giới hạn
 // chờ backend bắt đầu trả lời. Nhỏ hơn timeout tổng để failover nhanh khi treo.
 function ttfbTimeoutMs() {
