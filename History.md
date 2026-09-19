@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Chống lộ tên biến thể backend + nhớ ngữ cảnh claim qua chunk
+- Audit setup `gpt-5.6-luna` làm backend: tên biến thể đứng một mình ("I am Luna") lọt mọi lớp cũ → thêm `backendIdentityWords()` (token backend mà tên public không có) + claim whole-word (không bắt nhầm "professional", "composer install").
+- Stream: giữ token chứa họ + tiền tố full id/token (kể cả 1 ký tự) + nhớ `awaitingClaim` (động từ claim ở chunk trước) để bắt tên hoàn thiện ở chunk sau ("I am Lu"+"na"). Map mọi vị trí chẻ: 0 vị trí rò với composer-2.5/k2-thinking-0905/gpt-5.4/gpt-5.6-luna. Câu legit chỉ delay 1 chunk, nguyên vẹn.
+- Fix cascade: echo đúng tên public giữ nguyên (trước bị xé "claude-opus-5-opus-5...").
+- Verify: `node --check` OK; 10 split-map/claim + 23 luna/matrix + 7 echo/trick/legit pass.
+
 ## 2026-09-20 — Chống lộ tên backend model khi khách hỏi (dynamic theo model)
 - Audit với backend `composer-2.5`: hỏi trực tiếp → shortcut trả local, không lộ. Còn 2 kẽ: backend tự xưng họ ("Tôi là Composer", không kèm version) và stream chẻ đôi tên ("composer-" + "2.5").
 - `doro_proxy_node.js`: thêm `backendModelFamily()` (tự tách họ model đang dùng) + `hasBackendFamilyIdentityClaim()` (chỉ bắt dạng tự nhận, không bắt từ lẻ như composer.json) + `identitySuffixPattern()` (giữ họ model cuối chunk stream để ghép đủ tên rồi sanitize). Đổi model sau vẫn được bảo vệ, không hardcode tên.

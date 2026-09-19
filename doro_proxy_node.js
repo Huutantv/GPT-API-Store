@@ -1599,16 +1599,33 @@ function backendModelFamily(backendModel) {
   return match ? match[0] : "";
 }
 
-// Backend tu nhan dang "Toi la <ho>" (vd "Toi la Composer") — chi bat dang
-// claim, khong bat tu "composer" dung le trong cau thuong (composer.json...).
-// Bo qua khi cau da co ten public (backend echo dung ten ban hang la mong muon).
+// Tu khoa dinh danh backend hien tai: token cua id backend ma ten public
+// khong co (vd backend gpt-5.6-luna vs public gpt-5.6-terra -> ["luna"]).
+// Mai doi backend van tu tinh, khong hardcode.
+function backendIdentityWords(backendModel, publicModel) {
+  const pubTokens = new Set(
+    String(publicModel || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+  );
+  const words = new Set();
+  for (const token of String(backendModel || "").toLowerCase().split(/[^a-z0-9]+/)) {
+    if (token.length >= 3 && !/^\d+$/.test(token) && !pubTokens.has(token)) words.add(token);
+  }
+  return [...words];
+}
+
+// Backend tu nhan dang bang ten rieng ("Toi la Luna", "I am Composer") — chi bat
+// dang claim (dong tu + dung ten), tu le trong cau thuong duoc tha.
+// Bo qua khi cau da co ten public (echo dung la mong muon).
 function hasBackendFamilyIdentityClaim(text, publicModel, backendModel) {
   const cleaned = String(text || "");
   if (!cleaned || !publicModel || !backendModel) return false;
-  const family = backendModelFamily(backendModel);
-  if (!family || String(publicModel).toLowerCase().includes(family)) return false;
   if (cleaned.includes(publicModel)) return false;
-  const pattern = new RegExp(`(?:tôi là|toi la|mình là|minh la|i am|i'm)\\s+\\S*${escapeRegExp(family)}`, "i");
+  const words = backendIdentityWords(backendModel, publicModel);
+  if (!words.length) return false;
+  const pattern = new RegExp(
+    `(?:tôi là|toi la|mình là|minh la|i am|i'm)\\s*[:：]?\\s*\\b(?:${words.map(escapeRegExp).join("|")})\\b`,
+    "i"
+  );
   return pattern.test(cleaned);
 }
 
@@ -1622,19 +1639,35 @@ function identitySuffixPattern(backendModel) {
   const claudeBranch = "\\bclaude(?:\\s+(?:opus|sonnet|haiku))?|\\b(?:opus|sonnet|haiku)";
   const family = backendModelFamily(backendModel);
   const idText = String(backendModel || "").trim().toLowerCase();
-  // Tien to cua FULL model id ("composer-2.5" -> c|co|com|...): chunk cat bat ky
-  // dau trong id ("c" + "omposer-2.5", "k2-" + "thinking...") deu ghep du o chunk
-  // sau roi thay ten exact. Chi delay chunk, khong mat/bien dang chu.
+  // Tien to cua FULL id + tung token ("gpt-5.6-luna" -> g|gp|...|l|lu|lun|...):
+  // chunk cat bat ky dau ("c"+"omposer-2.5", "Lu"+"na", "k2-"+"thinking...")
+  // deu ghep du o chunk sau roi thay ten exact. Chi delay chunk.
+  const holdSeeds = new Set([idText]);
+  for (const token of idText.split(/[^a-z0-9]+/)) {
+    if (token) holdSeeds.add(token);
+  }
   const idPrefixes = [];
-  if (idText.length >= 2) {
-    for (let len = 1; len < idText.length && len <= 40; len += 1) {
-      idPrefixes.push(escapeRegExp(idText.slice(0, len)));
+  for (const seed of holdSeeds) {
+    for (let len = 1; len < seed.length && len <= 40; len += 1) {
+      idPrefixes.push(escapeRegExp(seed.slice(0, len)));
     }
   }
   const familyBranch = family ? `|\\b[\\w.-]*${escapeRegExp(family)}[\\w.-]*` : "";
   const tail = `(?:${claudeBranch}${familyBranch})(?:\\s+\\d*(?:\\.\\d*)?)?$` +
     (idPrefixes.length ? `|(?:${idPrefixes.join("|")})$` : "");
   return new RegExp(tail, "i");
+}
+
+const _identitySuffixPatternCache = new Map();
+function cachedIdentitySuffixPattern(backendModel) {
+  const key = String(backendModel || "");
+  let pattern = _identitySuffixPatternCache.get(key);
+  if (!pattern) {
+    pattern = identitySuffixPattern(backendModel);
+    if (_identitySuffixPatternCache.size > 50) _identitySuffixPatternCache.clear();
+    _identitySuffixPatternCache.set(key, pattern);
+  }
+  return pattern;
 }
 
 function hasPublicIdentityWithUpstreamSuffix(text, publicModel) {
@@ -1728,20 +1761,40 @@ function sanitizeAssistantIdentityText(text, publicModel, backendModel, options 
 // Streaming may split an upstream model name across chunks (for example,
 // "Opus " followed by "4.8"). Keep a short possible suffix until the next
 // chunk so identity sanitization can see the complete name.
+// state.awaitingClaim: chunk truoc giu 1 manh ten ngay sau dong tu claim
+// ("I am " + hold "Lu") thi chunk nay tu hoan thien thanh ten dinh danh
+// ("Luna") phai nut nhu ca cum nguyen ("I am Luna").
 function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state = {}, options = {}) {
   if (state.identityReplaced) return "";
+  const hadPending = !!state.pending;
   const combined = `${state.pending || ""}${String(text || "")}`;
   state.pending = "";
   if (!combined) return "";
+  if (hadPending && state.awaitingClaim) {
+    const leading = (combined.match(/^([\w.-]+)/) || [])[1] || "";
+    const candidate = leading.replace(/^[.-]+|[.-]+$/g, "").toLowerCase();
+    const identityWords = new Set(
+      backendIdentityWords(backendModel, publicModel).map((word) => String(word).toLowerCase())
+    );
+    if (candidate.length >= 3 && identityWords.has(candidate)) {
+      state.identityReplaced = true;
+      state.pending = "";
+      state.awaitingClaim = false;
+      return modelIdentityAnswer(publicModel);
+    }
+  }
+  state.awaitingClaim = false;
   if (hasAssistantIdentityLeak(combined) || hasPublicIdentityWithUpstreamSuffix(combined, publicModel)) {
     state.identityReplaced = true;
     return modelIdentityAnswer(publicModel);
   }
 
-  const suffix = combined.match(identitySuffixPattern(backendModel));
+  const suffix = combined.match(cachedIdentitySuffixPattern(backendModel));
   if (suffix && suffix[0].length <= 40) {
     state.pending = suffix[0];
-    return sanitizeAssistantIdentityText(combined.slice(0, -suffix[0].length), publicModel, backendModel, options);
+    const sentPart = combined.slice(0, -suffix[0].length);
+    state.awaitingClaim = /(?:tôi là|toi la|mình là|minh la|i am|i'm)\s*[:：]?\s*$/i.test(sentPart);
+    return sanitizeAssistantIdentityText(sentPart, publicModel, backendModel, options);
   }
   return sanitizeAssistantIdentityText(combined, publicModel, backendModel, options);
 }
@@ -1749,6 +1802,7 @@ function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state =
 function flushAssistantIdentityChunk(publicModel, backendModel, state = {}, options = {}) {
   const pending = state.pending || "";
   state.pending = "";
+  state.awaitingClaim = false;
   return pending ? sanitizeAssistantIdentityText(pending, publicModel, backendModel, options) : "";
 }
 
