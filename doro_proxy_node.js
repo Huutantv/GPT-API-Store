@@ -1507,6 +1507,21 @@ function publicBackendError(status, text, backendModel, publicModel, code) {
     };
   }
   if (containsBackendLeak(raw, backendModel)) {
+    // Cứu message khi leak duy nhất là tên backend model thật (case 400 phổ biến:
+    // "Model 'composer-2.5' not found"). Thay bằng tên public TRƯỚC rồi check lại:
+    // sạch → trả message đã thay tên (đúng ở tầng proxy, không lộ mapping);
+    // vẫn bẩn (host/URL/HTML) → giữ message chung.
+    const redacted = sanitizeBackendText(raw, backendModel, publicModel);
+    if (!containsBackendLeak(redacted, backendModel)) {
+      const rescued = sanitizeBackendText(parsed.message, backendModel, publicModel).slice(0, 500);
+      if (rescued) {
+        return {
+          message: rescued,
+          type: parsed.type || "api_error",
+          code: code || parsed.code,
+        };
+      }
+    }
     return {
       message: publicBackendFallbackMessage(Number(status) || 502),
       type: parsed.type || "api_error",
@@ -5426,6 +5441,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
       const clientStatus = clientBackendStatus(err.status);
+      addLog(`backend terminal ant ${originalModel} status=${err.status} msg=${publicBackendErrorLogMessage(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code)}`);
       return res.status(clientStatus).json(anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;
@@ -6620,6 +6636,7 @@ async function openAIChatCompletionsHandler(req, res) {
       req.obs.final_backend_status = err.status;
       const parsed = publicBackendError(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code);
       const clientStatus = clientBackendStatus(err.status);
+      addLog(`backend terminal oai ${originalModel} status=${err.status} msg=${publicBackendErrorLogMessage(err.status, err.text || err.message || "", settings.backendModel, publicModel, err.code)}`);
       return res.status(clientStatus).json(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
     }
     const detail = `${err.name || "Error"}: ${err.message}`;

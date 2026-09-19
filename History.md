@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Cứu message lỗi 400 + log terminal backend
+- Bug: body 400 nhắc tên backend model thật (vd "Model 'composer-2.5' not found") bị `containsBackendLeak` nuốt thành message chung → khách/admin không biết lỗi gì.
+- `doro_proxy_node.js`: `publicBackendError` thay tên backend model bằng tên public TRƯỚC rồi check leak lại — sạch thì trả message thật đã thay tên (`Model 'claude-opus-5' not found`, giữ code `model_not_found`); còn host/URL/HTML thì vẫn generic. 401/403 giữ nguyên.
+- Thêm 1 dòng `addLog backend terminal ...` ở cả 2 handler (openai/anthropic) để tab Logs thấy lý do thật (đã sanitize).
+- Verify: `node --check` OK; 7 test pass (rescue/code/hostname/HTML/401/clean/case-variant).
+
 ## 2026-09-20 — Fix Monitor gắn cờ error cho request 200 (error residue sau retry)
 - Bug: attempt đầu retry (network/timeout) set `obs.error_type`, attempt sau thành công 200 nhưng residue còn lại → Monitor hiện `Error: network`, `metricsSummary` tính vào error_rate, dù khách nhận 200 bình thường.
 - `doro_proxy_node.js`: thêm `clearBackendErrorObservation(obs)` gọi ở 4 điểm success (`postWithKeyFailover`, `postStreamWithKeyFailover`, `streamAnthropic/OpenAIWithFailover`). Giữ `retry_count` trung thực; lỗi stream xảy ra SAU success vẫn set lại ở catch nên không mất cảnh báo thật.
