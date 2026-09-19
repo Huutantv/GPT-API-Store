@@ -7,7 +7,10 @@ const path = require("path");
 const crypto = require("crypto");
 const { getPackageDurationDays } = require("./package_quotas");
 
-const db = new Database(path.join(__dirname, "credit.db"));
+const DB_PATH = process.env.DORO_DB_PATH
+  ? path.resolve(process.env.DORO_DB_PATH)
+  : path.join(__dirname, "credit.db");
+const db = new Database(DB_PATH);
 // Cùng file với credit.js (2 connection): bật WAL + busy_timeout để không SQLITE_BUSY
 // khi request hot-path (getOrderByApiKey) chạy song song với ghi credit.
 db.exec("PRAGMA journal_mode = WAL;");

@@ -15,7 +15,9 @@ const Database = require("better-sqlite3");
 const path = require("path");
 const crypto = require("crypto");
 
-const DB_PATH = path.join(__dirname, "credit.db");
+const DB_PATH = process.env.DORO_DB_PATH
+  ? path.resolve(process.env.DORO_DB_PATH)
+  : path.join(__dirname, "credit.db");
 const db = new Database(DB_PATH);
 
 db.exec(`

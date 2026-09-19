@@ -6,6 +6,12 @@ const crypto = require("crypto");
 
 const ROOT_DIR = __dirname;
 const ENV_FILE = path.join(ROOT_DIR, ".env");
+// SQLite chung cho credit/orders/ip-guard. Docker mount volume qua DORO_DB_PATH,
+// PM2/local mặc định ./credit.db (giữ nguyên hành vi cũ khi không set env).
+function creditDbPath() {
+  const raw = String(process.env.DORO_DB_PATH || "").trim();
+  return raw ? path.resolve(raw) : path.join(ROOT_DIR, "credit.db");
+}
 const DEFAULT_BASE_URL = "https://doro.lol/v1";
 const DEFAULT_BACKEND_MODEL = "deepseek-v4-pro";
 const PUBLIC_MODELS = [
@@ -1264,6 +1270,12 @@ function metricsSummary() {
     count_502_5m: countStatus(fiveMin, 502),
     count_503_1m: countStatus(oneMin, 503),
     count_503_5m: countStatus(fiveMin, 503),
+    identity_shortcut_1m: oneMin.filter((item) => item.backend_id === "identity").length,
+    identity_shortcut_5m: fiveMin.filter((item) => item.backend_id === "identity").length,
+    identity_shortcut_by_kind_1m: {
+      identity: oneMin.filter((item) => item.backend_id === "identity" && item.identity_kind !== "extraction").length,
+      extraction: oneMin.filter((item) => item.identity_kind === "extraction").length,
+    },
     status_1m: statusHistogram(oneMin),
     status_5m: statusHistogram(fiveMin),
     latency_by_endpoint_1m: latencyByEndpoint(oneMin.filter((item) => ["/v1/messages", "/messages", "/v1/responses", "/responses", "/v1/chat/completions", "/chat/completions"].includes(item.path))),
@@ -2300,27 +2312,38 @@ function latestUserText(messages) {
 }
 
 // Combined hard-block shortcut: simple identity questions + extraction attempts.
-function shouldShortcutIdentity(messages) {
-  if (!identityGuardEnabled()) return false;
-  if (latestUserAsksModelIdentity(messages)) return true;
-  if (!identityStrictEnabled()) return false;
-  if (!Array.isArray(messages)) return payloadHasPromptExtraction(messages);
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (!message || typeof message !== "object") continue;
-    if (message.role === "user") return payloadHasPromptExtraction(message);
-  }
-  return false;
+// Returns "identity" | "extraction" when the latest user message should be
+// answered locally, or null when the request must go to the backend.
+function identityShortcutKind(messages) {
+  if (!identityGuardEnabled()) return null;
+  if (latestUserAsksModelIdentity(messages)) return "identity";
+  if (!identityStrictEnabled()) return null;
+  const probe = Array.isArray(messages)
+    ? (() => {
+      for (let i = messages.length - 1; i >= 0; i -= 1) {
+        const message = messages[i];
+        if (!message || typeof message !== "object") continue;
+        if (message.role === "user") return payloadHasPromptExtraction(message);
+      }
+      return false;
+    })()
+    : payloadHasPromptExtraction(messages);
+  return probe ? "extraction" : null;
 }
 
-function sendModelIdentityResponse(req, res, publicModel, apiStyle, stream = false, customToolNames = new Set()) {
+function shouldShortcutIdentity(messages) {
+  return identityShortcutKind(messages) !== null;
+}
+
+function sendModelIdentityResponse(req, res, publicModel, apiStyle, stream = false, customToolNames = new Set(), kind = "identity") {
   const text = modelIdentityAnswer(publicModel);
   req.obs.backend_id = "identity";
   req.obs.backend_profile = "identity";
   req.obs.backend_model = publicModel;
   req.obs.backend_base_url = "local";
   req.obs.final_backend_status = 200;
-  addLog(`identity shortcut model=${publicModel} api=${apiStyle} stream=${stream}`);
+  req.obs.identity_kind = kind || "identity";
+  addLog(`identity shortcut kind=${req.obs.identity_kind} model=${publicModel} api=${apiStyle} stream=${stream} ip=${req.ip} key=${maskSecret(req.__doroAuth && req.__doroAuth.token ? req.__doroAuth.token : extractToken(req))}`);
 
   if (apiStyle === "anthropic") {
     if (stream) {
@@ -4971,6 +4994,7 @@ app.use((req, res, next) => {
       backend_profile: req.obs.backend_profile || "",
       backend_model: req.obs.backend_model || "",
       backend_base_url: req.obs.backend_base_url || "",
+      identity_kind: req.obs.identity_kind || "",
       request_type: req.obs.request_type || "",
       image_count: req.obs.image_count || 0,
       historical_image_count: req.obs.historical_image_count || 0,
@@ -5195,8 +5219,9 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   const useStream = !!body.stream;
   req.obs.model_requested = originalModel;
   req.obs.stream = useStream;
-  if (shouldShortcutIdentity(body.messages)) {
-    return sendModelIdentityResponse(req, res, publicModel, "anthropic", useStream);
+  const anthropicIdentityKind = identityShortcutKind(body.messages);
+  if (anthropicIdentityKind) {
+    return sendModelIdentityResponse(req, res, publicModel, "anthropic", useStream, new Set(), anthropicIdentityKind);
   }
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, anthropicErrorPayload);
   if (b5.handled && b5.sent) return;
@@ -6226,8 +6251,9 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const identityMessages = Array.isArray(original.messages)
     ? responsesInputToMessages(original.messages)
     : responsesInputToMessages(original.input);
-  if (shouldShortcutIdentity(identityMessages)) {
-    return sendModelIdentityResponse(req, res, publicModel, "responses", wantsStream, customToolNames);
+  const responsesIdentityKind = identityShortcutKind(identityMessages);
+  if (responsesIdentityKind) {
+    return sendModelIdentityResponse(req, res, publicModel, "responses", wantsStream, customToolNames, responsesIdentityKind);
   }
   req.obs.previous_response_id = String(original.previous_response_id || "").trim();
   const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel, customToolNames) : null;
@@ -6317,8 +6343,9 @@ async function openAIChatCompletionsHandler(req, res) {
   const publicModel = publicModelName(originalModel);
   req.obs.model_requested = originalModel;
   req.obs.stream = !!body.stream;
-  if (shouldShortcutIdentity(body.messages)) {
-    return sendModelIdentityResponse(req, res, publicModel, "openai", !!body.stream);
+  const openaiIdentityKind = identityShortcutKind(body.messages);
+  if (openaiIdentityKind) {
+    return sendModelIdentityResponse(req, res, publicModel, "openai", !!body.stream, new Set(), openaiIdentityKind);
   }
   const b5 = maybeBackend5Chain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
@@ -6913,7 +6940,7 @@ app.get("/api/orders/stats", (req, res) => {
 app.get("/api/dashboard/analytics", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const db = require("better-sqlite3")(creditDbPath());
   const paidWhere = "status='paid' AND api_key IS NOT NULL AND api_key <> ''";
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const month = today.slice(0, 7);
@@ -6974,7 +7001,7 @@ app.get("/api/dashboard/analytics", (req, res) => {
 app.get("/api/dashboard/token-usage", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const db = require("better-sqlite3")(creditDbPath());
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const month = today.slice(0, 7);
   // VN day/month từ created_at UTC: datetime(created_at,'+7 hours')
@@ -7442,6 +7469,31 @@ app.get("/api/metrics/top-keys", (req, res) => {
   res.json({ window: windowSec, items: countBy(windowRequests(windowSec), (item) => item.api_key_masked, limit) });
 });
 
+// ── Identity probe monitoring (ai dò model / moi system prompt) ───────────────
+app.get("/api/identity/stats", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const windowSec = Math.min(86400, Math.max(60, Number(req.query.window || "3600")));
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit || "20")));
+  const items = windowRequests(windowSec).filter((item) => item.backend_id === "identity");
+  const byKind = (kind) => items.filter((item) => (item.identity_kind || "identity") === kind).length;
+  res.json({
+    window: windowSec,
+    total: items.length,
+    by_kind: { identity: byKind("identity"), extraction: byKind("extraction") },
+    top_ips: countBy(items, (item) => item.client_ip, 10),
+    top_keys: countBy(items, (item) => item.api_key_masked, 10),
+    recent: items.slice(-limit).reverse().map((item) => ({
+      ts: item.ts,
+      client_ip: item.client_ip,
+      api_key_masked: item.api_key_masked,
+      kind: item.identity_kind || "identity",
+      model_requested: item.model_requested,
+      path: item.path,
+    })),
+  });
+});
+
 function monitorDebugCopyText(item) {
   const errorText = item.error_message || item.error_type || "";
   return [
@@ -7742,7 +7794,7 @@ app.get("/api/credit/key-lookup", (req, res) => {
   const usage = credit.getUsageTotal(key);
   const quotaInfo = credit.getQuotaInfo(row);
   const history = credit.getHistory(key, 10);
-  const db = require("better-sqlite3")(path.join(__dirname, "credit.db"));
+  const db = require("better-sqlite3")(creditDbPath());
   const order = db.prepare("SELECT * FROM orders WHERE api_key = ? ORDER BY paid_at DESC, created_at DESC LIMIT 1").get(key) || null;
   if (order && order.api_key) order.api_key = maskSecret(order.api_key);
 
@@ -7978,7 +8030,7 @@ app.get("/api/customers", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
   // FIX: do not GROUP_CONCAT full api_keys. Return counts + masked previews only.
-  const rows = require("better-sqlite3")(require("path").join(__dirname, "credit.db"))
+  const rows = require("better-sqlite3")(creditDbPath())
     .prepare(`SELECT customer_email, customer_name, customer_phone,
         COUNT(*) as total_orders,
         SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END) as paid_orders,

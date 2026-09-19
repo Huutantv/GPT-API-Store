@@ -137,6 +137,7 @@ body{font-family:'Inter',sans-serif}
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Key b&#225;n h&#244;m nay</p><div class="text-2xl font-bold text-green-400" id="statKeysSoldToday">&mdash;</div></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">&#272;&#417;n ch&#7901; thanh to&#225;n</p><div class="text-2xl font-bold text-yellow-400" id="statPendingOrders">&mdash;</div></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7927; l&#7879; thanh to&#225;n</p><div class="text-2xl font-bold" id="statPaidRate">&mdash;</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">D&#242; model / moi prompt (1h)</p><div class="text-2xl font-bold text-orange-400" id="statIdentityProbes">&mdash;</div><p class="text-[11px] text-gray-500 mt-1" id="statIdentityKinds"></p></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5 flex items-center justify-between"><div><p class="text-xs text-gray-500 mb-1">Proxy status</p><div class="text-sm font-semibold text-green-400" id="statProxy">&#272;ang ki&#7875;m tra...</div></div><button onclick="loadOverview()" class="text-xs text-gray-500 hover:text-white px-3 py-1.5 bg-dark-600 rounded-lg transition">L&#224;m m&#7899;i</button></div>
   </div>
   <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -1634,9 +1635,10 @@ async function loadOverview() {
   var results = await Promise.all([
     fetch(BASE + "/api/credit/stats", { headers: authHeaders() }).then(function(r) { return r.json(); }),
     fetch(BASE + "/health").then(function(r) { return r.json(); }).catch(function() { return null; }),
-    fetch(BASE + "/api/dashboard/analytics", { headers: authHeaders() }).then(function(r) { return r.json(); }).catch(function() { return null; })
+    fetch(BASE + "/api/dashboard/analytics", { headers: authHeaders() }).then(function(r) { return r.json(); }).catch(function() { return null; }),
+    fetch(BASE + "/api/identity/stats?window=3600", { headers: authHeaders() }).then(function(r) { return r.json(); }).catch(function() { return null; })
   ]);
-  var stats = results[0], health = results[1], analytics = results[2] || {};
+  var stats = results[0], health = results[1], analytics = results[2] || {}, identity = results[3] || {};
   var totals = analytics.totals || {};
   var paidOrders = Number(totals.paid_orders || 0);
   var totalOrders = Number(totals.total_orders || 0);
@@ -1654,6 +1656,9 @@ async function loadOverview() {
   document.getElementById("statPendingOrders").textContent = Number(totals.pending_orders || 0).toLocaleString("vi-VN");
   document.getElementById("statPaidRate").textContent = paidRate + "%";
   document.getElementById("statProxy").textContent = health ? "Online — " + health.virtual_keys + " proxy keys" : "Offline";
+  var idKinds = identity.by_kind || {};
+  document.getElementById("statIdentityProbes").textContent = identity.total != null ? Number(identity.total).toLocaleString("vi-VN") : "—";
+  document.getElementById("statIdentityKinds").textContent = "identity: " + (idKinds.identity || 0) + " · extraction: " + (idKinds.extraction || 0);
 
   var daily = analytics.daily || [];
   var monthly = analytics.monthly || [];
