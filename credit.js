@@ -88,8 +88,8 @@ try { db.exec("ALTER TABLE api_keys ADD COLUMN token_remaining INTEGER NOT NULL 
 try { db.exec("ALTER TABLE api_keys ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 try { db.exec("ALTER TABLE api_keys ADD COLUMN first_used_at TEXT"); } catch (_) {}
 
-// Đồng bộ toàn bộ key hiện có với chính sách RPM hiện tại.
-db.exec("UPDATE api_keys SET rpm_limit = 30");
+// Dong bo RPM theo goi duoc thuc hien o orders.js (sau khi ca 2 bang san sang).
+// Khong ep cung ve 30 o day nua: giu custom RPM admin dat tay cho tung key.
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {

@@ -7,6 +7,15 @@ const PACKAGE_DURATION_DAYS = Object.freeze({
   ultra: 30,
 });
 
+// RPM theo goi (request/phut tren moi key). Nang theo gia tri goi de agent/Codex
+// chay song song khong bi 429 oan. Boot migration chi NANG len tier, khong ha.
+const PACKAGE_RPM_TIERS = Object.freeze({
+  starter: 30,
+  pro: 60,
+  pro_v2: 90,
+  ultra: 120,
+});
+
 function positiveInt(value, fallback = 0) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -24,6 +33,11 @@ function getPackageDurationDays(packageId) {
   return PACKAGE_DURATION_DAYS[String(packageId || "").trim()] || 0;
 }
 
+function getPackageRpm(packageId, fallback = 30) {
+  const tier = PACKAGE_RPM_TIERS[String(packageId || "").trim()];
+  return tier > 0 ? tier : fallback;
+}
+
 function tokensToRequestQuota(tokenQuota, tokenPerRequest = getTokenPerRequest()) {
   const quota = positiveInt(tokenQuota);
   const perRequest = positiveInt(tokenPerRequest, DEFAULT_TOKEN_PER_REQUEST);
@@ -33,7 +47,9 @@ function tokensToRequestQuota(tokenQuota, tokenPerRequest = getTokenPerRequest()
 module.exports = {
   DEFAULT_TOKEN_PER_REQUEST,
   PACKAGE_DURATION_DAYS,
+  PACKAGE_RPM_TIERS,
   getPackageDurationDays,
+  getPackageRpm,
   getTokenPerRequest,
   tokensToRequestQuota,
 };

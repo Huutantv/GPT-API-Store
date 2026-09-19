@@ -5,7 +5,7 @@
 const Database = require("better-sqlite3");
 const path = require("path");
 const crypto = require("crypto");
-const { getPackageDurationDays } = require("./package_quotas");
+const { getPackageDurationDays, getPackageRpm } = require("./package_quotas");
 
 const DB_PATH = process.env.DORO_DB_PATH
   ? path.resolve(process.env.DORO_DB_PATH)
@@ -62,12 +62,12 @@ try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAUL
 try { db.exec("ALTER TABLE packages ADD COLUMN token_quota INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 try { db.exec("ALTER TABLE orders ADD COLUMN token_quota INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 
-// Seed default packages
+// Seed default packages (RPM theo tier goi)
 const seedPkgs = [
-  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: 30, description: "30,000,000 token, 30 RPM, 1 ngày", active: 1 },
-  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: 30, description: "900,000,000 token, 30 RPM, 30 ngày", active: 1 },
-  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: 30, description: "900,000,000 token, 30 RPM, 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: 30, description: "1.5B token, 1 API key, 30 RPM", active: 1 },
+  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: getPackageRpm("starter"), description: "30,000,000 token, 30 RPM, 1 ngày", active: 1 },
+  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: getPackageRpm("pro"),     description: "900,000,000 token, 60 RPM, 30 ngày", active: 1 },
+  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: getPackageRpm("pro_v2"),  description: "900,000,000 token, 90 RPM, 30 ngày", active: 1 },
+  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: getPackageRpm("ultra"),   description: "1.5B token, 1 API key, 120 RPM", active: 1 },
 ];
 const insertPkg = db.prepare(`
   INSERT OR IGNORE INTO packages (id, name, price, credit, token_quota, rpm_limit, description, active)
@@ -75,9 +75,19 @@ const insertPkg = db.prepare(`
 `);
 for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.token_quota, p.rpm_limit, p.description, p.active);
 
-// Đồng bộ package, đơn hàng và key đã phát hành với chính sách 30 RPM.
-db.exec("UPDATE packages SET rpm_limit = 30");
-db.exec("UPDATE orders SET rpm_limit = 30");
+// RPM theo goi: chi NANG len tier, KHONG ha (giu custom RPM admin dat tay).
+// (Truoc day ep tat ca ve 30 moi lan boot, xoa ca custom cua admin.)
+for (const pid of ["starter", "pro", "pro_v2", "ultra"]) {
+  const tier = getPackageRpm(pid);
+  db.prepare("UPDATE packages SET description = REPLACE(description, '30 RPM', ? || ' RPM') WHERE id = ? AND rpm_limit < ? AND description LIKE '%30 RPM%'").run(String(tier), pid, tier);
+  db.prepare("UPDATE packages SET rpm_limit = ? WHERE id = ? AND rpm_limit < ?").run(tier, pid, tier);
+  db.prepare("UPDATE orders SET rpm_limit = ? WHERE package_id = ? AND rpm_limit < ?").run(tier, pid, tier);
+  try {
+    db.prepare(`UPDATE api_keys SET rpm_limit = ? WHERE rpm_limit < ? AND key IN (
+      SELECT api_key FROM orders WHERE package_id = ? AND status = 'paid' AND api_key IS NOT NULL AND api_key != ''
+    )`).run(tier, tier, pid);
+  } catch (_) { /* fresh install: bang orders/api_keys chua du, bo qua */ }
+}
 
 // Migrate legacy token-only packages once while preserving their existing request quota.
 const migrateLegacyPackageQuota = db.prepare("UPDATE packages SET token_quota=? WHERE id=? AND token_quota=0");

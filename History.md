@@ -1,5 +1,10 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Nới IP Guard + RPM theo gói (chống ban nhầm, hết ép 30 RPM)
+- IP Guard (`ip-guard.js`, `.env.example`): `MAX_KEYS_PER_IP 1→3`, `MAX_IPS_PER_KEY 1→3`, `AUTO_BAN_MINUTES 60→20`. Khách đổi wifi/4G/VPN, xài 2-3 máy, văn quán chung IP không còn bị ban oan; share tràn lan (4+ IP/key) vẫn ban. Lưu ý: VPS `.env` cũ giữ giá trị cũ — phải sửa tay 3 dòng rồi restart.
+- RPM (`package_quotas.js` mới `PACKAGE_RPM_TIERS` + `getPackageRpm`): starter 30, pro 60, pro_v2 90, ultra 120. `orders.js` seed + migration chỉ NÂNG lên tier (packages/orders/api_keys qua paid orders), không hạ custom của admin; sửa luôn text "30 RPM" cũ. Xóa ép cứng `rpm_limit=30` mỗi boot ở `orders.js` + `credit.js:92` (trước đây xóa cả custom admin).
+- Verify: `node --check` OK; 17 test pass (tiers, seed, đơn mới kế thừa, key cũ paid nâng cấp, custom 200 giữ nguyên, key lẻ không order giữ nguyên, default ipguard).
+
 ## 2026-09-20 — Mở API Style cho Backend 1-4 (thay backend tự do)
 - Thiếu: server đọc `DORO_BACKEND{id}_API_STYLE` cho cả 5 backend nhưng whitelist `PUT /api/config` và UI chỉ có cho B5/vision/backup → đổi nhà cung cấp Anthropic-native vào slot 1-4 không làm được.
 - `doro_proxy_node.js`: whitelist thêm `DORO_BACKEND[1234]_API_STYLE`, regex normalize mở thành `[1-5]|5_VISION`.
