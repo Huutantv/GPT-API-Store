@@ -1,5 +1,10 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Fix Monitor gắn cờ error cho request 200 (error residue sau retry)
+- Bug: attempt đầu retry (network/timeout) set `obs.error_type`, attempt sau thành công 200 nhưng residue còn lại → Monitor hiện `Error: network`, `metricsSummary` tính vào error_rate, dù khách nhận 200 bình thường.
+- `doro_proxy_node.js`: thêm `clearBackendErrorObservation(obs)` gọi ở 4 điểm success (`postWithKeyFailover`, `postStreamWithKeyFailover`, `streamAnthropic/OpenAIWithFailover`). Giữ `retry_count` trung thực; lỗi stream xảy ra SAU success vẫn set lại ở catch nên không mất cảnh báo thật.
+- Verify: `node --check` OK; 5 test logic pass.
+
 ## 2026-09-20 — Fix Auto Mode tự tắt mỗi lần Lưu (admin.html)
 - Bug: `saveActiveBackend` có dòng `if (autoSwitch) nextAutoMode = "0"` — khi server đang ở state cũ cả 2 cùng bật (=1), UI hiện cả 2 ON, bấm Lưu (không đụng gì) vẫn âm thầm gửi `DORO_AUTO_MODE=0` → Auto Mode tự tắt. Tái hiện + fix bằng cách xóa đúng 1 dòng đó: chỉ gửi đúng trạng thái checkbox khi dirty/khác server; loại trừ nhau giữ ở click-time + server 400.
 - Verify: mô phỏng 6 case (stale both untouched, on/off thủ công, tắt từng cái) pass; `node --check` 5 script inline admin.html OK.

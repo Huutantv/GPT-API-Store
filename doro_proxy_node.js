@@ -2187,6 +2187,16 @@ function recordBackendErrorObservation(obs, status, text, backendModel, publicMo
   obs.admin_error_message = adminBackendDiagnostic(status, text || "", code);
 }
 
+// Attempt cuối thành công: xóa dấu vết lỗi của các attempt retry/failover trước
+// để Monitor/metrics không gắn cờ error cho request 200 (giữ retry_count trung thực).
+// Lỗi xảy ra SAU điểm này (vd stream đứt giữa chừng) vẫn set lại ở catch phía sau.
+function clearBackendErrorObservation(obs) {
+  if (!obs) return;
+  obs.error_type = "";
+  obs.error_message = "";
+  obs.admin_error_message = "";
+}
+
 function countTextChars(value) {
   if (typeof value === "string") return value.length;
   if (Array.isArray(value)) return value.reduce((sum, item) => sum + countTextChars(item), 0);
@@ -2971,6 +2981,7 @@ async function postWithKeyFailover(url, payload, apiKeys, extraHeaders = {}, obs
         throw err;
       }
       trackBackendKeyResult(ordered[i], null);
+      clearBackendErrorObservation(obs);
       return { status: resp.status, text, apiKey: ordered[i] };
     } catch (err) {
       trackBackendKeyResult(ordered[i], err);
@@ -3950,6 +3961,7 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
         throw err;
       }
       trackBackendKeyResult(orderedKeys[i], null);
+      clearBackendErrorObservation(obs);
       return { resp, apiKey: orderedKeys[i] };
     } catch (err) {
       trackBackendKeyResult(orderedKeys[i], err);
@@ -4478,6 +4490,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       addLog(`stream ant ${publicModel} done tokens=${tokens}`);
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
       trackBackendKeyResult(ordered[i], null);
+      clearBackendErrorObservation(obs);
       return res.end();
     } catch (err) {
       trackBackendKeyResult(ordered[i], err);
@@ -4717,6 +4730,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       }
       if (obs && obs.backend_id) trackBackendSuccess(obs.backend_id);
       trackBackendKeyResult(ordered[i], null);
+      clearBackendErrorObservation(obs);
       return res.end();
     } catch (err) {
       trackBackendKeyResult(ordered[i], err);
