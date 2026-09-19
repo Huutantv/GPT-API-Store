@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Mở API Style cho Backend 1-4 (thay backend tự do)
+- Thiếu: server đọc `DORO_BACKEND{id}_API_STYLE` cho cả 5 backend nhưng whitelist `PUT /api/config` và UI chỉ có cho B5/vision/backup → đổi nhà cung cấp Anthropic-native vào slot 1-4 không làm được.
+- `doro_proxy_node.js`: whitelist thêm `DORO_BACKEND[1234]_API_STYLE`, regex normalize mở thành `[1-5]|5_VISION`.
+- `admin.html`: dropdown API Style cho card 1-4 (mặc định openai); `saveBackend1/2Config` gửi style; `saveBackendConfig` 3/4 và `loadBackendConfig` đã generic, không cần sửa.
+- Verify: `node --check` OK; 16 check whitelist/UI/syntax pass.
+
 ## 2026-09-20 — Cứu message lỗi 400 + log terminal backend
 - Bug: body 400 nhắc tên backend model thật (vd "Model 'composer-2.5' not found") bị `containsBackendLeak` nuốt thành message chung → khách/admin không biết lỗi gì.
 - `doro_proxy_node.js`: `publicBackendError` thay tên backend model bằng tên public TRƯỚC rồi check leak lại — sạch thì trả message thật đã thay tên (`Model 'claude-opus-5' not found`, giữ code `model_not_found`); còn host/URL/HTML thì vẫn generic. 401/403 giữ nguyên.

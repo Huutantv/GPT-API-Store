@@ -7368,6 +7368,7 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND1_MAX_TOKENS",
     "DORO_BACKEND1_USER_ASSISTANT_ONLY",
     "DORO_BACKEND1_DISABLE_TOOLS",
+    "DORO_BACKEND1_API_STYLE",
     "DORO_BACKEND2_NAME",
     "DORO_BACKEND2_BASE_URL",
     "DORO_BACKEND2_AUTH_TOKEN",
@@ -7375,6 +7376,7 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND2_MAX_TOKENS",
     "DORO_BACKEND2_USER_ASSISTANT_ONLY",
     "DORO_BACKEND2_DISABLE_TOOLS",
+    "DORO_BACKEND2_API_STYLE",
     "DORO_BACKEND3_NAME",
     "DORO_BACKEND3_BASE_URL",
     "DORO_BACKEND3_AUTH_TOKEN",
@@ -7382,6 +7384,7 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND3_MAX_TOKENS",
     "DORO_BACKEND3_USER_ASSISTANT_ONLY",
     "DORO_BACKEND3_DISABLE_TOOLS",
+    "DORO_BACKEND3_API_STYLE",
     "DORO_BACKEND4_NAME",
     "DORO_BACKEND4_BASE_URL",
     "DORO_BACKEND4_AUTH_TOKEN",
@@ -7389,6 +7392,7 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKEND4_MAX_TOKENS",
     "DORO_BACKEND4_USER_ASSISTANT_ONLY",
     "DORO_BACKEND4_DISABLE_TOOLS",
+    "DORO_BACKEND4_API_STYLE",
     "DORO_BACKEND5_NAME",
     "DORO_BACKEND5_BASE_URL",
     "DORO_BACKEND5_AUTH_TOKEN",
@@ -7467,7 +7471,7 @@ app.put("/api/config", (req, res) => {
     if (/^DORO_BACKEND(?:[1-5]|5_VISION)_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKUP[1-2]_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKUP[1-2]_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
-    if (/^DORO_BACKEND5(?:_VISION)?_API_STYLE$/.test(field)) value = normalizeApiStyle(value);
+    if (/^DORO_BACKEND(?:[1-5]|5_VISION)_API_STYLE$/.test(field)) value = normalizeApiStyle(value);
     if (/^DORO_BACKUP[1-2]_API_STYLE$/.test(field)) value = normalizeApiStyle(value);
     if (field === "ANTHROPIC_AUTH_TOKEN" || /^DORO_BACKEND(?:[2-5]|5_VISION)_AUTH_TOKEN$/.test(field) || /^DORO_BACKUP[1-2]_AUTH_TOKEN$/.test(field)) {
       value = value.replace(/\n/g, ",").split(",").map((k) => k.trim()).filter(Boolean).join(",");
