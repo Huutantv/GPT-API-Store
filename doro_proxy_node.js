@@ -1519,7 +1519,7 @@ function escapeRegExp(value) {
 function hasPublicIdentityWithUpstreamSuffix(text, publicModel) {
   const model = String(publicModel || "").trim();
   if (!model) return false;
-  const upstreamSuffix = "(?:claude\\s+)?(?:opus|sonnet|haiku)(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|deepseek(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|glm(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|qwen(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|kimi|moonshot|chatgpt|gpt(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?";
+  const upstreamSuffix = "(?:(?:claude\\s+)?(?:opus|sonnet|haiku)(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|deepseek(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|glm(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|qwen(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?|kimi|moonshot|chatgpt|gpt(?:\\s*[-:]?\\s*\\d+(?:\\.\\d+)*)?)";
   const pattern = new RegExp(`(?:xin chào|hi|hello)[!,.\\s]*(?:tôi là|toi la|i am|i'm)\\s+${escapeRegExp(model)}\\s+${upstreamSuffix}\\b`, "i");
   return pattern.test(String(text || ""));
 }

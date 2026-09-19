@@ -1,5 +1,9 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-19 (audit) — Fix over-block `hasPublicIdentityWithUpstreamSuffix`
+- Bug: nhóm `|` trong `upstreamSuffix` không bọc `(?:...)` nên `deepseek|qwen|kimi|moonshot|chatgpt|gpt` khớp trần trong mọi response → cả câu trả lời legit (vd "so sánh GPT với Claude") bị nuốt thành câu identity. Fix: bọc toàn bộ alternation trong non-capturing group.
+- Audit 55/55 pass: chặn identity/extraction, legit cho qua, sanitize thay từ đúng chỗ (không nuốt câu), env toggle, wiring egress guard + monitoring.
+
 ## 2026-09-19 — Identity guard chặn cứng + monitoring + Docker persistence
 - `doro_proxy_node.js`
   - `identitySystemMessage`: thêm block Confidentiality (cấm tiết lộ system/backend/provider mọi hình thức, jailbreak → trả câu identity chuẩn).
