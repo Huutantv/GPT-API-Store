@@ -1612,16 +1612,29 @@ function hasBackendFamilyIdentityClaim(text, publicModel, backendModel) {
   return pattern.test(cleaned);
 }
 
-// Hau to stream can giu lai de doi chunk sau ghep du ten (khong chi claude-family
-// ma ca ho backend hien tai, vd "composer-" + "2.5"). Chi delay 1 chunk, flush
-// luon tra du, thu tu bao toan.
+// Hau to stream can giu lai de doi chunk sau ghep du ten. Hai dang:
+// - claude-family (cu): giu "Opus ", "claude", "sonnet 4"... nhu truoc.
+// - token chua ho backend hien tai: giu NGUYEN token dang do ("composer-",
+//   "k2-thinking-") de chunk sau ghep du id exact ("composer-2.5") roi thay ten.
+// Chi delay 1 chunk, flush luon tra du, thu tu bao toan. Tu le ("composer
+// install", "GPT de code") chi bi delay chu khong mat/bien dang.
 function identitySuffixPattern(backendModel) {
-  let names = "\\bclaude(?:\\s+(?:opus|sonnet|haiku))?|\\b(?:opus|sonnet|haiku)";
+  const claudeBranch = "\\bclaude(?:\\s+(?:opus|sonnet|haiku))?|\\b(?:opus|sonnet|haiku)";
   const family = backendModelFamily(backendModel);
-  if (family && !/^(claude|opus|sonnet|haiku|gpt)$/.test(family)) {
-    names += `|\\b${escapeRegExp(family)}`;
+  const idText = String(backendModel || "").trim().toLowerCase();
+  // Tien to cua FULL model id ("composer-2.5" -> c|co|com|...): chunk cat bat ky
+  // dau trong id ("c" + "omposer-2.5", "k2-" + "thinking...") deu ghep du o chunk
+  // sau roi thay ten exact. Chi delay chunk, khong mat/bien dang chu.
+  const idPrefixes = [];
+  if (idText.length >= 2) {
+    for (let len = 1; len < idText.length && len <= 40; len += 1) {
+      idPrefixes.push(escapeRegExp(idText.slice(0, len)));
+    }
   }
-  return new RegExp(`(?:${names})(?:\\s+\\d*(?:\\.\\d*)?)?$`, "i");
+  const familyBranch = family ? `|\\b[\\w.-]*${escapeRegExp(family)}[\\w.-]*` : "";
+  const tail = `(?:${claudeBranch}${familyBranch})(?:\\s+\\d*(?:\\.\\d*)?)?$` +
+    (idPrefixes.length ? `|(?:${idPrefixes.join("|")})$` : "");
+  return new RegExp(tail, "i");
 }
 
 function hasPublicIdentityWithUpstreamSuffix(text, publicModel) {
