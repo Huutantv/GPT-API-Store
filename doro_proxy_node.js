@@ -6812,6 +6812,10 @@ app.get("/portal", (_req, res) => {
   return sendNoCacheHtml(res, "portal.html");
 });
 
+app.get("/overview", (_req, res) => {
+  return sendNoCacheHtml(res, "overview.html");
+});
+
 app.get("/key-check", (_req, res) => {
   return sendNoCacheHtml(res, "key-check.html");
 });

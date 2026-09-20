@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Doro Proxy — Overview</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>tailwind.config={theme:{extend:{colors:{primary:'#2563eb',navy:'#0b1b33'},fontFamily:{sans:['Inter','system-ui','sans-serif']}}}}</script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+body{font-family:'Inter',system-ui,sans-serif}
+.nav-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:12px;font-size:14px;color:#94a3b8;cursor:pointer;transition:all .15s;font-weight:500}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:#2563eb;color:#fff;font-weight:600;box-shadow:0 8px 20px rgba(37,99,235,.35)}
+.card{background:#fff;border:1px solid #eef2f7;border-radius:20px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+.stat-icon{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.pill{padding:2px 10px;border-radius:999px;font-size:11px;font-weight:600;display:inline-block}
+#sidebar{transition:transform .22s ease}
+@media (max-width:1023px){
+  #sidebar{position:fixed;top:0;left:0;bottom:0;z-index:40;transform:translateX(-100%)}
+  #sidebar.open{transform:translateX(0)}
+  #backdrop.show{display:block}
+}
+#backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:35}
+.panel{display:none}.panel.active{display:block}
+.table-wrap{overflow-x:auto}
+table.grid{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
+table.grid th{text-align:left;font-size:11px;color:#94a3b8;font-weight:600;padding:10px 12px;border-bottom:1px solid #f1f5f9;text-transform:uppercase;letter-spacing:.04em}
+table.grid td{padding:11px 12px;border-bottom:1px solid #f8fafc;color:#334155}
+table.grid tr:last-child td{border-bottom:0}
+.qa{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 8px;border-radius:16px;font-size:13px;font-weight:600;cursor:pointer;transition:transform .12s, box-shadow .12s}
+.qa:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(15,23,42,.08)}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<!-- Login overlay -->
+<div id="loginOverlay" class="fixed inset-0 z-50 bg-slate-900 flex items-center justify-center p-4">
+  <div class="w-full max-w-sm bg-white rounded-2xl p-8 shadow-2xl">
+    <div class="w-12 h-12 bg-blue-600/10 rounded-2xl flex items-center justify-center mb-4 text-2xl">🚀</div>
+    <h1 class="text-xl font-bold text-slate-900">Doro Overview</h1>
+    <p class="text-sm text-slate-500 mt-1 mb-5">Nhập admin key để xem dashboard.</p>
+    <input id="adminKeyInput" type="password" placeholder="Admin key..." class="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-600" style="font-size:16px" onkeydown="if(event.key==='Enter')adminLogin()">
+    <button onclick="adminLogin()" class="w-full mt-3 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold text-sm transition">Đăng nhập</button>
+    <p id="loginErr" class="text-red-500 text-xs text-center mt-3 hidden"></p>
+  </div>
+</div>
+
+<div id="backdrop" onclick="toggleSidebar(false)"></div>
+
+<div class="flex min-h-screen">
+  <!-- Sidebar -->
+  <aside id="sidebar" class="w-[240px] shrink-0 bg-navy text-white flex flex-col min-h-screen">
+    <div class="p-5 flex items-center gap-2">
+      <div class="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center text-lg">📊</div>
+      <span class="font-bold">Doro Proxy</span>
+    </div>
+    <nav class="flex-1 px-3 space-y-1" id="sideNav">
+      <div class="nav-item active" data-panel="dashboard"><span>🏠</span> Dashboard</div>
+      <div class="nav-item" data-panel="users"><span>👤</span> Users</div>
+      <div class="nav-item" data-panel="orders"><span>📦</span> Orders</div>
+      <div class="nav-item" data-panel="analytics"><span>📈</span> Analytics</div>
+      <div class="nav-item" data-panel="messages"><span>💬</span> Requests</div>
+      <div class="nav-item" data-panel="settings"><span>⚙️</span> Settings</div>
+    </nav>
+    <div class="p-3 border-t border-white/10">
+      <button onclick="adminLogout()" class="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-400 hover:text-red-400 transition">⏻ Đăng xuất</button>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="flex-1 min-w-0 flex flex-col">
+    <!-- Top Navbar -->
+    <header class="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 flex items-center gap-3 sticky top-0 z-30">
+      <button onclick="toggleSidebar()" class="lg:hidden p-2 rounded-lg hover:bg-slate-100 text-xl">☰</button>
+      <div class="flex-1 max-w-xl relative">
+        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+        <input id="globalSearch" oninput="onSearch(this.value)" placeholder="Search anything..." class="w-full pl-10 pr-4 py-2.5 bg-slate-100 border-0 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600/30" style="font-size:16px">
+      </div>
+      <button onclick="showPanel('messages')" class="relative p-2.5 rounded-xl hover:bg-slate-100 text-xl" title="Lỗi gần đây">
+        🔔<span id="bellBadge" class="hidden absolute top-1 right-1 min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">0</span>
+      </button>
+      <div class="hidden sm:flex items-center gap-2 pl-2">
+        <div class="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">A</div>
+        <span class="text-sm font-semibold hidden md:block">Admin</span>
+      </div>
+    </header>
+
+    <main class="flex-1 p-4 sm:p-6 space-y-5 max-w-[1200px] w-full mx-auto">
+      <!-- Welcome -->
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h2 class="text-xl sm:text-2xl font-bold text-slate-900">Welcome Back, Admin!</h2>
+          <p class="text-sm text-slate-500 mt-1">Here's an overview of your proxy performance.</p>
+        </div>
+        <select id="rangeSelect" onchange="onRangeChange()" class="px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm font-medium focus:outline-none">
+          <option value="7">📅 Last 7 Days</option>
+          <option value="14">📅 Last 14 Days</option>
+          <option value="30">📅 This Month</option>
+        </select>
+      </div>
+      <p id="loadMsg" class="text-xs text-slate-400"></p>
+
+      <!-- Stats Cards -->
+      <section id="sec-cards" class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+        <div class="card p-5">
+          <div class="stat-icon bg-blue-50 text-blue-600">👥</div>
+          <p class="text-[13px] text-slate-500 mt-3">Total Users</p>
+          <p class="text-2xl font-bold text-slate-900" id="stUsers">—</p>
+          <p class="text-xs font-semibold text-green-600 mt-1" id="stUsersDelta"></p>
+        </div>
+        <div class="card p-5">
+          <div class="stat-icon bg-green-50 text-green-600">🛒</div>
+          <p class="text-[13px] text-slate-500 mt-3">Total Orders</p>
+          <p class="text-2xl font-bold text-slate-900" id="stOrders">—</p>
+          <p class="text-xs font-semibold text-green-600 mt-1" id="stOrdersDelta"></p>
+        </div>
+        <div class="card p-5">
+          <div class="stat-icon bg-orange-50 text-orange-500">₫</div>
+          <p class="text-[13px] text-slate-500 mt-3">Total Revenue</p>
+          <p class="text-2xl font-bold text-slate-900" id="stRevenue">—</p>
+          <p class="text-xs font-semibold text-green-600 mt-1" id="stRevenueDelta"></p>
+        </div>
+        <div class="card p-5">
+          <div class="stat-icon bg-violet-50 text-violet-600">⚡</div>
+          <p class="text-[13px] text-slate-500 mt-3">Total Requests</p>
+          <p class="text-2xl font-bold text-slate-900" id="stRequests">—</p>
+          <p class="text-xs font-semibold text-green-600 mt-1" id="stRequestsDelta"></p>
+        </div>
+      </section>
+
+      <!-- Dashboard panel -->
+      <div id="panel-dashboard" class="panel active space-y-5">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div class="card p-5 xl:col-span-2">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-bold text-slate-900">Sales Overview</h3>
+              <span class="text-xs text-slate-400" id="salesRange">Last 7 Days</span>
+            </div>
+            <div class="relative h-[260px]"><canvas id="salesChart"></canvas></div>
+          </div>
+          <div class="card p-5">
+            <h3 class="font-bold text-slate-900 mb-1">Order Status</h3>
+            <div class="relative h-[190px]"><canvas id="statusChart"></canvas></div>
+            <div id="statusLegend" class="mt-3 space-y-1.5 text-[13px]"></div>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div class="card p-5 xl:col-span-2">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-bold text-slate-900">Recent Orders</h3>
+              <button onclick="showPanel('orders')" class="text-xs font-semibold text-blue-600 hover:underline">View All →</button>
+            </div>
+            <div class="table-wrap"><table class="grid">
+              <thead><tr><th>#</th><th>Customer</th><th>Product</th><th>Status</th><th>Date</th></tr></thead>
+              <tbody id="recentOrdersTable"><tr><td colspan="5" class="text-center text-slate-400 py-6">Loading...</td></tr></tbody>
+            </table></div>
+          </div>
+          <div class="card p-5">
+            <h3 class="font-bold text-slate-900 mb-3">Quick Actions</h3>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="qa bg-blue-50 text-blue-700" onclick="goAdmin()"><span class="text-2xl">👤</span>Add User</div>
+              <div class="qa bg-green-50 text-green-700" onclick="goAdmin()"><span class="text-2xl">📦</span>Packages</div>
+              <div class="qa bg-orange-50 text-orange-700" onclick="downloadReport()"><span class="text-2xl">📄</span>Report</div>
+              <div class="qa bg-violet-50 text-violet-700" onclick="showPanel('settings')"><span class="text-2xl">⚙️</span>Settings</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Users panel -->
+      <div id="panel-users" class="panel space-y-4">
+        <div class="card p-5">
+          <h3 class="font-bold text-slate-900 mb-2">Top Users (by tokens, this month)</h3>
+          <div class="table-wrap"><table class="grid">
+            <thead><tr><th>#</th><th>Customer</th><th>Key</th><th style="text-align:right">Tokens</th><th style="text-align:right">Requests</th></tr></thead>
+            <tbody id="topUsersTable"><tr><td colspan="5" class="text-center text-slate-400 py-6">Loading...</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- Orders panel -->
+      <div id="panel-orders" class="panel space-y-4">
+        <div class="card p-5">
+          <h3 class="font-bold text-slate-900 mb-2">Paid Orders (latest)</h3>
+          <div class="table-wrap"><table class="grid">
+            <thead><tr><th>Order</th><th>Customer</th><th>Package</th><th style="text-align:right">Amount</th><th>Date</th></tr></thead>
+            <tbody id="ordersTable"><tr><td colspan="5" class="text-center text-slate-400 py-6">Loading...</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- Analytics panel -->
+      <div id="panel-analytics" class="panel space-y-4">
+        <div class="card p-5">
+          <h3 class="font-bold text-slate-900 mb-3">Requests per day</h3>
+          <div class="relative h-[260px]"><canvas id="reqChart"></canvas></div>
+        </div>
+        <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <div class="card p-4"><p class="text-xs text-slate-500">RPM (1m)</p><p class="text-xl font-bold" id="anRpm">—</p></div>
+          <div class="card p-4"><p class="text-xs text-slate-500">Success 1m</p><p class="text-xl font-bold text-green-600" id="anSuccess">—</p></div>
+          <div class="card p-4"><p class="text-xs text-slate-500">P95 latency</p><p class="text-xl font-bold" id="anP95">—</p></div>
+          <div class="card p-4"><p class="text-xs text-slate-500">502 (1m/5m)</p><p class="text-xl font-bold text-red-500" id="an502">—</p></div>
+        </div>
+      </div>
+
+      <!-- Requests panel -->
+      <div id="panel-messages" class="panel space-y-4">
+        <div class="card p-5">
+          <h3 class="font-bold text-slate-900 mb-2">Live Requests</h3>
+          <div class="table-wrap"><table class="grid">
+            <thead><tr><th>Time</th><th>User</th><th>IP</th><th>Model</th><th style="text-align:right">Status</th></tr></thead>
+            <tbody id="liveTable"><tr><td colspan="5" class="text-center text-slate-400 py-6">Loading...</td></tr></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- Settings panel -->
+      <div id="panel-settings" class="panel space-y-4">
+        <div class="card p-5 text-sm text-slate-600 space-y-2">
+          <h3 class="font-bold text-slate-900">Settings</h3>
+          <p>Quản trị chi tiết (keys, credit, backend, logs) vẫn ở trang Admin dark hiện tại để tránh trùng logic.</p>
+          <button onclick="goAdmin()" class="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold">Mở Admin Panel →</button>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+var BASE = window.location.origin;
+var ADMIN_KEY = sessionStorage.getItem("gpt_admin_key") || "";
+var cache = {};
+var charts = {};
+var allOrders = [];
+
+function authHeaders(){ return { "Authorization": "Bearer " + ADMIN_KEY }; }
+function toggleSidebar(force){
+  var sb = document.getElementById("sidebar"), bd = document.getElementById("backdrop");
+  var open = typeof force === "boolean" ? force : !sb.classList.contains("open");
+  sb.classList.toggle("open", open); bd.classList.toggle("show", open);
+}
+function showPanel(name){
+  document.querySelectorAll(".panel").forEach(function(el){ el.classList.remove("active"); });
+  var p = document.getElementById("panel-" + name);
+  if (p) p.classList.add("active");
+  document.querySelectorAll("#sideNav .nav-item").forEach(function(b){ b.classList.toggle("active", b.dataset.panel === name); });
+  toggleSidebar(false);
+}
+document.querySelectorAll("#sideNav .nav-item").forEach(function(b){ b.addEventListener("click", function(){ showPanel(b.dataset.panel); }); });
+
+async function adminLogin(){
+  var key = document.getElementById("adminKeyInput").value.trim();
+  if (!key) return;
+  var r = await fetch(BASE + "/api/credit/stats", { headers: { "Authorization": "Bearer " + key } });
+  if (!r.ok) {
+    var e = document.getElementById("loginErr");
+    e.textContent = "Admin key không hợp lệ.";
+    e.classList.remove("hidden");
+    return;
+  }
+  ADMIN_KEY = key;
+  sessionStorage.setItem("gpt_admin_key", key);
+  document.getElementById("loginOverlay").style.display = "none";
+  loadAll();
+}
+function adminLogout(){ ADMIN_KEY=""; sessionStorage.removeItem("gpt_admin_key"); location.reload(); }
+function goAdmin(){ window.open(window.location.origin + "/admin", "_blank"); }
+(function(){
+  if (ADMIN_KEY) { document.getElementById("loginOverlay").style.display = "none"; loadAll(); }
+})();
+
+function fmtNum(n){ return Number(n||0).toLocaleString("vi-VN"); }
+function fmtVND(n){ return Number(n||0).toLocaleString("vi-VN") + "đ"; }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function deltaText(cur, prev, suffix){
+  cur = Number(cur||0); prev = Number(prev||0);
+  if (!prev) return cur > 0 ? "↑ new" : "";
+  var p = Math.round(((cur - prev) / prev) * 1000) / 10;
+  return (p >= 0 ? "↑ " : "↓ ") + Math.abs(p) + "%" + (suffix || "");
+}
+function vnDate(s){
+  try { return new Date(String(s).length <= 10 ? s + "T00:00:00+07:00" : s).toLocaleDateString("vi-VN", { day: "2-digit", month: "short" }); }
+  catch(_){ return s; }
+}
+function vnTime(s){
+  try { return new Date(s).toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }); }
+  catch(_){ return s; }
+}
+function onRangeChange(){ renderAll(); }
+function rangeDays(){ return Number(document.getElementById("rangeSelect").value || "7"); }
+function onSearch(q){
+  q = String(q||"").toLowerCase().trim();
+  var rows = allOrders.filter(function(o){
+    return !q || String(o.customer_name||o.customer_email||o.order_code||o.package_id||"").toLowerCase().includes(q);
+  });
+  renderRecentOrders(rows.slice(0, 5));
+}
+function downloadReport(){
+  var d = new Date(); var date = d.toISOString().slice(0,10);
+  fetch(BASE + "/api/requests/export?date=" + date, { headers: authHeaders() })
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.blob(); })
+    .then(function(b){ var a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="access-"+date+".jsonl"; a.click(); })
+    .catch(function(e){ alert("Lỗi tải: " + e.message); });
+}
+
+async function loadAll(){
+  var msg = document.getElementById("loadMsg");
+  msg.textContent = "Đang tải dữ liệu...";
+  try {
+    var res = await Promise.all([
+      fetch(BASE + "/api/dashboard/analytics", { headers: authHeaders() }).then(function(r){ return r.json(); }),
+      fetch(BASE + "/api/dashboard/token-usage", { headers: authHeaders() }).then(function(r){ return r.json(); }),
+      fetch(BASE + "/api/metrics/summary", { headers: authHeaders() }).then(function(r){ return r.json(); }),
+      fetch(BASE + "/api/requests/recent?limit=50", { headers: authHeaders() }).then(function(r){ return r.json(); })
+    ]);
+    cache = { analytics: res[0], usage: res[1], metrics: res[2], recent: res[3] };
+    renderAll();
+    msg.textContent = "";
+  } catch(e){ msg.textContent = "Lỗi tải: " + (e.message || e); }
+}
+
+function renderAll(){
+  var a = cache.analytics || {}, u = cache.usage || {}, m = cache.metrics || {}, rc = cache.recent || {};
+  var n = rangeDays();
+  document.getElementById("salesRange").textContent = n === 7 ? "Last 7 Days" : n === 14 ? "Last 14 Days" : "This Month";
+
+  // Stats cards
+  var users = (a.totals ? a.totals.paid_orders : 0) || 0;
+  var orders = (a.totals ? a.totals.total_orders : 0) || 0;
+  var rev = n === 7 ? (a.totals ? a.totals.revenue_month : 0) : (a.totals ? a.totals.revenue_total : 0);
+  var reqs = (u.totals ? u.totals.requests_month : 0) || 0;
+  document.getElementById("stUsers").textContent = fmtNum(users);
+  document.getElementById("stOrders").textContent = fmtNum(orders);
+  document.getElementById("stRevenue").textContent = "₹" + fmtNum(rev);
+  document.getElementById("stRequests").textContent = fmtNum(reqs);
+  var dd = (a.daily || []).slice(-n);
+  if (dd.length >= 2) {
+    var half = Math.max(1, Math.floor(dd.length / 2));
+    var r1 = dd.slice(-half).reduce(function(s,x){ return s + Number(x.revenue||0); }, 0);
+    var r0 = dd.slice(0, -half).reduce(function(s,x){ return s + Number(x.revenue||0); }, 0);
+    document.getElementById("stRevenueDelta").textContent = deltaText(r1, r0);
+    var k1 = dd.slice(-half).reduce(function(s,x){ return s + Number(x.keys_sold||0); }, 0);
+    var k0 = dd.slice(0, -half).reduce(function(s,x){ return s + Number(x.keys_sold||0); }, 0);
+    document.getElementById("stOrdersDelta").textContent = deltaText(k1, k0);
+  }
+  var ud = (u.daily || []).slice(-n);
+  if (ud.length >= 2) {
+    var half2 = Math.max(1, Math.floor(ud.length / 2));
+    var q1 = ud.slice(-half2).reduce(function(s,x){ return s + Number(x.requests||0); }, 0);
+    var q0 = ud.slice(0, -half2).reduce(function(s,x){ return s + Number(x.requests||0); }, 0);
+    document.getElementById("stRequestsDelta").textContent = deltaText(q1, q0);
+  }
+
+  // Bell badge = 5xx last 1m
+  var bad = Number(m.count_502_1m || 0) + Number(m.count_503_1m || 0);
+  var badge = document.getElementById("bellBadge");
+  badge.textContent = bad > 99 ? "99+" : bad;
+  badge.classList.toggle("hidden", !bad);
+
+  // Sales line chart
+  drawLine("salesChart", dd.map(function(x){ return vnDate(x.day); }), dd.map(function(x){ return Number(x.revenue||0); }), "#2563eb");
+  drawLine("reqChart", ud.map(function(x){ return vnDate(x.day); }), ud.map(function(x){ return Number(x.requests||0); }), "#7c3aed");
+
+  // Donut: paid / pending / cancelled
+  var t = a.totals || {};
+  drawDonut("statusChart", [t.paid_orders||0, t.pending_orders||0, t.cancelled_orders||0]);
+  var tot = (t.paid_orders||0) + (t.pending_orders||0) + (t.cancelled_orders||0) || 1;
+  var rows = [
+    ["Delivered", "#2563eb", t.paid_orders||0],
+    ["Processing", "#22c55e", t.pending_orders||0],
+    ["Cancelled", "#ef4444", t.cancelled_orders||0]
+  ];
+  document.getElementById("statusLegend").innerHTML = rows.map(function(r){
+    var pct = Math.round((r[2] / tot) * 100);
+    return '<div class="flex items-center justify-between"><span><span class="inline-block w-2.5 h-2.5 rounded-full mr-2" style="background:' + r[1] + '"></span>' + r[0] + '</span><b>' + pct + '%</b></div>';
+  }).join("");
+
+  // Orders
+  allOrders = (a.recent_paid || []).concat((a.recentPaid || []));
+  if (!allOrders.length && a.recent) allOrders = a.recent;
+  renderRecentOrders(allOrders.slice(0, 5));
+  document.getElementById("ordersTable").innerHTML = allOrders.length ? allOrders.slice(0, 20).map(function(o){
+    return "<tr><td class='font-mono'>" + esc(o.order_code||"—") + "</td><td>" + esc(o.customer_name||o.customer_email||"—") + "</td><td>" + esc(o.package_id||"—") + "</td><td style='text-align:right;font-weight:700'>" + fmtVND(o.amount) + "</td><td class='text-slate-400'>" + esc(vnDate(o.paid_at||o.created_at||"")) + "</td></tr>";
+  }).join("") : "<tr><td colspan='5' class='text-center text-slate-400 py-6'>Chưa có đơn</td></tr>";
+
+  // Top users
+  var tu = u.top_users_month || u.top_users_all || [];
+  document.getElementById("topUsersTable").innerHTML = tu.length ? tu.slice(0, 10).map(function(x, i){
+    return "<tr><td class='text-slate-400'>" + (i+1) + "</td><td class='font-semibold'>" + esc(x.customer_name||x.customer_email||"—") + "</td><td class='font-mono text-slate-500'>" + esc(x.key_masked||"") + "</td><td style='text-align:right'>" + fmtNum(x.tokens) + "</td><td style='text-align:right;font-weight:700'>" + fmtNum(x.requests) + "</td></tr>";
+  }).join("") : "<tr><td colspan='5' class='text-center text-slate-400 py-6'>Chưa có dữ liệu</td></tr>";
+
+  // Analytics minis
+  document.getElementById("anRpm").textContent = m.rpm_total || 0;
+  document.getElementById("anSuccess").textContent = (m.success_rate_1m != null ? m.success_rate_1m : 100) + "%";
+  document.getElementById("anP95").textContent = (m.p95_latency_ms || 0) + "ms";
+  document.getElementById("an502").textContent = (m.count_502_1m || 0) + " / " + (m.count_502_5m || 0);
+
+  // Live requests
+  var rows2 = (rc.requests || []).slice(0, 15);
+  document.getElementById("liveTable").innerHTML = rows2.length ? rows2.map(function(r){
+    var cls = r.status >= 500 ? "bg-red-100 text-red-600" : r.status >= 400 ? "bg-yellow-100 text-yellow-700" : "bg-green-100 text-green-700";
+    return "<tr><td class='whitespace-nowrap'>" + esc(vnTime(r.ts)) + "</td><td class='max-w-[160px] truncate'>" + esc(r.user_display||r.user_email||r.key_label||"—") + "</td><td class='font-mono text-slate-500'>" + esc(r.client_ip||"—") + "</td><td class='max-w-[140px] truncate'>" + esc(r.model_requested||"—") + "</td><td style='text-align:right'><span class='pill " + cls + "'>" + r.status + "</span></td></tr>";
+  }).join("") : "<tr><td colspan='5' class='text-center text-slate-400 py-6'>Chưa có request</td></tr>";
+}
+
+function renderRecentOrders(list){
+  var tb = document.getElementById("recentOrdersTable");
+  tb.innerHTML = list.length ? list.map(function(o, i){
+    var st = String(o.status || "paid").toLowerCase();
+    var cls = st.includes("cancel") ? "bg-red-100 text-red-600" : st.includes("pend") ? "bg-blue-100 text-blue-700" : "bg-green-100 text-green-700";
+    var label = st.includes("cancel") ? "Cancelled" : st.includes("pend") ? "Processing" : "Delivered";
+    return "<tr><td class='text-slate-400'>#" + esc(o.order_code || (1001 + i)) + "</td><td class='font-medium'>" + esc(o.customer_name || o.customer_email || "—") + "</td><td>" + esc(o.package_id || o.api_key || "—") + "</td><td><span class='pill " + cls + "'>" + label + "</span></td><td class='text-slate-400'>" + esc(vnDate(o.paid_at || o.created_at || "")) + "</td></tr>";
+  }).join("") : "<tr><td colspan='5' class='text-center text-slate-400 py-6'>Chưa có đơn</td></tr>";
+}
+
+function drawLine(id, labels, data, color){
+  var cv = document.getElementById(id);
+  if (!cv || typeof Chart === "undefined") return;
+  if (charts[id]) { charts[id].destroy(); }
+  var ctx = cv.getContext("2d");
+  var g = ctx.createLinearGradient(0, 0, 0, 240);
+  g.addColorStop(0, "rgba(37,99,235,.25)"); g.addColorStop(1, "rgba(37,99,235,0)");
+  charts[id] = new Chart(cv, { type: "line",
+    data: { labels: labels, datasets: [{ data: data, borderColor: color, backgroundColor: g, fill: true, tension: .4, pointRadius: 3, pointBackgroundColor: color }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: "#94a3b8", font: { size: 11 } }, grid: { display: false } }, y: { ticks: { color: "#94a3b8", font: { size: 11 } }, grid: { color: "#f1f5f9" } } } } });
+}
+function drawDonut(id, vals){
+  var cv = document.getElementById(id);
+  if (!cv || typeof Chart === "undefined") return;
+  if (charts[id]) { charts[id].destroy(); }
+  charts[id] = new Chart(cv, { type: "doughnut",
+    data: { labels: ["Paid", "Pending", "Cancelled"], datasets: [{ data: vals, backgroundColor: ["#2563eb", "#22c55e", "#ef4444"], borderWidth: 3, borderColor: "#fff" }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false } } } });
+}
+</script>
+</body>
+</html>
