@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Nút Test kiểm tra cả tool-calling (bắt backend yếu tool)
+- Vấn đề: Test cũ chỉ ping `max_tokens=1` nên backend ping OK nhưng gọi tool ẩu (thiếu required params như vụ Kilo `read`/`filePath`, `composer-2.5`, muse-spark) vẫn lọt ra bán cho khách.
+- `doro_proxy_node.js`: sau ping OK, `POST /api/backend-test` ép backend gọi thử tool giả `probe_echo` (required `probe_arg`, `tool_choice` ép gọi) rồi chấm qua `evaluateToolProbeResponse` (pure, test được): pass / fail-thiếu-params / inconclusive (không gọi tool / từ chối tool_choice). Không trừ credit khách, không ghi key-health (chỉ là probe).
+- `admin.html`: hiển thị 2 dòng (Ping + Tools); tools fail hiện vàng + khuyên đổi backend cho task agent.
+- Verify: `node --check` OK; 8 test probe (openai/anthropic valid/missing/wrong-tool/text-only/malformed/null) + 5 script inline pass.
+
 ## 2026-09-20 — Tool gọi thiếu required params: dặn model + log kiểm chứng
 - Vụ Kilo `read` thiếu `filePath` 3 lần → abort: đã verify proxy chuyển tiếp schema (`backendWirePayload` passthrough, `mergeOpenAITools` không sửa schema) và stream delta tool_calls nguyên vẹn → lỗi do model không tuân schema, proxy không bóp méo.
 - `doro_proxy_node.js`: (1) thêm câu tool-discipline vào system prompt (luôn gửi đủ required params đúng type); (2) mới `logInvalidAssistantToolCalls` chạy ở response non-stream: đối chiếu tool_calls với schema request, thiếu required thì ghi 1 dòng `tool validation <backend> <model> tool=X missing=[...] args_keys=[...]` lên tab Logs (không sửa gì).

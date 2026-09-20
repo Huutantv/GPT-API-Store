@@ -2251,14 +2251,27 @@ async function resetBackendKeyHealth(backend, idx) {
 
 async function testBackendKey(backend, msgId) {
   var msg = document.getElementById(msgId);
-  if (msg) { msg.className = "text-xs text-gray-400 mt-1"; msg.textContent = "Đang test 1 request thật (max_tokens=1)..."; }
+  if (msg) { msg.className = "text-xs text-gray-400 mt-1"; msg.textContent = "Đang test kết nối + tool-calling thật..."; }
   try {
     var r = await fetch(BASE + "/api/backend-test", { method: "POST", headers: authHeaders(), body: JSON.stringify({ backend: backend }) });
     var data = await r.json();
     if (!msg) return;
     if (data.ok) {
-      msg.className = "text-xs text-green-400 mt-1";
-      msg.textContent = "OK · HTTP " + data.status + " · " + data.latency_ms + "ms · " + (data.model || "");
+      var pingTxt = "Ping OK · HTTP " + data.status + " · " + data.latency_ms + "ms · " + (data.model || "");
+      var tools = data.tools || {};
+      if (!tools.checked) {
+        msg.className = "text-xs text-green-400 mt-1";
+        msg.textContent = pingTxt;
+      } else if (tools.ok) {
+        msg.className = "text-xs text-green-400 mt-1";
+        msg.textContent = pingTxt + " | Tools OK · " + tools.detail + " · " + tools.latency_ms + "ms";
+      } else if (tools.ok === null) {
+        msg.className = "text-xs text-yellow-400 mt-1";
+        msg.textContent = pingTxt + " | Tools chưa rõ: " + tools.detail;
+      } else {
+        msg.className = "text-xs text-yellow-400 mt-1";
+        msg.textContent = pingTxt + " | ⚠️ Tools lỗi: " + tools.detail + " — backend này gọi tool kém, cân nhắc đổi backend cho task agent";
+      }
     } else {
       msg.className = "text-xs text-red-400 mt-1";
       msg.textContent = "Lỗi" + (data.status ? " HTTP " + data.status : "") + ": " + (data.error || data.detail || "unknown");

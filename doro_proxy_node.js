@@ -7758,6 +7758,44 @@ app.post("/api/key-health/reset", (req, res) => {
 });
 
 // ── Test backend thật bằng 1 request nhỏ (không trừ credit khách) ─────────────
+// Danh gia response cua tool-probe: backend co goi dung tool + du required params khong.
+// Tra ve { called, valid, detail, args_keys }. Pure function de unit-test.
+function evaluateToolProbeResponse(data, apiStyle) {
+  try {
+    if (!data || typeof data !== "object") return { called: false, valid: false, detail: "Empty response", args_keys: [] };
+    const calls = [];
+    if (apiStyle === "anthropic") {
+      for (const block of (Array.isArray(data.content) ? data.content : [])) {
+        if (block && block.type === "tool_use") calls.push({ name: block.name, input: block.input });
+      }
+    } else {
+      for (const choice of (Array.isArray(data.choices) ? data.choices : [])) {
+        for (const call of (((choice && choice.message) || {}).tool_calls || [])) {
+          calls.push({ name: call && call.function && call.function.name, arguments: call && call.function && call.function.arguments });
+        }
+      }
+    }
+    const probe = calls.find((call) => call && call.name === "probe_echo");
+    if (!probe) {
+      return { called: false, valid: false, detail: calls.length ? `Model gọi tool khác (${calls.map((c) => c.name || "?").join(",")}), không gọi probe_echo` : "Model không gọi tool nào (trả lời text)", args_keys: [] };
+    }
+    let args = probe.input !== undefined ? probe.input : probe.arguments;
+    if (typeof args === "string") {
+      try { args = JSON.parse(args); } catch (_) { return { called: true, valid: false, detail: "arguments không phải JSON hợp lệ", args_keys: [] }; }
+    }
+    if (!args || typeof args !== "object" || Array.isArray(args)) {
+      return { called: true, valid: false, detail: "arguments không phải object", args_keys: [] };
+    }
+    const keys = Object.keys(args);
+    if (args.probe_arg === undefined || args.probe_arg === "") {
+      return { called: true, valid: false, detail: `Thiếu required probe_arg (keys nhận được: ${keys.join(",") || "rỗng"})`, args_keys: keys };
+    }
+    return { called: true, valid: true, detail: `probe_echo(probe_arg=${JSON.stringify(args.probe_arg).slice(0, 60)})`, args_keys: keys };
+  } catch (_) {
+    return { called: false, valid: false, detail: "Parse response thất bại", args_keys: [] };
+  }
+}
+
 app.post("/api/backend-test", async (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
@@ -7795,7 +7833,44 @@ app.post("/api/backend-test", async (req, res) => {
     }
     trackBackendKeyResult(testKey, null);
     addLog(`backend-test OK b${backend} status=${resp.status} latency=${latencyMs}ms`);
-    return res.json({ ok: true, backend, status: resp.status, latency_ms: latencyMs, model: settings.backendModel });
+    const pingResult = { ok: true, backend, status: resp.status, latency_ms: latencyMs, model: settings.backendModel };
+    // Buoc 2: ep backend goi thu 1 tool gia (required probe_arg) de kiem tra
+    // tool-calling that — ping OK khong co nghia la goi tool dung.
+    try {
+      const probePayload = isAnthropic
+        ? {
+          model: settings.backendModel, max_tokens: 64,
+          messages: [{ role: "user", content: "Call the probe_echo tool now with probe_arg set to the string 'ok'." }],
+          tools: [{ name: "probe_echo", description: "Echo back the given string.", input_schema: { type: "object", properties: { probe_arg: { type: "string" } }, required: ["probe_arg"] } }],
+          tool_choice: { type: "tool", name: "probe_echo" },
+        }
+        : {
+          model: settings.backendModel, max_tokens: 64, stream: false,
+          messages: [{ role: "user", content: "Call the probe_echo tool now with probe_arg set to the string 'ok'." }],
+          tools: [{ type: "function", function: { name: "probe_echo", description: "Echo back the given string.", parameters: { type: "object", properties: { probe_arg: { type: "string" } }, required: ["probe_arg"] } } }],
+          tool_choice: "required",
+        };
+      const probeStarted = Date.now();
+      const probeResp = await withBackendKeySlot(testKey, async () => fetchWithTimeout(url, {
+        method: "POST",
+        headers: backendWireHeaders(testKey, settings),
+        body: JSON.stringify(probePayload),
+        timeoutMs: 30000,
+      }));
+      const probeText = await probeResp.text();
+      const probeLatency = Date.now() - probeStarted;
+      if (!probeResp.ok) {
+        pingResult.tools = { checked: true, ok: null, latency_ms: probeLatency, detail: `Backend từ chối tool-probe (HTTP ${probeResp.status}): ${logPreview(probeText).slice(0, 160)}` };
+      } else {
+        let parsed = null;
+        try { parsed = JSON.parse(probeText); } catch (_) { parsed = null; }
+        const verdict = evaluateToolProbeResponse(parsed, isAnthropic ? "anthropic" : "openai");
+        pingResult.tools = { checked: true, ok: verdict.called && verdict.valid, latency_ms: probeLatency, detail: verdict.detail, args_keys: verdict.args_keys };
+      }
+    } catch (probeErr) {
+      pingResult.tools = { checked: true, ok: null, latency_ms: Date.now() - started, detail: `Tool-probe network/timeout: ${probeErr.message || probeErr.name || "unknown"}` };
+    }
+    return res.json(pingResult);
   } catch (err) {
     trackBackendKeyResult(testKey, err);
     return res.status(200).json({ ok: false, backend, latency_ms: Date.now() - started, error: `Network/timeout: ${err.message || err.name || "unknown"}` });
