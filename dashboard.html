@@ -432,10 +432,10 @@ html{-webkit-text-size-adjust:100%}
 <script>
 var API='',selectedModel='claude-opus-4-8';
 var ADMIN_KEY=sessionStorage.getItem('doro_admin_key')||'';
-var ADMIN_SESSION_MS=5*60*1000;
+var ADMIN_SESSION_MS=8*60*60*1000;
 function adminSessionExpired(){var at=Number(sessionStorage.getItem('doro_admin_login_at')||0);return !at||(Date.now()-at>ADMIN_SESSION_MS);}
 if(ADMIN_KEY&&adminSessionExpired()){ADMIN_KEY='';sessionStorage.removeItem('doro_admin_key');sessionStorage.removeItem('doro_admin_login_at');}
-setInterval(function(){if(ADMIN_KEY&&adminSessionExpired()){alert('Phiên dashboard hết hạn sau 5 phút. Vui lòng đăng nhập lại.');lockDashboard();}},10000);
+setInterval(function(){if(ADMIN_KEY&&adminSessionExpired()){alert('Phiên dashboard hết hạn sau 8 giờ. Vui lòng đăng nhập lại.');lockDashboard();}},10000);
 var _fetch=window.fetch.bind(window);
 var monitorRequests=[];
 var monitorDisplayRows=[];
