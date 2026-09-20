@@ -1876,6 +1876,7 @@ function identitySystemMessage(publicModel) {
       "# Tool & Function Calling",
       "- When tools/functions are available, use them proactively to fulfill the user's request rather than asking the user to do it manually.",
       "- Call the most appropriate tool for the task. If multiple tools could work, prefer the most specific one.",
+      "- When calling a function, always include EVERY required parameter from its schema with correctly-typed values. Never omit a required parameter, never send empty arguments when parameters are required.",
       "- After receiving tool results, interpret and summarize them clearly for the user.",
       "- If a tool call fails, explain what went wrong and suggest an alternative approach.",
       "- Do not fabricate tool results. If you cannot call a tool, say so.",
@@ -2735,6 +2736,36 @@ function normalizeToolCallsInMessage(message) {
     return { ...call, function: { ...call.function, arguments: normalizedArgs } };
   });
   return changed ? { ...message, tool_calls: toolCalls } : message;
+}
+
+// Kiem tra tool_calls backend tra ve co du required params theo schema request
+// khong. Chi LOG de admin thay model nao goi au (vd thieu filePath) — khong sua
+// gi vi proxy khong che ra duoc gia tri thieu (client se tu reject nhu Kilo).
+function logInvalidAssistantToolCalls(requestTools, message, publicModel, backendLabel) {
+  try {
+    const calls = message && Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    if (!calls.length || !Array.isArray(requestTools) || !requestTools.length) return;
+    const schemas = {};
+    for (const tool of requestTools) {
+      const fn = tool && tool.function;
+      if (fn && fn.name) schemas[fn.name] = (fn.parameters && typeof fn.parameters === "object") ? fn.parameters : {};
+    }
+    for (const call of calls) {
+      const fn = call && call.function;
+      if (!fn || !fn.name) continue;
+      const schema = schemas[fn.name];
+      if (!schema) continue;
+      const required = Array.isArray(schema.required) ? schema.required : [];
+      if (!required.length) continue;
+      let args;
+      try { args = JSON.parse(fn.arguments || "{}"); } catch (_) { continue; }
+      if (!args || typeof args !== "object" || Array.isArray(args)) continue;
+      const missing = required.filter((key) => args[key] === undefined);
+      if (missing.length) {
+        addLog(`tool validation ${backendLabel || ""} ${publicModel || ""} tool=${fn.name} missing=[${missing.join(",")}] args_keys=[${Object.keys(args).join(",")}]`);
+      }
+    }
+  } catch (_) {}
 }
 
 function flattenOrphanToolMessages(messages) {
@@ -6731,6 +6762,7 @@ async function openAIChatCompletionsHandler(req, res) {
       err.code = "empty_assistant_response";
       throw err;
     }
+    logInvalidAssistantToolCalls(mergedTools || body.tools, choice.message, publicModel, finalSettings && (finalSettings.profileLabel || finalSettings.profileId));
     if (choice.message && choice.message.content) {
       choice.message.content = sanitizeAssistantIdentityText(choice.message.content, publicModel, finalSettings.backendModel);
     }

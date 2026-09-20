@@ -1,5 +1,10 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Tool gọi thiếu required params: dặn model + log kiểm chứng
+- Vụ Kilo `read` thiếu `filePath` 3 lần → abort: đã verify proxy chuyển tiếp schema (`backendWirePayload` passthrough, `mergeOpenAITools` không sửa schema) và stream delta tool_calls nguyên vẹn → lỗi do model không tuân schema, proxy không bóp méo.
+- `doro_proxy_node.js`: (1) thêm câu tool-discipline vào system prompt (luôn gửi đủ required params đúng type); (2) mới `logInvalidAssistantToolCalls` chạy ở response non-stream: đối chiếu tool_calls với schema request, thiếu required thì ghi 1 dòng `tool validation <backend> <model> tool=X missing=[...] args_keys=[...]` lên tab Logs (không sửa gì).
+- Verify: `node --check` OK; 6 test pass (thiếu/log, đủ/im, parse-lỗi/im, tool-lạ/im, không-required/im, không-calls/im).
+
 ## 2026-09-20 — Fix tool-call "dở dang" trên Cline/Codex (giữ nguyên arguments)
 - Bug: `normalizeToolArgumentsJson` thay mọi arguments không parse được (thường do response bị cắt `max_tokens` giữa chừng, vd `'{"pattern": "INSERT INTO...'`) thành `"{}"` → Cline/Codex nhận tool rỗng → báo "câu lệnh tool bị dở dang, hãy thử lại". Regex `'`→`"` cũ còn phá giá trị có dấu nháy.
 - `doro_proxy_node.js`: parse được mới normalize; còn lại GIỮ NGUYÊN bản gốc (kể cả array/text), chỉ `"{}"` khi input rỗng. Áp dụng cho cả response trả khách lẫn history gửi backend. Thêm 1 dòng log `tool args passthrough` để thấy tần suất cắt cụt trên tab Logs.
