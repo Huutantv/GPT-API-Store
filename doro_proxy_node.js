@@ -8062,6 +8062,198 @@ app.get("/api/requests/export", (req, res) => {
   fs.createReadStream(file).pipe(res);
 });
 
+// ── Daily stats (trang thống kê ngày: ai xài nhiều nhất / bao nhiêu req / IP gì) ──
+// Nguồn: logs/access-YYYY-MM-DD.jsonl (1 dòng = 1 request, đã có ip/key/user/model).
+// Aggregate trong 1 pass, cache RAM 60s theo ngày để bấm liên tục không đọc disk.
+const _dailyStatsCache = new Map();
+const DAILY_STATS_TTL_MS = 60 * 1000;
+
+function readDailyAccessEntries(date) {
+  const file = path.join(ACCESS_LOG_DIR, `access-${date}.jsonl`);
+  if (!fs.existsSync(file)) return { entries: [], parseErrors: 0, bytes: 0 };
+  let raw = "";
+  try {
+    const st = fs.statSync(file);
+    if (st.size > 64 * 1024 * 1024) return { entries: [], parseErrors: 0, bytes: st.size, tooLarge: true };
+    raw = fs.readFileSync(file, "utf8");
+  } catch (_) {
+    return { entries: [], parseErrors: 0, bytes: 0 };
+  }
+  const entries = [];
+  let parseErrors = 0;
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const obj = JSON.parse(t);
+      if (obj && typeof obj === "object") entries.push(obj);
+    } catch (_) {
+      parseErrors += 1;
+    }
+  }
+  return { entries, parseErrors, bytes: raw.length };
+}
+
+function vnHourOf(tsEpochMs) {
+  const ts = Number(tsEpochMs) || 0;
+  return Math.floor((ts + 7 * 3600 * 1000) / 3600000) % 24;
+}
+
+function aggregateDailyStats(entries) {
+  const hourly = Array.from({ length: 24 }, (_, h) => ({ hour: h, requests: 0, errors: 0 }));
+  const users = new Map();
+  const ips = new Map();
+  const models = new Map();
+  const paths = new Map();
+  const statuses = new Map();
+  const latencies = [];
+  let success = 0;
+  let err4xx = 0;
+  let err5xx = 0;
+
+  for (const e of entries) {
+    const status = Number(e.status || 0);
+    const isErr = status >= 400 || !!e.error_type;
+    if (!isErr) success += 1;
+    else if (status >= 500) err5xx += 1;
+    else err4xx += 1;
+    const h = vnHourOf(e.ts_epoch_ms);
+    if (h >= 0 && h < 24) {
+      hourly[h].requests += 1;
+      if (isErr) hourly[h].errors += 1;
+    }
+    if (typeof e.latency_ms === "number") latencies.push(e.latency_ms);
+    statuses.set(String(status || "0"), (statuses.get(String(status || "0")) || 0) + 1);
+    if (e.model_requested) models.set(e.model_requested, (models.get(e.model_requested) || 0) + 1);
+    if (e.path) paths.set(e.path, (paths.get(e.path) || 0) + 1);
+
+    const keyMasked = String(e.api_key_masked || "none");
+    let u = users.get(keyMasked);
+    if (!u) {
+      u = {
+        key_masked: keyMasked,
+        user_display: e.user_display || "", user_name: e.user_name || "", user_email: e.user_email || "",
+        user_phone: e.user_phone || "", customer_name: e.customer_name || "", customer_email: e.customer_email || "",
+        customer_phone: e.customer_phone || "", order_code: e.order_code || "", package_id: e.package_id || "",
+        key_label: e.key_label || "", requests: 0, success: 0, errors: 0,
+        ips: new Set(), models: new Map(), last_seen: "", last_seen_ms: 0,
+      };
+      users.set(keyMasked, u);
+    }
+    u.requests += 1;
+    if (isErr) u.errors += 1; else u.success += 1;
+    if (!u.user_display && e.user_display) u.user_display = e.user_display;
+    if (!u.key_label && e.key_label) u.key_label = e.key_label;
+    if (!u.order_code && e.order_code) u.order_code = e.order_code;
+    if (!u.package_id && e.package_id) u.package_id = e.package_id;
+    if (e.client_ip) u.ips.add(e.client_ip);
+    if (e.model_requested) u.models.set(e.model_requested, (u.models.get(e.model_requested) || 0) + 1);
+    const tsMs = Number(e.ts_epoch_ms || 0);
+    if (tsMs >= u.last_seen_ms) { u.last_seen_ms = tsMs; u.last_seen = e.ts || u.last_seen; }
+
+    const ip = String(e.client_ip || "unknown");
+    let g = ips.get(ip);
+    if (!g) { g = { ip, requests: 0, errors: 0, keys: new Set(), users: new Set(), models: new Map() }; ips.set(ip, g); }
+    g.requests += 1;
+    if (isErr) g.errors += 1;
+    g.keys.add(keyMasked);
+    if (e.user_display || e.user_email || e.customer_email) g.users.add(e.user_display || e.user_email || e.customer_email);
+    if (e.model_requested) g.models.set(e.model_requested, (g.models.get(e.model_requested) || 0) + 1);
+  }
+
+  const topCount = (map, n) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([key, count]) => ({ key, count }));
+  const topModels = topCount(models, 10).map((x) => ({ model: x.key, count: x.count }));
+  const topPaths = topCount(paths, 10).map((x) => ({ path: x.key, count: x.count }));
+
+  const topUsers = [...users.values()]
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 20)
+    .map((u) => ({
+      key_masked: u.key_masked, user_display: u.user_display, user_name: u.user_name, user_email: u.user_email,
+      user_phone: u.user_phone, customer_name: u.customer_name, customer_email: u.customer_email,
+      customer_phone: u.customer_phone, order_code: u.order_code, package_id: u.package_id, key_label: u.key_label,
+      requests: u.requests, success: u.success, errors: u.errors,
+      ip_count: u.ips.size, ips: [...u.ips].slice(0, 5),
+      top_model: [...u.models.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([m, c]) => ({ model: m, count: c })),
+      last_seen: u.last_seen,
+    }));
+
+  const topIps = [...ips.values()]
+    .sort((a, b) => b.requests - a.requests)
+    .slice(0, 20)
+    .map((g) => ({
+      ip: g.ip, requests: g.requests, errors: g.errors,
+      key_count: g.keys.size, keys: [...g.keys].slice(0, 5),
+      users: [...g.users].slice(0, 3),
+      top_model: [...g.models.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([m, c]) => ({ model: m, count: c })),
+    }));
+
+  latencies.sort((a, b) => a - b);
+  const pct = (p) => (latencies.length ? latencies[Math.min(latencies.length - 1, Math.max(0, Math.ceil((p / 100) * latencies.length) - 1))] : 0);
+  const uniq = (map) => map.size;
+  return {
+    totals: {
+      requests: entries.length, success, err_4xx: err4xx, err_5xx: err5xx,
+      error_rate: entries.length ? Math.round(((err4xx + err5xx) / entries.length) * 10000) / 100 : 0,
+      unique_keys: uniq(users), unique_ips: uniq(ips),
+      p50_latency_ms: pct(50), p95_latency_ms: pct(95),
+    },
+    hourly,
+    top_users: topUsers,
+    top_ips: topIps,
+    top_models: topModels,
+    top_paths: topPaths,
+    status_histogram: [...statuses.entries()].sort((a, b) => Number(a[0]) - Number(b[0])).map(([status, count]) => ({ status: Number(status), count })),
+  };
+}
+
+app.get("/api/stats/daily", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ detail: "Invalid date, expected YYYY-MM-DD" });
+  const refresh = String(req.query.refresh || "") === "1";
+  if (!refresh) {
+    const cached = _dailyStatsCache.get(date);
+    if (cached && Date.now() - cached.at < DAILY_STATS_TTL_MS) return res.json({ ...cached.data, cached: true });
+  }
+  const { entries, parseErrors, bytes, tooLarge } = readDailyAccessEntries(date);
+  if (tooLarge) return res.status(413).json({ detail: `Access log too large (${Math.round(bytes / 1024 / 1024)}MB), refine later` });
+  const agg = aggregateDailyStats(entries);
+  const payload = { date, file_bytes: bytes, parse_errors: parseErrors, cached: false, ...agg };
+  _dailyStatsCache.set(date, { at: Date.now(), data: payload });
+  if (_dailyStatsCache.size > 10) _dailyStatsCache.clear();
+  res.json(payload);
+});
+
+app.get("/api/stats/daily/detail", (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ detail: "Invalid date, expected YYYY-MM-DD" });
+  const keyFilter = String(req.query.key || "").trim();
+  const ipFilter = String(req.query.ip || "").trim();
+  const q = String(req.query.q || "").trim().toLowerCase();
+  const page = Math.max(1, Number(req.query.page || "1") || 1);
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit || "50") || 50));
+  const { entries } = readDailyAccessEntries(date);
+  let filtered = entries;
+  if (keyFilter) filtered = filtered.filter((e) => String(e.api_key_masked || "") === keyFilter);
+  if (ipFilter) filtered = filtered.filter((e) => String(e.client_ip || "") === ipFilter);
+  if (q) {
+    filtered = filtered.filter((e) => [e.user_display, e.user_email, e.customer_email, e.model_requested, e.path, e.req_id, e.key_label, e.order_code]
+      .some((v) => String(v || "").toLowerCase().includes(q)));
+  }
+  const total = filtered.length;
+  const rows = filtered.slice().reverse().slice((page - 1) * limit, page * limit).map((e) => ({
+    ts: e.ts || "", req_id: e.req_id || "", client_ip: e.client_ip || "", api_key_masked: e.api_key_masked || "",
+    user_display: e.user_display || "", key_label: e.key_label || "", order_code: e.order_code || "", package_id: e.package_id || "",
+    model_requested: e.model_requested || "", path: e.path || "", status: e.status || 0,
+    latency_ms: e.latency_ms || 0, error_type: e.error_type || "", error_message: String(e.error_message || "").slice(0, 300),
+  }));
+  res.json({ date, total, page, limit, pages: Math.max(1, Math.ceil(total / limit)), rows });
+});
+
 app.get("/api/logs", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });

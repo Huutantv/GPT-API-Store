@@ -60,6 +60,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('settings');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
   <button onclick="showTab('ipguard');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
   <button onclick="showTab('keyshare');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keyshare">&#x1F6A8; Vi ph&#7841;m share</button>
+      <button onclick="showTab('daily');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="daily">&#x1F4CA; Th&#7889;ng k&#234; ng&#224;y</button>
       <button onclick="showTab('logs');closeMobileSidebar()" class="nav-btn-m w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="logs">&#x1F4DC; Logs</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
@@ -107,6 +108,7 @@ body{font-family:'Inter',sans-serif}
       <button onclick="showTab('settings')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="settings">&#x1F514; Th&#244;ng b&#225;o</button>
   <button onclick="showTab('ipguard')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="ipguard">&#x1F6E1;&#xFE0F; IP Guard</button>
   <button onclick="showTab('keyshare')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="keyshare">&#x1F6A8; Vi ph&#7841;m share</button>
+      <button onclick="showTab('daily')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="daily">&#x1F4CA; Th&#7889;ng k&#234; ng&#224;y</button>
       <button onclick="showTab('logs')" class="nav-btn w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2" data-tab="logs">&#x1F4DC; Logs</button>
       <a href="/customers" class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/5 transition flex items-center gap-2">&#x1F465; Kh&#225;ch h&#224;ng</a>
     </nav>
@@ -1238,6 +1240,68 @@ body{font-family:'Inter',sans-serif}
     <pre id="logsOutput" class="text-xs font-mono p-4 overflow-auto max-h-[60vh] whitespace-pre-wrap break-all text-gray-300 leading-relaxed">Ch&#7885;n ngu&#7891;n log r&#7891;i b&#7845;m L&#224;m m&#7899;i.</pre>
   </div>
 </div>
+
+<!-- Tab: Daily stats -->
+<div id="tab-daily" class="tab-content hidden space-y-6">
+  <div class="flex items-center justify-between gap-3 flex-wrap">
+    <div>
+      <h2 class="text-xl font-bold">&#x1F4CA; Th&#7889;ng k&#234; ng&#224;y</h2>
+      <p class="text-sm text-gray-400 mt-1">Ng&#224;y h&#244;m &#273;&#243; ai x&#224;i nhi&#7873;u nh&#7845;t, bao nhi&#234;u request, IP l&#224; g&#236;. Ng&#224;y theo t&#234;n file log, gi&#7901; hi&#7875;n th&#7883; quy v&#7873; VN.</p>
+    </div>
+    <div class="flex items-center gap-2 flex-wrap">
+      <input id="dailyDate" type="date" class="px-3 py-2 bg-dark-800 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+      <button onclick="loadDailyStats(false)" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Xem</button>
+      <button onclick="loadDailyStats(true)" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">Refresh</button>
+      <button onclick="downloadDailyCsv()" class="px-3 py-1.5 bg-dark-700 border border-white/10 rounded-lg text-xs hover:bg-dark-600 transition">T&#7843;i CSV</button>
+    </div>
+  </div>
+  <div id="dailyMsg" class="text-sm text-gray-400"></div>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">T&#7893;ng request</p><div class="text-2xl font-bold" id="dailyTotal">&mdash;</div></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Top user</p><div class="text-sm font-bold text-primary break-words" id="dailyTopUser">&mdash;</div><p class="text-xs text-gray-500 mt-1" id="dailyTopUserSub"></p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">Top IP</p><div class="text-sm font-bold text-yellow-400 break-words font-mono" id="dailyTopIp">&mdash;</div><p class="text-xs text-gray-500 mt-1" id="dailyTopIpSub"></p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">L&#7895;i 4xx / 5xx</p><div class="text-2xl font-bold text-red-400" id="dailyErr">&mdash;</div><p class="text-xs text-gray-500 mt-1" id="dailyErrRate"></p></div>
+    <div class="bg-dark-700 border border-white/10 rounded-xl p-4"><p class="text-xs text-gray-500 mb-1">P95 latency</p><div class="text-2xl font-bold" id="dailyP95">&mdash;</div><p class="text-xs text-gray-500 mt-1" id="dailyUniq"></p></div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-4"><h3 class="font-bold">Request theo gi&#7901; (VN)</h3><span class="text-xs text-gray-500">00–23h</span></div>
+    <div class="relative h-[240px]"><canvas id="dailyHourChart"></canvas></div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/5"><h3 class="font-bold">Top users theo request</h3></div>
+    <div class="overflow-x-auto"><table class="w-full text-sm min-w-[900px]">
+      <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">#</th><th class="text-left px-4 py-3">User</th><th class="text-left px-4 py-3">Key / G&#243;i</th><th class="text-right px-4 py-3">Requests</th><th class="text-right px-4 py-3">L&#7895;i</th><th class="text-left px-4 py-3">IPs</th><th class="text-left px-4 py-3">Model</th><th class="text-right px-4 py-3">Xem</th>
+      </tr></thead>
+      <tbody id="dailyUsersTable"><tr><td colspan="8" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; d&#7919; li&#7879;u</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/5"><h3 class="font-bold">Top IPs</h3></div>
+    <div class="overflow-x-auto"><table class="w-full text-sm min-w-[700px]">
+      <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">#</th><th class="text-left px-4 py-3">IP</th><th class="text-right px-4 py-3">Requests</th><th class="text-right px-4 py-3">L&#7895;i</th><th class="text-right px-4 py-3">S&#7889; key</th><th class="text-left px-4 py-3">Users</th><th class="text-right px-4 py-3">Xem</th>
+      </tr></thead>
+      <tbody id="dailyIpsTable"><tr><td colspan="7" class="text-center text-gray-500 py-8">Ch&#432;a c&#243; d&#7919; li&#7879;u</td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
+    <div class="px-5 py-4 border-b border-white/5 flex items-center justify-between gap-3 flex-wrap">
+      <h3 class="font-bold">Chi ti&#7871;t request</h3>
+      <div class="flex items-center gap-2">
+        <input id="dailyDetailQ" placeholder="L&#7885;c user/model/path..." class="px-3 py-1.5 bg-dark-900 border border-white/10 rounded-lg text-xs w-56 focus:outline-none focus:border-primary" onkeydown="if(event.key==='Enter')loadDailyDetail(1)">
+        <button onclick="loadDailyDetail(1)" class="px-3 py-1.5 bg-dark-600 rounded-lg text-xs hover:bg-dark-500 transition">L&#7885;c</button>
+      </div>
+    </div>
+    <div class="overflow-x-auto"><table class="w-full text-xs min-w-[900px]">
+      <thead><tr class="text-gray-500 border-b border-white/5 bg-dark-800">
+        <th class="text-left px-4 py-3">Th&#7901;i gian</th><th class="text-left px-4 py-3">User</th><th class="text-left px-4 py-3">Key</th><th class="text-left px-4 py-3">IP</th><th class="text-left px-4 py-3">Model</th><th class="text-right px-4 py-3">Status</th><th class="text-right px-4 py-3">Latency</th>
+      </tr></thead>
+      <tbody id="dailyDetailTable"><tr><td colspan="7" class="text-center text-gray-500 py-6">Ch&#432;a c&#243; d&#7919; li&#7879;u</td></tr></tbody>
+    </table></div>
+    <div class="px-5 py-3 flex items-center justify-between text-xs text-gray-500"><span id="dailyDetailMeta"></span><div class="flex gap-2"><button onclick="dailyDetailPrev()" class="px-3 py-1.5 bg-dark-600 rounded-lg hover:bg-dark-500 transition">Prev</button><button onclick="dailyDetailNext()" class="px-3 py-1.5 bg-dark-600 rounded-lg hover:bg-dark-500 transition">Next</button></div></div>
+  </div>
+</div>
     </div><!-- end content inner -->
   </div><!-- end content -->
 </div><!-- end main layout -->
@@ -1540,6 +1604,7 @@ function showTab(name) {
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
   if (name === "keyshare") loadKeyshare();
+  if (name === "daily") loadDailyStats(false);
   if (name === "logs") { onLogsSourceChange(); }
   if (name !== "backend") stopModelUsageRefresh();
   if (name !== "logs") stopLogsAuto();
@@ -3549,6 +3614,127 @@ function triggerLogDownload(blob, name) {
   a.href = url; a.download = name;
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+/* ===== DAILY STATS ===== */
+var dailyHourChart = null;
+var dailyDetailPage = 1;
+var dailyDetailFilter = { key: "", ip: "" };
+function vnTodayStr() {
+  try { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh" }).format(new Date()); }
+  catch (_) { return new Date().toISOString().slice(0, 10); }
+}
+function dailySelectedDate() {
+  var el = document.getElementById("dailyDate");
+  var v = el && el.value ? el.value : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { v = vnTodayStr(); if (el) el.value = v; }
+  return v;
+}
+async function loadDailyStats(refresh) {
+  var dateEl = document.getElementById("dailyDate");
+  if (dateEl && !dateEl.value) dateEl.value = vnTodayStr();
+  var date = dailySelectedDate();
+  var msg = document.getElementById("dailyMsg");
+  msg.textContent = "Đang tải " + date + "...";
+  try {
+    var r = await fetch(BASE + "/api/stats/daily?date=" + encodeURIComponent(date) + (refresh ? "&refresh=1" : ""), { headers: authHeaders() });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+    renderDailyStats(d);
+    msg.textContent = "Ngày " + d.date + " · " + d.totals.requests.toLocaleString("vi-VN") + " requests" + (d.cached ? " (cache 60s)" : "");
+    dailyDetailFilter = { key: "", ip: "" };
+    loadDailyDetail(1);
+  } catch (e) {
+    msg.textContent = "Lỗi: " + (e.message || e);
+  }
+}
+function renderDailyStats(d) {
+  var t = d.totals || {};
+  document.getElementById("dailyTotal").textContent = Number(t.requests || 0).toLocaleString("vi-VN");
+  document.getElementById("dailyErr").textContent = (t.err_4xx || 0) + " / " + (t.err_5xx || 0);
+  document.getElementById("dailyErrRate").textContent = "error " + (t.error_rate || 0) + "% · success " + (Number(t.requests || 0) ? Math.round((t.success / t.requests) * 1000) / 10 : 100) + "%";
+  document.getElementById("dailyP95").textContent = (t.p95_latency_ms || 0) + "ms";
+  document.getElementById("dailyUniq").textContent = (t.unique_keys || 0) + " keys · " + (t.unique_ips || 0) + " IPs";
+  var topU = (d.top_users || [])[0], topI = (d.top_ips || [])[0];
+  document.getElementById("dailyTopUser").textContent = topU ? (topU.user_display || topU.user_email || topU.customer_email || topU.key_masked) : "—";
+  document.getElementById("dailyTopUserSub").textContent = topU ? (topU.requests + " req · " + topU.key_masked) : "";
+  document.getElementById("dailyTopIp").textContent = topI ? topI.ip : "—";
+  document.getElementById("dailyTopIpSub").textContent = topI ? (topI.requests + " req · " + topI.key_count + " keys") : "";
+  var cv = document.getElementById("dailyHourChart");
+  if (cv && typeof Chart !== "undefined") {
+    if (dailyHourChart) { dailyHourChart.destroy(); dailyHourChart = null; }
+    var labels = (d.hourly || []).map(function(x) { return String(x.hour).padStart(2, "0") + "h"; });
+    dailyHourChart = new Chart(cv, { type: "bar",
+      data: { labels: labels, datasets: [{ data: (d.hourly || []).map(function(x) { return x.requests; }), backgroundColor: "#6366f1", borderRadius: 6, borderSkipped: false }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } },
+        scales: { x: { ticks: { color: "#94a3b8", maxRotation: 0 }, grid: { color: "rgba(255,255,255,0.04)" } }, y: { ticks: { color: "#94a3b8" }, grid: { color: "rgba(255,255,255,0.04)" } } } } });
+  }
+  var ut = document.getElementById("dailyUsersTable");
+  var users = d.top_users || [];
+  ut.innerHTML = users.length ? users.map(function(u, i) {
+    var name = escapeHtml(u.user_display || u.user_name || u.customer_name || u.user_email || u.customer_email || "—");
+    var sub = escapeHtml([u.user_email || u.customer_email, u.user_phone || u.customer_phone].filter(Boolean).join(" · ") || u.order_code || "");
+    var ips = escapeHtml((u.ips || []).join(", ") + (u.ip_count > (u.ips || []).length ? " +" + (u.ip_count - u.ips.length) : ""));
+    var model = escapeHtml(((u.top_model || [])[0] || {}).model || "—");
+    return '<tr class="border-b border-white/5 hover:bg-white/5">' +
+      '<td class="px-4 py-2 text-gray-500">' + (i + 1) + '</td>' +
+      '<td class="px-4 py-2"><div class="font-semibold text-white max-w-[220px] truncate" title="' + name + '">' + name + '</div><div class="text-xs text-gray-500 max-w-[220px] truncate">' + sub + '</div></td>' +
+      '<td class="px-4 py-2 font-mono text-xs text-gray-400">' + escapeHtml(u.key_masked || "") + '<div class="text-gray-500">' + escapeHtml(u.key_label || u.package_id || "") + '</div></td>' +
+      '<td class="px-4 py-2 text-right font-bold">' + Number(u.requests || 0).toLocaleString("vi-VN") + '</td>' +
+      '<td class="px-4 py-2 text-right text-red-400">' + (u.errors || 0) + '</td>' +
+      '<td class="px-4 py-2 text-xs text-gray-400 font-mono max-w-[180px] truncate" title="' + ips + '">' + (u.ip_count + " IP") + '</td>' +
+      '<td class="px-4 py-2 text-xs text-gray-300 max-w-[140px] truncate">' + model + '</td>' +
+      '<td class="px-4 py-2 text-right"><button onclick="filterDailyByKey(\'' + escapeJsString(u.key_masked || "") + '\')" class="px-2 py-1 bg-dark-600 rounded text-xs hover:bg-dark-500">Xem</button></td></tr>';
+  }).join("") : '<tr><td colspan="8" class="text-center text-gray-500 py-8">Không có request ngày này</td></tr>';
+  var it = document.getElementById("dailyIpsTable");
+  var ipsRows = d.top_ips || [];
+  it.innerHTML = ipsRows.length ? ipsRows.map(function(g, i) {
+    return '<tr class="border-b border-white/5 hover:bg-white/5">' +
+      '<td class="px-4 py-2 text-gray-500">' + (i + 1) + '</td>' +
+      '<td class="px-4 py-2 font-mono font-semibold text-yellow-300">' + escapeHtml(g.ip) + '</td>' +
+      '<td class="px-4 py-2 text-right font-bold">' + Number(g.requests || 0).toLocaleString("vi-VN") + '</td>' +
+      '<td class="px-4 py-2 text-right text-red-400">' + (g.errors || 0) + '</td>' +
+      '<td class="px-4 py-2 text-right">' + (g.key_count || 0) + '</td>' +
+      '<td class="px-4 py-2 text-xs text-gray-400 max-w-[240px] truncate">' + escapeHtml((g.users || []).join(", ") || (g.keys || []).join(", ")) + '</td>' +
+      '<td class="px-4 py-2 text-right"><button onclick="filterDailyByIp(\'' + escapeJsString(g.ip || "") + '\')" class="px-2 py-1 bg-dark-600 rounded text-xs hover:bg-dark-500">Xem</button></td></tr>';
+  }).join("") : '<tr><td colspan="7" class="text-center text-gray-500 py-8">Không có request ngày này</td></tr>';
+}
+function filterDailyByKey(key) { dailyDetailFilter = { key: key, ip: "" }; document.getElementById("dailyDetailQ").value = ""; loadDailyDetail(1); }
+function filterDailyByIp(ip) { dailyDetailFilter = { key: "", ip: ip }; document.getElementById("dailyDetailQ").value = ""; loadDailyDetail(1); }
+async function loadDailyDetail(page) {
+  dailyDetailPage = Math.max(1, page || 1);
+  var date = dailySelectedDate();
+  var q = document.getElementById("dailyDetailQ").value || "";
+  var url = BASE + "/api/stats/daily/detail?date=" + encodeURIComponent(date) + "&page=" + dailyDetailPage + "&limit=50" +
+    "&key=" + encodeURIComponent(dailyDetailFilter.key || "") + "&ip=" + encodeURIComponent(dailyDetailFilter.ip || "") + "&q=" + encodeURIComponent(q);
+  var tb = document.getElementById("dailyDetailTable");
+  try {
+    var r = await fetch(url, { headers: authHeaders() });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.detail || ("HTTP " + r.status));
+    tb.innerHTML = (d.rows || []).length ? d.rows.map(function(x) {
+      var sCls = x.status >= 500 ? "bg-red-500/15 text-red-400" : x.status >= 400 ? "bg-yellow-500/15 text-yellow-400" : "bg-green-500/15 text-green-400";
+      return '<tr class="border-b border-white/5 hover:bg-white/5">' +
+        '<td class="px-4 py-2 whitespace-nowrap">' + escapeHtml(fmtUtcVN(x.ts)) + '</td>' +
+        '<td class="px-4 py-2 max-w-[160px] truncate">' + escapeHtml(x.user_display || "—") + '</td>' +
+        '<td class="px-4 py-2 font-mono text-gray-400">' + escapeHtml(x.api_key_masked || "") + '</td>' +
+        '<td class="px-4 py-2 font-mono text-gray-400">' + escapeHtml(x.client_ip || "") + '</td>' +
+        '<td class="px-4 py-2 max-w-[140px] truncate">' + escapeHtml(x.model_requested || "") + '</td>' +
+        '<td class="px-4 py-2 text-right"><span class="px-2 py-0.5 rounded font-bold ' + sCls + '">' + x.status + '</span></td>' +
+        '<td class="px-4 py-2 text-right text-gray-400">' + (x.latency_ms || 0) + 'ms</td></tr>';
+    }).join("") : '<tr><td colspan="7" class="text-center text-gray-500 py-6">Không có kết quả</td></tr>';
+    document.getElementById("dailyDetailMeta").textContent = "Trang " + d.page + "/" + d.pages + " · " + d.total + " requests" +
+      (dailyDetailFilter.key ? " · key " + dailyDetailFilter.key : "") + (dailyDetailFilter.ip ? " · ip " + dailyDetailFilter.ip : "");
+  } catch (e) { tb.innerHTML = '<tr><td colspan="7" class="text-center text-red-400 py-6">Lỗi: ' + escapeHtml(e.message || e) + '</td></tr>'; }
+}
+function dailyDetailPrev() { if (dailyDetailPage > 1) loadDailyDetail(dailyDetailPage - 1); }
+function dailyDetailNext() { loadDailyDetail(dailyDetailPage + 1); }
+function downloadDailyCsv() {
+  var date = dailySelectedDate();
+  fetch(BASE + "/api/requests/export?date=" + encodeURIComponent(date), { headers: authHeaders() })
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+    .then(function(blob) { triggerLogDownload(blob, "access-" + date + ".jsonl"); })
+    .catch(function(e) { alert("Lỗi tải: " + (e.message || e)); });
 }
 
 </script>
