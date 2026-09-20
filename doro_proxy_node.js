@@ -2707,13 +2707,21 @@ function normalizeToolArgumentsJson(raw) {
   for (const candidate of candidates) {
     try {
       const parsed = JSON.parse(candidate);
-      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-        ? JSON.stringify(parsed)
-        : "{}";
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return JSON.stringify(parsed);
+      }
     } catch (_) {}
   }
 
-  return "{}";
+  // Khong parse duoc (thuong do response bi cat max_tokens giua chung, vd
+  // '{"pattern": "INSERT INTO...') -> GIU NGUYEN ban goc, tuyet doi khong thay
+  // bang "{}". Thay fake se khien Cline/Codex thay tool rong -> bao "dang do"
+  // trong khi su that la output bi cat (finish_reason=length) va client tu biet
+  // cach xu ly tiep (continue/thu lai that).
+  try {
+    addLog(`tool args passthrough (unparseable) preview=${String(text).slice(0, 120)}`);
+  } catch (_) {}
+  return text;
 }
 
 function normalizeToolCallsInMessage(message) {

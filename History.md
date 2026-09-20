@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-20 — Fix tool-call "dở dang" trên Cline/Codex (giữ nguyên arguments)
+- Bug: `normalizeToolArgumentsJson` thay mọi arguments không parse được (thường do response bị cắt `max_tokens` giữa chừng, vd `'{"pattern": "INSERT INTO...'`) thành `"{}"` → Cline/Codex nhận tool rỗng → báo "câu lệnh tool bị dở dang, hãy thử lại". Regex `'`→`"` cũ còn phá giá trị có dấu nháy.
+- `doro_proxy_node.js`: parse được mới normalize; còn lại GIỮ NGUYÊN bản gốc (kể cả array/text), chỉ `"{}"` khi input rỗng. Áp dụng cho cả response trả khách lẫn history gửi backend. Thêm 1 dòng log `tool args passthrough` để thấy tần suất cắt cụt trên tab Logs.
+- Verify: `node --check` OK; 10 test pass (truncated/object/smart-quote/unquoted/array/apostrophe/empty/wrapped).
+- Lưu ý vận hành: nếu Logs hiện nhiều `tool args passthrough` nghĩa là output hay chạm trần → tăng `DORO_BACKEND2_MAX_TOKENS` trên VPS (vd 32768) rồi restart.
+
 ## 2026-09-20 — Chống lộ tên biến thể backend + nhớ ngữ cảnh claim qua chunk
 - Audit setup `gpt-5.6-luna` làm backend: tên biến thể đứng một mình ("I am Luna") lọt mọi lớp cũ → thêm `backendIdentityWords()` (token backend mà tên public không có) + claim whole-word (không bắt nhầm "professional", "composer install").
 - Stream: giữ token chứa họ + tiền tố full id/token (kể cả 1 ký tự) + nhớ `awaitingClaim` (động từ claim ở chunk trước) để bắt tên hoàn thiện ở chunk sau ("I am Lu"+"na"). Map mọi vị trí chẻ: 0 vị trí rò với composer-2.5/k2-thinking-0905/gpt-5.4/gpt-5.6-luna. Câu legit chỉ delay 1 chunk, nguyên vẹn.
