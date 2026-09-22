@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-22 — Failover sang backend khác khi backend trả 413 (payload quá lớn)
+- Vấn đề: khách gửi context dài (Cline/Codex/Kilo đọc file lớn) → backend trả `413 Request payload is too large`. Vì 413 không nằm trong `isRetryableStatus` lẫn `shouldFailoverBackend` nên proxy chết ngay (`Retry: 0`) thay vì thử backend khác có giới hạn payload lớn hơn.
+- `doro_proxy_node.js`: thêm `isPayloadTooLargeStatus()` (chỉ bắt 413) và cho `shouldFailoverBackend` trả `true` với 413. Cố ý KHÔNG thêm vào `isRetryableStatus` để không retry lại cùng backend (cùng body → vẫn 413) hay retry key khác trong cùng backend; chỉ failover sang backend kế tiếp. Áp dụng cho mọi đường: `postWithBackendChain`, `collectBackendStreamToOpenAI`, `streamOpenAIWithFailover`, `streamAnthropicWithFailover`.
+- Không track backend-error health cho 413 (lỗi thuộc về payload của khách, không phải backend hỏng) — giữ nguyên `backendFailureSignal`.
+- Verify: `node --check` OK.
+
 ## 2026-09-20 — Nút Test kiểm tra cả tool-calling (bắt backend yếu tool)
 - Vấn đề: Test cũ chỉ ping `max_tokens=1` nên backend ping OK nhưng gọi tool ẩu (thiếu required params như vụ Kilo `read`/`filePath`, `composer-2.5`, muse-spark) vẫn lọt ra bán cho khách.
 - `doro_proxy_node.js`: sau ping OK, `POST /api/backend-test` ép backend gọi thử tool giả `probe_echo` (required `probe_arg`, `tool_choice` ép gọi) rồi chấm qua `evaluateToolProbeResponse` (pure, test được): pass / fail-thiếu-params / inconclusive (không gọi tool / từ chối tool_choice). Không trừ credit khách, không ghi key-health (chỉ là probe).

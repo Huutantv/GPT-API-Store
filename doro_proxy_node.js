@@ -1397,6 +1397,13 @@ function isRetryableStatus(status) {
   return [408, 401, 402, 403, 429, 500, 502, 503, 504, 524].includes(status);
 }
 
+// 413 (payload quá lớn) là giới hạn của TỪNG backend: retry lại cùng backend
+// với cùng body là vô nghĩa (vẫn 413), nhưng nên thử backend khác vì giới hạn
+// mỗi backend khác nhau. Vì vậy tách khỏi isRetryableStatus (không retry key/same-backend).
+function isPayloadTooLargeStatus(status) {
+  return Number(status) === 413;
+}
+
 // 401/402/403 là lỗi auth/billing per-account, không nên retry key khác trong cùng backend
 function isRetryableAcrossKeys(status) {
   return [408, 429, 500, 502, 503, 504, 524].includes(status);
@@ -1423,6 +1430,7 @@ function shouldFailoverBackend(err, hasNextBackend) {
   if (!hasNextBackend) return false;
   const status = Number(err && err.status) || 0;
   if (!status || isRetryableStatus(status)) return true;
+  if (isPayloadTooLargeStatus(status)) return true;
   return isBackendCompatibilityError(status, err && (err.text || err.message), err && err.code);
 }
 
