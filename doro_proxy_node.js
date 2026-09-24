@@ -8246,15 +8246,17 @@ function readVnDayEntries(vnDate) {
   const entries = [];
   let tooLarge = false;
   let parseErrors = 0;
+  let bytes = 0;
   for (const day of [shiftVnDate(vnDate, -1), vnDate]) {
     const res = readDailyAccessEntries(day);
     tooLarge = tooLarge || !!res.tooLarge;
     parseErrors += res.parseErrors || 0;
+    bytes += res.bytes || 0;
     for (const e of res.entries) {
       if (vnDateOf(e.ts_epoch_ms) === vnDate) entries.push(e);
     }
   }
-  return { entries, tooLarge, parseErrors };
+  return { entries, tooLarge, parseErrors, bytes };
 }
 
 function buildDailyReport(vnDate) {
@@ -8365,14 +8367,15 @@ app.get("/api/reports/daily", async (req, res) => {
 app.get("/api/stats/daily", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  const date = String(req.query.date || vnToday());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ detail: "Invalid date, expected YYYY-MM-DD" });
   const refresh = String(req.query.refresh || "") === "1";
   if (!refresh) {
     const cached = _dailyStatsCache.get(date);
     if (cached && Date.now() - cached.at < DAILY_STATS_TTL_MS) return res.json({ ...cached.data, cached: true });
   }
-  const { entries, parseErrors, bytes, tooLarge } = readDailyAccessEntries(date);
+  // File access log đặt tên theo ngày UTC; ngày VN D nằm trong 2 file UTC (D-1, D).
+  const { entries, parseErrors, bytes, tooLarge } = readVnDayEntries(date);
   if (tooLarge) return res.status(413).json({ detail: `Access log too large (${Math.round(bytes / 1024 / 1024)}MB), refine later` });
   const agg = aggregateDailyStats(entries);
   const payload = { date, file_bytes: bytes, parse_errors: parseErrors, cached: false, ...agg };
@@ -8384,14 +8387,14 @@ app.get("/api/stats/daily", (req, res) => {
 app.get("/api/stats/daily/detail", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
-  const date = String(req.query.date || new Date().toISOString().slice(0, 10));
+  const date = String(req.query.date || vnToday());
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ detail: "Invalid date, expected YYYY-MM-DD" });
   const keyFilter = String(req.query.key || "").trim();
   const ipFilter = String(req.query.ip || "").trim();
   const q = String(req.query.q || "").trim().toLowerCase();
   const page = Math.max(1, Number(req.query.page || "1") || 1);
   const limit = Math.min(200, Math.max(1, Number(req.query.limit || "50") || 50));
-  const { entries } = readDailyAccessEntries(date);
+  const { entries } = readVnDayEntries(date);
   let filtered = entries;
   if (keyFilter) filtered = filtered.filter((e) => String(e.api_key_masked || "") === keyFilter);
   if (ipFilter) filtered = filtered.filter((e) => String(e.client_ip || "") === ipFilter);
