@@ -7471,6 +7471,8 @@ app.get("/api/config", (req, res) => {
     telegram_bot_token_masked: maskSecret(process.env.TELEGRAM_BOT_TOKEN || ""),
     telegram_chat_id: maskSecret(String(process.env.TELEGRAM_CHAT_ID || "").trim()),
     telegram_alerts_enabled: true,
+    daily_report_enabled: envFlag(process.env.DORO_DAILY_REPORT, false),
+    daily_report_time: String(process.env.DORO_DAILY_REPORT_TIME || "23:58").trim(),
     backend_health: backendHealth,
     backend_latency: latencySnapshot(),
     backend_router_mode: backendRouterMode(),
@@ -7596,8 +7598,13 @@ app.put("/api/config", (req, res) => {
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID",
     "TELEGRAM_ALERTS_ENABLED",
+    "DORO_DAILY_REPORT",
+    "DORO_DAILY_REPORT_TIME",
     "DORO_AUTO_WARMUP_MIN_SPREAD_MS",
   ]) {
+    // Chỉ xử lý field có trong body — trước đây field vắng mặt bị normalize thành
+    // "0"/default rồi ghi đè (VD lưu Telegram lại reset toàn bộ cờ backend).
+    if (!Object.prototype.hasOwnProperty.call(body, field)) continue;
     let value = String(body[field] || "").trim();
     if (field === "DORO_ACTIVE_BACKEND") {
       const normalized = value.toLowerCase();
@@ -7623,6 +7630,8 @@ app.put("/api/config", (req, res) => {
     if (/^DORO_BACKUP[1-2]_MAX_TOKENS$/.test(field)) value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_TOKEN_PER_REQUEST") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "TELEGRAM_ALERTS_ENABLED") continue;
+    if (field === "DORO_DAILY_REPORT") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_DAILY_REPORT_TIME") value = /^([01]?\d|2[0-3]):[0-5]\d$/.test(value) ? value.padStart(5, "0") : "";
     if (/^DORO_BACKEND(?:[1-5]|5_VISION)_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND(?:[1-5]|5_VISION)_DISABLE_TOOLS$/.test(field)) value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKUP[1-2]_USER_ASSISTANT_ONLY$/.test(field)) value = envFlag(value) ? "1" : "0";

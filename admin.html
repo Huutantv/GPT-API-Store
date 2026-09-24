@@ -122,14 +122,7 @@ body{font-family:'Inter',sans-serif}
 
 <!-- Tab: Overview -->
 <div id="tab-overview" class="tab-content space-y-6">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <h2 class="text-xl font-bold">T&#7893;ng quan</h2>
-    <div class="flex items-center gap-2">
-      <button onclick="sendDailyReportNow()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">G&#7917;i b&#225;o c&#225;o h&#244;m nay</button>
-      <div id="dailyReportMsg" class="text-sm text-gray-400"></div>
-    </div>
-  </div>
-  <pre id="dailyReportPreview" class="hidden whitespace-pre-wrap text-xs bg-dark-900 border border-white/10 rounded-xl p-4 text-gray-300"></pre>
+  <h2 class="text-xl font-bold">T&#7893;ng quan</h2>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng keys</p><div class="text-3xl font-bold" id="statTotalKeys">&mdash;</div></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Keys ho&#7841;t &#273;&#7897;ng</p><div class="text-3xl font-bold text-green-400" id="statActiveKeys">&mdash;</div></div>
@@ -1014,6 +1007,32 @@ body{font-family:'Inter',sans-serif}
       <span id="telegramSettingsMsg" class="text-sm text-gray-400"></span>
     </div>
     <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Sau khi l&#432;u v&#224;o .env, h&#227;y restart proxy &#273;&#7875; c&#225;c worker/process m&#7899;i &#273;&#7891;ng b&#7897; ho&#224;n to&#224;n.</p>
+  </div>
+
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4 max-w-3xl">
+    <h3 class="font-bold text-base">&#x1F4CA; B&#225;o c&#225;o cu&#7889;i ng&#224;y</h3>
+    <p class="text-sm text-gray-400">T&#7921; g&#7917;i Telegram v&#224;o cu&#7889;i ng&#224;y: doanh thu, t&#7893;ng request th&#224;nh c&#244;ng v&#224; request theo t&#7915;ng backend model. C&#7847;n Telegram &#273;&#227; c&#7845;u h&#236;nh &#7903; tr&#234;n.</p>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">B&#7853;t/T&#7855;t</label>
+        <select id="cfgDailyReportEnabled" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary">
+          <option value="1">B&#7853;t b&#225;o c&#225;o cu&#7889;i ng&#224;y</option>
+          <option value="0">T&#7855;t b&#225;o c&#225;o cu&#7889;i ng&#224;y</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-400 block mb-1">Gi&#7901; g&#7917;i (gi&#7901; VN)</label>
+        <input id="cfgDailyReportTime" type="time" value="23:58" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <p class="text-xs text-gray-500 mt-1">Env: <code>DORO_DAILY_REPORT</code>, <code>DORO_DAILY_REPORT_TIME</code>.</p>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="saveDailyReportSettings()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u b&#225;o c&#225;o</button>
+      <button onclick="sendDailyReportNow()" class="px-5 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-sm font-semibold transition">G&#7917;i b&#225;o c&#225;o h&#244;m nay</button>
+      <span id="dailyReportMsg" class="text-sm text-gray-400"></span>
+    </div>
+    <pre id="dailyReportPreview" class="hidden whitespace-pre-wrap text-xs bg-dark-900 border border-white/10 rounded-lg p-4 text-gray-300"></pre>
+    <p class="text-xs text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 rounded-lg px-3 py-2">&#x26A0;&#xFE0F; Restart proxy &#273;&#7875; &#225;p d&#7909;ng l&#7883;ch g&#7917;i m&#7899;i.</p>
   </div>
 </div>
 
@@ -3065,7 +3084,39 @@ async function loadTelegramSettings() {
     document.getElementById("telegramTokenStatus").textContent = data.telegram_bot_token_set ? data.telegram_bot_token_masked : "Chưa cấu hình";
     document.getElementById("telegramChatStatus").textContent = data.telegram_chat_id || "Chưa cấu hình";
     document.getElementById("telegramEnabledStatus").textContent = data.telegram_alerts_enabled ? "Bật" : "Tắt";
+    var drEnabled = document.getElementById("cfgDailyReportEnabled");
+    var drTime = document.getElementById("cfgDailyReportTime");
+    if (drEnabled) drEnabled.value = data.daily_report_enabled ? "1" : "0";
+    if (drTime) drTime.value = data.daily_report_time || "23:58";
   } catch (err) {}
+}
+
+async function saveDailyReportSettings() {
+  var msg = document.getElementById("dailyReportMsg");
+  var enabled = document.getElementById("cfgDailyReportEnabled").value;
+  var time = document.getElementById("cfgDailyReportTime").value.trim();
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+    msg.className = "text-sm text-red-400";
+    msg.textContent = "Giờ không hợp lệ (HH:MM, giờ VN)";
+    return;
+  }
+  msg.className = "text-sm text-gray-400";
+  msg.textContent = "Đang lưu...";
+  try {
+    var r = await fetch(BASE + "/api/config", {
+      method: "PUT",
+      headers: authHeaders(),
+      body: JSON.stringify({ DORO_DAILY_REPORT: enabled, DORO_DAILY_REPORT_TIME: time })
+    });
+    var data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.detail || "Lỗi");
+    msg.className = "text-sm text-green-400";
+    msg.textContent = "Đã lưu. Restart proxy để áp dụng lịch.";
+    loadTelegramSettings();
+  } catch (err) {
+    msg.className = "text-sm text-red-400";
+    msg.textContent = err.message || "Lỗi";
+  }
 }
 
 async function saveTelegramSettings() {
