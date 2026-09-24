@@ -185,7 +185,7 @@ body{font-family:'Inter',sans-serif}
   <div id="createKeyForm" class="hidden bg-dark-700 border border-white/10 rounded-xl p-6 space-y-4">
     <h3 class="font-semibold text-sm">T&#7841;o API Key m&#7899;i</h3>
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-4">
-      <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="Nguyen Van A" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
+      <div><label class="text-xs text-gray-400 block mb-1">Nh&#227;n (t&#234;n kh&#225;ch)</label><input id="newLabel" placeholder="GPT Zplay #01" oninput="updateBulkNamesHint()" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"><p class="text-xs text-gray-500 mt-1">K&#7871;t th&#250;c b&#7857;ng s&#7889; th&#236; t&#7921; t&#259;ng (VD: <code>GPT Zplay #01</code> &#8594; #01, #02...). Ng&#224;y t&#7841;o s&#7869; &#273;&#432;&#7907;c th&#234;m v&#224;o cu&#7889;i.</p></div>
       <div><label class="text-xs text-gray-400 block mb-1">S&#7889; l&#432;&#7907;ng</label><input id="newQuantity" type="number" min="1" max="100" value="1" oninput="onQuantityChange()" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"><p class="text-xs text-gray-500 mt-1">1&#8211;100 key, t&#7841;o h&#224;ng lo&#7841;t key <code>sk-...</code>.</p></div>
       <div><label class="text-xs text-gray-400 block mb-1">API key thủ công</label><input id="newManualKey" placeholder="31F4E5C2-C364-4B59-B89C-B5C3A4270AEA" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary"><p class="text-xs text-gray-500 mt-1">Ch&#7881; d&#249;ng khi s&#7889; l&#432;&#7907;ng = 1.</p></div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#7893;ng token</label><input id="newTokenQuota" type="number" min="0" placeholder="30000000" value="30000000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></div>
@@ -1907,13 +1907,39 @@ function bulkNameLines() {
   return el.value.split("\n").map(function(s) { return s.trim(); }).filter(function(s) { return s.length; });
 }
 
+function vnDateSuffix() {
+  var d = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
+  return " - " + d;
+}
+
+function autoLabelPreview() {
+  var label = document.getElementById("newLabel").value.trim();
+  var q = Math.floor(Number(document.getElementById("newQuantity").value || 1));
+  var m = label.match(/^(.*?)(\d+)\s*$/);
+  if (!m || q < 2) return null;
+  var prefix = m[1], width = m[2].length, start = Number(m[2]);
+  var suffix = vnDateSuffix();
+  var out = [];
+  for (var i = 0; i < q; i++) out.push(prefix + String(start + i).padStart(width, "0") + suffix);
+  return out;
+}
+
 function updateBulkNamesHint() {
   var hint = document.getElementById("bulkNamesHint");
   if (!hint) return;
-  var n = bulkNameLines().length;
-  hint.textContent = n
-    ? "\u0110ang c\u00f3 " + n + " t\u00ean \u2014 s\u1ebd t\u1ea1o " + n + " key."
-    : "D\u00e1n danh s\u00e1ch t\u00ean, s\u1ed1 l\u01b0\u1ee3ng s\u1ebd t\u1ef1 kh\u1edbp theo s\u1ed1 d\u00f2ng. B\u1ecf tr\u1ed1ng th\u00ec h\u1ec7 th\u1ed1ng t\u1ef1 th\u00eam h\u1eadu t\u1ed1 #1..#N.";
+  var lines = bulkNameLines();
+  if (lines.length) {
+    hint.textContent = "\u0110ang c\u00f3 " + lines.length + " t\u00ean \u2014 s\u1ebd t\u1ea1o " + lines.length + " key (k\u00e8m ng\u00e0y t\u1ea1o).";
+    return;
+  }
+  var auto = autoLabelPreview();
+  if (auto) {
+    var head = auto.slice(0, 3).join(", ");
+    var tail = auto.length > 3 ? ", \u2026, " + auto[auto.length - 1] : "";
+    hint.textContent = "T\u1ef1 \u0111\u00e1nh s\u1ed1: " + head + tail;
+    return;
+  }
+  hint.textContent = "D\u00e1n danh s\u00e1ch t\u00ean, s\u1ed1 l\u01b0\u1ee3ng s\u1ebd t\u1ef1 kh\u1edbp theo s\u1ed1 d\u00f2ng. B\u1ecf tr\u1ed1ng th\u00ec h\u1ec7 th\u1ed1ng t\u1ef1 th\u00eam h\u1eadu t\u1ed1 #1..#N. Ng\u00e0y t\u1ea1o (DD/MM/YYYY) lu\u00f4n \u0111\u01b0\u1ee3c th\u00eam v\u00e0o cu\u1ed1i t\u00ean.";
 }
 
 function onBulkNamesInput() {

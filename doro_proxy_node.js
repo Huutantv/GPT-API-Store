@@ -8506,8 +8506,10 @@ app.post("/api/credit/keys", (req, res) => {
       }
       names = rawLabels.map((s) => String(s == null ? "" : s).trim());
     }
+    const vnDate = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Ho_Chi_Minh", day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date());
     const createPayload = {
       label: String(body.label || ""),
+      labelSuffix: ` - ${vnDate}`,
       names,
       credit: creditAmount,
       rpmLimit: Number(body.rpm_limit || 30),

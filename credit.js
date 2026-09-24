@@ -563,19 +563,28 @@ function extendKeyExpiry(apiKey, days) {
 /**
  * Tạo key mới
  */
-function createKey({ label = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
+function createKey({ label = "", labelSuffix = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const key = generateKey();
-  return createManualKey({ key, label, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
+  return createManualKey({ key, label, labelSuffix, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
 }
 
-function createManualKey({ key, label = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
+/** Gắn hậu tố vào nhãn, tránh lặp nếu nhãn đã có sẵn ngày dạng " - DD/MM/YYYY". */
+function applyLabelSuffix(label, suffix) {
+  const base = String(label == null ? "" : label);
+  const s = String(suffix || "");
+  if (!s) return base;
+  if (/\s-\s\d{2}\/\d{2}\/\d{4}\s*$/.test(base)) return base;
+  return base + s;
+}
+
+function createManualKey({ key, label = "", labelSuffix = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const apiKey = String(key || "").trim();
   if (!apiKey) throw new Error("Manual key is required");
   if (/\s/.test(apiKey)) throw new Error("Manual key must not contain spaces");
   if (apiKey.length < 8 || apiKey.length > 160) throw new Error("Manual key length must be between 8 and 160 characters");
   if (stmts.getKey.get(apiKey)) throw new Error("Key already exists");
   const dur = Math.max(0, Number(durationDays || 0));
-  stmts.insertKey.run(apiKey, label, credit, rpmLimit, expiresAt, Number(tokenRemaining || 0), dur);
+  stmts.insertKey.run(apiKey, applyLabelSuffix(label, labelSuffix), credit, rpmLimit, expiresAt, Number(tokenRemaining || 0), dur);
   if (credit > 0) {
     stmts.insertTxn.run(apiKey, credit, "initial", 0, 0, "", "");
   }
@@ -605,7 +614,24 @@ const createKeysTransaction = db.transaction((count, payload) => {
   return created;
 });
 
-function createKeys({ count = 1, names = null, label = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
+/**
+ * Nếu nhãn kết thúc bằng chữ số (VD: "GPT Zplay #01"), trả về danh sách nhãn
+ * tăng dần giữ nguyên độ dài số 0 ở đầu: "GPT Zplay #01", "GPT Zplay #02", ...
+ * Trả về null nếu nhãn không có số ở cuối.
+ */
+function buildAutoLabels(label, count) {
+  const match = String(label || "").match(/^(.*?)(\d+)\s*$/);
+  if (!match) return null;
+  const prefix = match[1];
+  const width = match[2].length;
+  const start = Number(match[2]);
+  if (!Number.isSafeInteger(start)) return null;
+  const out = [];
+  for (let i = 0; i < count; i++) out.push(prefix + String(start + i).padStart(width, "0"));
+  return out;
+}
+
+function createKeys({ count = 1, names = null, label = "", labelSuffix = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
   const n = Math.floor(Number(count) || 0);
   if (!Number.isSafeInteger(n) || n < 1 || n > MAX_BULK_KEYS) {
     throw new Error(`count must be between 1 and ${MAX_BULK_KEYS}`);
@@ -614,8 +640,10 @@ function createKeys({ count = 1, names = null, label = "", credit = 0, rpmLimit 
   if (Array.isArray(names)) {
     if (names.length !== n) throw new Error("names length must match count");
     resolvedNames = names.map((s) => String(s == null ? "" : s));
+  } else if (n > 1) {
+    resolvedNames = buildAutoLabels(label, n);
   }
-  return createKeysTransaction(n, { label, names: resolvedNames, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
+  return createKeysTransaction(n, { label, labelSuffix, names: resolvedNames, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
 }
 
 /**
