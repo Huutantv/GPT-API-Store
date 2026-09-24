@@ -205,6 +205,11 @@ body{font-family:'Inter',sans-serif}
       </div>
       <div><label class="text-xs text-gray-400 block mb-1">T&#249;y ch&#7881;nh ng&#224;y</label><input id="newCustomDays" type="number" min="1" max="3650" placeholder="VD: 45" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" oninput="updateExpiryPreview()"><p class="text-xs text-gray-500 mt-1">B&#7887; tr&#7889;ng th&#236; d&#249;ng dropdown.</p></div>
     </div>
+    <div id="bulkNamesWrap" class="hidden">
+      <label class="text-xs text-gray-400 block mb-1">Danh s&#225;ch t&#234;n (m&#7895;i d&#242;ng 1 t&#234;n, kh&#7899;p s&#7889; l&#432;&#7907;ng)</label>
+      <textarea id="newLabels" rows="5" placeholder="Nguyen Van A&#10;Tran Thi B&#10;Le Van C" oninput="onBulkNamesInput()" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary"></textarea>
+      <p id="bulkNamesHint" class="text-xs text-gray-500 mt-1">D&#225;n danh s&#225;ch t&#234;n, s&#7889; l&#432;&#7907;ng s&#7869; t&#7921; kh&#7899;p theo s&#7889; d&#242;ng. B&#7887; tr&#7889;ng th&#236; h&#7879; th&#7889;ng t&#7921; th&#234;m h&#7853;u t&#7889; #1..#N.</p>
+    </div>
     <div class="flex items-center gap-2 mt-2">
       <input id="newFirstUse" type="checkbox" class="w-4 h-4 rounded accent-primary">
       <label for="newFirstUse" class="text-xs text-gray-400 cursor-pointer">T&#237;nh th&#7901;i h&#7841;n t&#7915; l&#7847;n request &#273;&#7847;u ti&#234;n (kh&#244;ng t&#237;nh t&#7915; l&#250;c t&#7841;o key)</label>
@@ -1896,14 +1901,43 @@ async function adjustKeyToken(key, direction, currentTokens, refreshLookup) {
   }
 }
 
+function bulkNameLines() {
+  var el = document.getElementById("newLabels");
+  if (!el) return [];
+  return el.value.split("\n").map(function(s) { return s.trim(); }).filter(function(s) { return s.length; });
+}
+
+function updateBulkNamesHint() {
+  var hint = document.getElementById("bulkNamesHint");
+  if (!hint) return;
+  var n = bulkNameLines().length;
+  hint.textContent = n
+    ? "\u0110ang c\u00f3 " + n + " t\u00ean \u2014 s\u1ebd t\u1ea1o " + n + " key."
+    : "D\u00e1n danh s\u00e1ch t\u00ean, s\u1ed1 l\u01b0\u1ee3ng s\u1ebd t\u1ef1 kh\u1edbp theo s\u1ed1 d\u00f2ng. B\u1ecf tr\u1ed1ng th\u00ec h\u1ec7 th\u1ed1ng t\u1ef1 th\u00eam h\u1eadu t\u1ed1 #1..#N.";
+}
+
+function onBulkNamesInput() {
+  var n = bulkNameLines().length;
+  if (n >= 1) document.getElementById("newQuantity").value = Math.min(100, n);
+  updateBulkNamesHint();
+}
+
 function onQuantityChange() {
   var q = Math.floor(Number(document.getElementById("newQuantity").value || 1));
   var manual = document.getElementById("newManualKey");
-  if (!manual) return;
   var bulk = q > 1;
-  manual.disabled = bulk;
-  manual.classList.toggle("opacity-40", bulk);
-  if (bulk) manual.value = "";
+  if (manual) {
+    manual.disabled = bulk;
+    manual.classList.toggle("opacity-40", bulk);
+    if (bulk) manual.value = "";
+  }
+  var namesWrap = document.getElementById("bulkNamesWrap");
+  if (namesWrap) namesWrap.classList.toggle("hidden", !bulk);
+  if (!bulk) {
+    var namesEl = document.getElementById("newLabels");
+    if (namesEl) namesEl.value = "";
+  }
+  updateBulkNamesHint();
 }
 
 async function createKey() {
@@ -1930,8 +1964,15 @@ async function createKey() {
     msg.textContent = "Key thủ công không được chứa khoảng trắng";
     return;
   }
+  var labels = quantity > 1 ? bulkNameLines() : [];
+  if (labels.length && labels.length !== quantity) {
+    msg.className = "text-sm py-2 text-red-400";
+    msg.textContent = "Số tên (" + labels.length + ") phải bằng số lượng key (" + quantity + ")";
+    return;
+  }
   var body = {
     label: document.getElementById("newLabel").value.trim(),
+    labels: labels,
     manual_key: manualKey,
     quantity: quantity,
     credit: creditAmount,

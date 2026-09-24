@@ -8498,8 +8498,17 @@ app.post("/api/credit/keys", (req, res) => {
     if (manualKey && quantity > 1) {
       return res.status(400).json({ detail: "manual_key is only allowed when quantity is 1" });
     }
+    const rawLabels = Array.isArray(body.labels) ? body.labels : null;
+    let names = null;
+    if (rawLabels && rawLabels.length) {
+      if (rawLabels.length !== quantity) {
+        return res.status(400).json({ detail: "labels length must match quantity" });
+      }
+      names = rawLabels.map((s) => String(s == null ? "" : s).trim());
+    }
     const createPayload = {
       label: String(body.label || ""),
+      names,
       credit: creditAmount,
       rpmLimit: Number(body.rpm_limit || 30),
       expiresAt,
