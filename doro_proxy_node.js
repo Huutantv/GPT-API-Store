@@ -956,7 +956,9 @@ const backendKeyInflight = new Map();
 const stats = { requests: 0, tokens: 0 };
 const logs = [];
 let validProxyKeys = splitEnvList(firstEnv("DORO_PROXY_KEYS", { default: "" }));
-const ACCESS_LOG_DIR = path.join(ROOT_DIR, "logs");
+const ACCESS_LOG_DIR = process.env.DORO_ACCESS_LOG_DIR
+  ? path.resolve(process.env.DORO_ACCESS_LOG_DIR)
+  : path.join(ROOT_DIR, "logs");
 const RECENT_REQUEST_LIMIT = Number(process.env.DORO_RECENT_REQUEST_LIMIT || "5000");
 const ACCESS_LOG_RETENTION_DAYS = Number(process.env.DORO_ACCESS_LOG_RETENTION_DAYS || "14");
 const recentRequests = [];
@@ -8215,6 +8217,142 @@ function aggregateDailyStats(entries) {
   };
 }
 
+// ── Báo cáo cuối ngày (Telegram 23:58 VN) ─────────────────────────────────────
+// Doanh thu: orders(status='paid') theo ngày VN. Request: logs/access-*.jsonl,
+// ngày VN D = UTC D-1 17:00 → D 16:59 nên phải gộp 2 file UTC (D-1, D) rồi lọc.
+function vnToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+function vnDateOf(tsEpochMs) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Ho_Chi_Minh", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(Number(tsEpochMs) || 0));
+}
+
+function shiftVnDate(vnDate, deltaDays) {
+  const t = Date.parse(`${vnDate}T12:00:00Z`);
+  return new Date(t + deltaDays * 86400000).toISOString().slice(0, 10);
+}
+
+function readVnDayEntries(vnDate) {
+  const entries = [];
+  let tooLarge = false;
+  let parseErrors = 0;
+  for (const day of [shiftVnDate(vnDate, -1), vnDate]) {
+    const res = readDailyAccessEntries(day);
+    tooLarge = tooLarge || !!res.tooLarge;
+    parseErrors += res.parseErrors || 0;
+    for (const e of res.entries) {
+      if (vnDateOf(e.ts_epoch_ms) === vnDate) entries.push(e);
+    }
+  }
+  return { entries, tooLarge, parseErrors };
+}
+
+function buildDailyReport(vnDate) {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(vnDate || "").trim()) ? String(vnDate).trim() : vnToday();
+  const { paid_orders, revenue } = orders.getDailyPaidSummary(date);
+  const { entries, tooLarge, parseErrors } = readVnDayEntries(date);
+
+  let success = 0;
+  let errors = 0;
+  const models = new Map();
+  for (const e of entries) {
+    const status = Number(e.status || 0);
+    const isErr = status >= 400 || !!e.error_type;
+    if (isErr) { errors += 1; continue; }
+    success += 1;
+    const model = String(e.backend_model || "").trim() || "unknown";
+    models.set(model, (models.get(model) || 0) + 1);
+  }
+  const per_backend_model = [...models.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([model, count]) => ({ model, count }));
+
+  const dd = date.split("-").reverse().join("/");
+  const lines = [
+    `\ud83d\udcca <b>B\u00e1o c\u00e1o ng\u00e0y ${dd}</b>`,
+    `\ud83e\uddfe \u0110\u01a1n: ${paid_orders.toLocaleString("vi-VN")} | \ud83d\udcb5 Doanh thu: ${revenue.toLocaleString("vi-VN")}\u0111`,
+    `\u2705 Request th\u00e0nh c\u00f4ng: ${success.toLocaleString("vi-VN")}`,
+    `\u274c L\u1ed7i: ${errors.toLocaleString("vi-VN")}`,
+  ];
+  if (per_backend_model.length) {
+    lines.push(`\ud83e\udd16 <b>Theo backend model (th\u00e0nh c\u00f4ng):</b>`);
+    for (const item of per_backend_model) lines.push(`\u2022 ${item.model} \u2014 ${item.count.toLocaleString("vi-VN")}`);
+  } else {
+    lines.push(`\ud83e\udd16 Theo backend model: (kh\u00f4ng c\u00f3)`);
+  }
+  if (tooLarge) lines.push(`\u26a0\ufe0f Log request qu\u00e1 l\u1edbn, s\u1ed1 li\u1ec7u c\u00f3 th\u1ec3 thi\u1ebfu.`);
+
+  return {
+    date,
+    text: lines.join("\n"),
+    data: {
+      paid_orders,
+      revenue,
+      requests_success: success,
+      requests_error: errors,
+      per_backend_model,
+      parse_errors: parseErrors,
+      log_too_large: tooLarge,
+    },
+  };
+}
+
+let _lastReportVnDate = "";
+async function sendDailyReport(vnDate, { manual = false } = {}) {
+  const report = buildDailyReport(vnDate);
+  if (!manual && _lastReportVnDate === report.date) {
+    addLog(`daily report skipped (already sent ${report.date})`);
+    return { ...report, sent: false, skipped: true };
+  }
+  const ok = await notifyTelegram(report.text);
+  if (ok && !manual) _lastReportVnDate = report.date;
+  addLog(`daily report ${report.date} sent=${ok}${manual ? " (manual)" : ""}`);
+  return { ...report, sent: ok, skipped: false };
+}
+
+function msUntilNextVnTime(hh, mm) {
+  const now = new Date();
+  const vn = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
+  const target = new Date(vn);
+  target.setHours(hh, mm, 0, 0);
+  if (target <= vn) target.setDate(target.getDate() + 1);
+  return target - vn;
+}
+
+function scheduleDailyReport() {
+  if (!envFlag(process.env.DORO_DAILY_REPORT, false)) return;
+  const raw = String(process.env.DORO_DAILY_REPORT_TIME || "23:58").trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  const hh = match ? Math.min(23, Math.max(0, Number(match[1]))) : 23;
+  const mm = match ? Math.min(59, Math.max(0, Number(match[2]))) : 58;
+  const delay = msUntilNextVnTime(hh, mm);
+  const label = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  addLog(`daily report scheduled at ${label} VN (in ${Math.round(delay / 60000)}m)`);
+  setTimeout(async () => {
+    try {
+      await sendDailyReport(vnToday());
+    } catch (err) {
+      addLog(`daily report error: ${err.message}`);
+    }
+    scheduleDailyReport();
+  }, delay);
+}
+
+app.get("/api/reports/daily", async (req, res) => {
+  const admin = checkAdminAuth(req);
+  if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
+  const date = String(req.query.date || vnToday()).trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ detail: "Invalid date, expected YYYY-MM-DD" });
+  const send = String(req.query.send || "") === "1";
+  try {
+    const report = send ? await sendDailyReport(date, { manual: true }) : buildDailyReport(date);
+    res.json({ ok: true, sent: !!report.sent, date: report.date, text: report.text, data: report.data });
+  } catch (err) {
+    res.status(500).json({ detail: err.message });
+  }
+});
+
 app.get("/api/stats/daily", (req, res) => {
   const admin = checkAdminAuth(req);
   if (!admin.ok) return res.status(admin.status).json({ detail: admin.message });
@@ -9107,6 +9245,9 @@ setInterval(() => {
   const cancelled = orders.cancelExpiredOrders();
   if (cancelled > 0) addLog(`auto-cancelled ${cancelled} expired pending orders`);
 }, 5 * 60 * 1000);
+
+// Báo cáo cuối ngày qua Telegram (mặc định tắt; bật DORO_DAILY_REPORT=1)
+scheduleDailyReport();
 
 // ── Quota Check — kiểm tra quota VietAPI backend mỗi giờ ─────────────────────
 async function checkBackendQuota() {

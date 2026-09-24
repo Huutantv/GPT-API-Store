@@ -122,7 +122,14 @@ body{font-family:'Inter',sans-serif}
 
 <!-- Tab: Overview -->
 <div id="tab-overview" class="tab-content space-y-6">
-  <h2 class="text-xl font-bold">T&#7893;ng quan</h2>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 class="text-xl font-bold">T&#7893;ng quan</h2>
+    <div class="flex items-center gap-2">
+      <button onclick="sendDailyReportNow()" class="px-4 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">G&#7917;i b&#225;o c&#225;o h&#244;m nay</button>
+      <div id="dailyReportMsg" class="text-sm text-gray-400"></div>
+    </div>
+  </div>
+  <pre id="dailyReportPreview" class="hidden whitespace-pre-wrap text-xs bg-dark-900 border border-white/10 rounded-xl p-4 text-gray-300"></pre>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">T&#7893;ng keys</p><div class="text-3xl font-bold" id="statTotalKeys">&mdash;</div></div>
     <div class="bg-dark-700 border border-white/10 rounded-xl p-5"><p class="text-xs text-gray-500 mb-1">Keys ho&#7841;t &#273;&#7897;ng</p><div class="text-3xl font-bold text-green-400" id="statActiveKeys">&mdash;</div></div>
@@ -1801,6 +1808,25 @@ async function loadOverview() {
   renderOverviewDoughnutChart("packageChart", "packageMix", byPackage.map(function(i) { return i.package_id; }), byPackage.map(function(i) { return i.keys_sold; }));
   renderOverviewTopPackages(byPackage);
   renderOverviewRecentPaid(analytics.recent_paid || []);
+}
+
+async function sendDailyReportNow() {
+  var msg = document.getElementById("dailyReportMsg");
+  var preview = document.getElementById("dailyReportPreview");
+  msg.className = "text-sm text-gray-400";
+  msg.textContent = "Đang gửi...";
+  try {
+    var r = await fetch(BASE + "/api/reports/daily?send=1", { headers: authHeaders() });
+    var data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.detail || "Không gửi được báo cáo");
+    preview.textContent = data.text || "";
+    preview.classList.remove("hidden");
+    msg.className = "text-sm text-green-400";
+    msg.textContent = data.sent ? "Đã gửi Telegram" : "Đã tạo (Telegram chưa cấu hình)";
+  } catch (err) {
+    msg.className = "text-sm text-red-400";
+    msg.textContent = err.message || "Lỗi";
+  }
 }
 
 /* ===== KEYS ===== */

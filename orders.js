@@ -203,6 +203,22 @@ function updatePackage(id, { name, price, requestQuota, tokenQuota, rpmLimit, de
   return getPackage(id);
 }
 
+/**
+ * Doanh thu + số đơn đã trả tiền trong 1 ngày VN (YYYY-MM-DD).
+ * paid_at lưu UTC (datetime('now')) nên cộng +7h để đúng ngày VN.
+ */
+function getDailyPaidSummary(vnDate) {
+  const day = String(vnDate || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error("Invalid VN date, expected YYYY-MM-DD");
+  const row = db.prepare(`
+    SELECT COUNT(*) AS paid_orders, COALESCE(SUM(amount), 0) AS revenue
+    FROM orders
+    WHERE status = 'paid' AND api_key IS NOT NULL AND api_key <> ''
+      AND date(datetime(COALESCE(paid_at, created_at), '+7 hours')) = ?
+  `).get(day);
+  return { paid_orders: Number(row.paid_orders || 0), revenue: Number(row.revenue || 0) };
+}
+
 function getStats() {
   const counts = {};
   for (const row of stmts.countByStatus.all()) counts[row.status] = row.cnt;
@@ -216,4 +232,4 @@ function getStats() {
   };
 }
 
-module.exports = { listPackages, listAllPackages, getPackage, getOrder, getOrderByCode, getOrderByApiKey, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, updatePackage, getStats };
+module.exports = { listPackages, listAllPackages, getPackage, getOrder, getOrderByCode, getOrderByApiKey, listOrders, listByStatus, listByEmail, createOrder, markPaid, markCancelled, cancelExpiredOrders, updatePackage, getStats, getDailyPaidSummary };
