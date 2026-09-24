@@ -176,7 +176,7 @@ function filterTable() {
   }
   tbody.innerHTML = rows.map((c, i) => {
     const hasPaid = c.paid_orders > 0;
-    return `<tr class="border-b border-white/5 hover:bg-white/2 cursor-pointer" onclick="showDetail('${encodeURIComponent(c.customer_email)}')">
+    return `<tr class="border-b border-white/5 hover:bg-white/2 cursor-pointer" data-email="${escapeHtml(c.customer_email || "")}" onclick="showDetail(this.dataset.email)">
       <td class="px-5 py-3 text-gray-500 text-xs">${i + 1}</td>
       <td class="px-5 py-3">
         <p class="font-medium">${c.customer_name ? escapeHtml(c.customer_name) : '<span class="text-gray-500">—</span>'}</p>
@@ -195,9 +195,34 @@ function filterTable() {
   }).join("");
 }
 
-async function showDetail(emailEncoded) {
-  const email = decodeURIComponent(emailEncoded);
-  const r = await fetch(`${BASE}/api/customers/${emailEncoded}`, { headers: authHeaders() });
+async function copyCustomerKey(btn) {
+  const masked = (btn && btn.getAttribute("data-key")) || "";
+  if (!masked) return;
+  let text = masked;
+  try {
+    const r = await fetch(`${BASE}/api/credit/key-full?key=${encodeURIComponent(masked)}`, { headers: authHeaders() });
+    const d = await r.json();
+    if (r.ok && d.ok && d.key) text = d.key;
+  } catch (_) {}
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (_) {}
+    document.body.removeChild(ta);
+  }
+  if (btn) {
+    btn.textContent = "✓";
+    setTimeout(() => { btn.textContent = "Copy"; }, 1500);
+  }
+}
+
+async function showDetail(email) {
+  email = String(email || "");
+  const r = await fetch(`${BASE}/api/customers/${encodeURIComponent(email)}`, { headers: authHeaders() });
   const data = await r.json();
   const c = allCustomers.find(x => x.customer_email === email) || {};
 
@@ -231,7 +256,7 @@ async function showDetail(emailEncoded) {
           </div>
           <div class="flex items-center gap-2">
             <code class="text-xs font-mono text-primary flex-1 truncate">${escapeHtml(k.key || "—")}</code>
-            <button onclick="navigator.clipboard.writeText(${JSON.stringify(k.key || "")});this.textContent='✓';setTimeout(()=>this.textContent='Copy',1500)" class="text-xs px-2 py-0.5 bg-dark-700 rounded hover:bg-dark-600 transition shrink-0">Copy</button>
+            <button onclick="copyCustomerKey(this)" data-key="${escapeHtml(k.key || "")}" class="text-xs px-2 py-0.5 bg-dark-700 rounded hover:bg-dark-600 transition shrink-0">Copy</button>
           </div>
           <div class="flex gap-4 mt-2 text-xs text-gray-500">
             <span>Credit: <strong class="text-white">${Number(k.credit || 0).toLocaleString()}</strong></span>
