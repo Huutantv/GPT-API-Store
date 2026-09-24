@@ -582,6 +582,31 @@ function createManualKey({ key, label = "", credit = 0, rpmLimit = 30, expiresAt
   return stmts.getKey.get(apiKey);
 }
 
+const MAX_BULK_KEYS = 100;
+
+/**
+ * Tạo nhiều key cùng cấu hình trong 1 transaction (all-or-nothing).
+ * Khi count > 1, nhãn được thêm hậu tố "#N" để phân biệt.
+ */
+const createKeysTransaction = db.transaction((count, payload) => {
+  const created = [];
+  for (let i = 0; i < count; i++) {
+    const label = count > 1
+      ? (payload.label ? `${payload.label} #${i + 1}` : `#${i + 1}`)
+      : payload.label;
+    created.push(createManualKey({ ...payload, label, key: generateKey() }));
+  }
+  return created;
+});
+
+function createKeys({ count = 1, label = "", credit = 0, rpmLimit = 30, expiresAt = null, tokenRemaining = 0, durationDays = 0 } = {}) {
+  const n = Math.floor(Number(count) || 0);
+  if (!Number.isSafeInteger(n) || n < 1 || n > MAX_BULK_KEYS) {
+    throw new Error(`count must be between 1 and ${MAX_BULK_KEYS}`);
+  }
+  return createKeysTransaction(n, { label, credit, rpmLimit, expiresAt, tokenRemaining, durationDays });
+}
+
 /**
  * Xoá key
  */
@@ -665,6 +690,7 @@ module.exports = {
   adjustToken,
   extendKeyExpiry,
   createKey,
+  createKeys,
   createManualKey,
   deleteKey,
   setKeyActive,

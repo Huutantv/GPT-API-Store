@@ -8490,6 +8490,14 @@ app.post("/api/credit/keys", (req, res) => {
     const startFromFirstUse = !!(body.start_from_first_use);
     const expiresAt = (!startFromFirstUse && durationDays > 0) ? vnDateTimeAfterDays(durationDays) : null;
     const manualKey = String(body.manual_key || "").trim();
+    const quantityRaw = body.quantity === undefined || body.quantity === "" ? 1 : body.quantity;
+    const quantity = Math.floor(Number(quantityRaw));
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100) {
+      return res.status(400).json({ detail: "quantity must be between 1 and 100" });
+    }
+    if (manualKey && quantity > 1) {
+      return res.status(400).json({ detail: "manual_key is only allowed when quantity is 1" });
+    }
     const createPayload = {
       label: String(body.label || ""),
       credit: creditAmount,
@@ -8498,11 +8506,28 @@ app.post("/api/credit/keys", (req, res) => {
       tokenRemaining,
       durationDays: startFromFirstUse ? durationDays : 0,
     };
-    const row = manualKey
-      ? credit.createManualKey({ ...createPayload, key: manualKey })
-      : credit.createKey(createPayload);
-    addLog(`CREDIT KEY + ${row.key.slice(0, 20)} credit=${row.credit}`);
-    res.json({ ok: true, key: row });
+    const created = manualKey
+      ? [credit.createManualKey({ ...createPayload, key: manualKey })]
+      : (quantity > 1 ? credit.createKeys({ ...createPayload, count: quantity }) : [credit.createKey(createPayload)]);
+    if (created.length === 1) {
+      addLog(`CREDIT KEY + ${created[0].key.slice(0, 20)} credit=${created[0].credit}`);
+    } else {
+      addLog(`CREDIT KEY + x${created.length} keys credit=${creditAmount} (bulk)`);
+    }
+    res.json({
+      ok: true,
+      key: created[0],
+      keys: created.map((r) => ({
+        key: r.key,
+        label: r.label,
+        credit: r.credit,
+        rpm_limit: r.rpm_limit,
+        expires_at: r.expires_at,
+        token_remaining: r.token_remaining,
+        duration_days: r.duration_days,
+      })),
+      keys_count: created.length,
+    });
   } catch (err) {
     res.status(400).json({ detail: err.message });
   }
