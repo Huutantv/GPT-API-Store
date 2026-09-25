@@ -8522,17 +8522,23 @@ app.put("/api/admin/packages/:id", (req, res) => {
   const requestQuota = Math.max(0, Math.floor(Number(body.request_quota) || 0));
   const price = Math.max(0, Math.floor(Number(body.price) || 0));
   const rpmLimit = Math.max(1, Math.floor(Number(body.rpm_limit) || 30));
+  const category = String(body.category || "token").trim().toLowerCase() === "usd" ? "usd" : "token";
+  const priceUsd = Math.max(0, Math.floor(Number(body.price_usd) || 0));
+  const durationDays = Math.max(0, Math.floor(Number(body.duration_days) || 0));
   const name = String(body.name || "").trim();
   if (!name || name.length > 100) return res.status(400).json({ detail: "Package name must be 1-100 characters" });
   try {
     const pkg = orders.updatePackage(id, {
       name,
       price,
+      priceUsd,
       requestQuota,
       tokenQuota,
       rpmLimit,
       description: String(body.description || "").trim(),
       active: !!body.active,
+      category,
+      durationDays,
     });
     addLog(`PACKAGE UPDATE id=${id} requests=${pkg.credit} token_quota=${pkg.token_quota}`);
     res.json({ ok: true, package: pkg });

@@ -164,8 +164,8 @@ body{font-family:'Inter',sans-serif}
   <div class="bg-dark-700 border border-white/10 rounded-xl overflow-hidden">
     <div class="overflow-x-auto">
       <table class="w-full text-sm min-w-[950px]">
-        <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800"><th class="text-left px-4 py-3">Gói</th><th class="text-right px-4 py-3">Giá (VNĐ)</th><th class="text-right px-4 py-3">Tổng token</th><th class="text-right px-4 py-3">Tổng request</th><th class="text-right px-4 py-3">RPM</th><th class="text-left px-4 py-3">Mô tả</th><th class="text-center px-4 py-3">Bán</th><th class="text-right px-4 py-3">Thao tác</th></tr></thead>
-        <tbody id="packagesTable"><tr><td colspan="8" class="text-center text-gray-500 py-8">Đang tải...</td></tr></tbody>
+        <thead><tr class="text-xs text-gray-500 border-b border-white/5 bg-dark-800"><th class="text-left px-4 py-3">Gói</th><th class="text-left px-4 py-3">Loại</th><th class="text-right px-4 py-3">Giá (VNĐ)</th><th class="text-right px-4 py-3">USD</th><th class="text-right px-4 py-3">Tổng token</th><th class="text-right px-4 py-3">Tổng request</th><th class="text-right px-4 py-3">RPM</th><th class="text-right px-4 py-3">Hạn (ngày)</th><th class="text-left px-4 py-3">Mô tả</th><th class="text-center px-4 py-3">Bán</th><th class="text-right px-4 py-3">Thao tác</th></tr></thead>
+        <tbody id="packagesTable"><tr><td colspan="11" class="text-center text-gray-500 py-8">Đang tải...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -1741,18 +1741,22 @@ async function loadPackages() {
     if (!r.ok) throw new Error(data.detail || "Không thể tải gói");
     var packages = data.packages || [];
     if (!packages.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-gray-500 py-8">Chưa có gói nào</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center text-gray-500 py-8">Chưa có gói nào</td></tr>';
       return;
     }
     tbody.innerHTML = packages.map(function(p) {
       var id = escapeHtml(p.id);
+      var cat = (p.category || 'token') === 'usd' ? 'usd' : 'token';
       return '<tr class="border-b border-white/5 hover:bg-white/2">' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'name') + '" value="' + escapeHtml(p.name) + '" class="w-32 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"><p class="text-xs text-gray-500 mt-1 font-mono">' + id + '</p></td>' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'price') + '" type="number" min="0" value="' + Number(p.price || 0) + '" class="w-28 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'tokens') + '" type="number" min="0" value="' + Number(p.token_quota || 0) + '" class="w-40 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'requests') + '" type="number" min="0" value="' + Number(p.credit || 0) + '" class="w-28 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'rpm') + '" type="number" min="1" value="' + Number(p.rpm_limit || 30) + '" class="w-20 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
-        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'description') + '" value="' + escapeHtml(p.description || '') + '" class="w-56 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'name') + '" value="' + escapeHtml(p.name) + '" class="w-28 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"><p class="text-xs text-gray-500 mt-1 font-mono">' + id + '</p></td>' +
+        '<td class="px-4 py-3"><select id="' + packageFieldId(p.id, 'category') + '" class="px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"><option value="token"' + (cat === 'token' ? ' selected' : '') + '>token</option><option value="usd"' + (cat === 'usd' ? ' selected' : '') + '>usd</option></select></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'price') + '" type="number" min="0" value="' + Number(p.price || 0) + '" class="w-24 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'price_usd') + '" type="number" min="0" value="' + Number(p.price_usd || 0) + '" class="w-16 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'tokens') + '" type="number" min="0" value="' + Number(p.token_quota || 0) + '" class="w-36 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'requests') + '" type="number" min="0" value="' + Number(p.credit || 0) + '" class="w-24 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'rpm') + '" type="number" min="1" value="' + Number(p.rpm_limit || 30) + '" class="w-16 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'duration') + '" type="number" min="0" value="' + Number(p.duration_days || 0) + '" class="w-16 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm text-right"></td>' +
+        '<td class="px-4 py-3"><input id="' + packageFieldId(p.id, 'description') + '" value="' + escapeHtml(p.description || '') + '" class="w-48 px-2 py-1.5 bg-dark-900 border border-white/10 rounded text-sm"></td>' +
         '<td class="px-4 py-3 text-center"><input id="' + packageFieldId(p.id, 'active') + '" type="checkbox" class="w-4 h-4 accent-primary"' + (p.active ? ' checked' : '') + '></td>' +
         '<td class="px-4 py-3 text-right"><button onclick="savePackage(\'' + p.id + '\')" class="px-3 py-1.5 bg-primary hover:bg-primary/90 rounded text-xs font-semibold transition">Lưu</button></td>' +
       '</tr>';
@@ -1769,10 +1773,13 @@ async function savePackage(id) {
   var msg = document.getElementById('packagesMsg');
   var body = {
     name: packageInput(id, 'name').value.trim(),
+    category: packageInput(id, 'category').value,
     price: Number(packageInput(id, 'price').value || 0),
+    price_usd: Number(packageInput(id, 'price_usd').value || 0),
     token_quota: Number(packageInput(id, 'tokens').value || 0),
     request_quota: Number(packageInput(id, 'requests').value || 0),
     rpm_limit: Number(packageInput(id, 'rpm').value || 30),
+    duration_days: Number(packageInput(id, 'duration').value || 0),
     description: packageInput(id, 'description').value.trim(),
     active: packageInput(id, 'active').checked
   };

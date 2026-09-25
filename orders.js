@@ -61,19 +61,45 @@ try { db.exec("ALTER TABLE orders ADD COLUMN expires_at TEXT"); } catch (_) {}
 try { db.exec("ALTER TABLE orders ADD COLUMN customer_phone TEXT NOT NULL DEFAULT ''"); } catch (_) {}
 try { db.exec("ALTER TABLE packages ADD COLUMN token_quota INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 try { db.exec("ALTER TABLE orders ADD COLUMN token_quota INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+// Phân loại gói: 'token' (mặc định) hoặc 'usd' (gói nạp USD), kèm giá USD và hạn riêng.
+try { db.exec("ALTER TABLE packages ADD COLUMN category TEXT NOT NULL DEFAULT 'token'"); } catch (_) {}
+try { db.exec("ALTER TABLE packages ADD COLUMN price_usd INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+try { db.exec("ALTER TABLE packages ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 
-// Seed default packages (RPM theo tier goi)
+// Tỷ giá quy đổi cho gói USD: mặc định 1.000 VNĐ = $1 (DORO_USD_RATE).
+const USD_RATE = Math.max(1, Math.floor(Number(process.env.DORO_USD_RATE) || 1000));
+
+// Seed default packages (RPM theo tier goi).
+// category: 'token' = gói token thường, 'usd' = gói nạp USD (giá quy đổi theo USD_RATE).
 const seedPkgs = [
-  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: getPackageRpm("starter"), description: "30,000,000 token, 30 RPM, 1 ngày", active: 1 },
-  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: getPackageRpm("pro"),     description: "900,000,000 token, 60 RPM, 30 ngày", active: 1 },
-  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: getPackageRpm("pro_v2"),  description: "900,000,000 token, 90 RPM, 30 ngày", active: 1 },
-  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: getPackageRpm("ultra"),   description: "1.5B token, 1 API key, 120 RPM", active: 1 },
+  { id: "starter", name: "Starter", price: 20000,  credit: 350,  token_quota: 30000000,  rpm_limit: getPackageRpm("starter"), description: "30,000,000 token, 30 RPM, 1 ngày", active: 1, category: "token", duration_days: 0 },
+  { id: "pro",     name: "Pro",     price: 270000, credit: 6500, token_quota: 900000000, rpm_limit: getPackageRpm("pro"),     description: "900,000,000 token, 60 RPM, 30 ngày", active: 1, category: "token", duration_days: 0 },
+  { id: "pro_v2",  name: "Pro v2",  price: 290000, credit: 9000, token_quota: 900000000, rpm_limit: getPackageRpm("pro_v2"),  description: "900,000,000 token, 90 RPM, 30 ngày", active: 1, category: "token", duration_days: 0 },
+  { id: "ultra",   name: "Ultra",   price: 450000, credit: 30000, token_quota: 0,         rpm_limit: getPackageRpm("ultra"),   description: "1.5B token, 1 API key, 120 RPM", active: 1, category: "token", duration_days: 0 },
+  ...usdSeedPackages(),
 ];
+
+function usdSeedPackages() {
+  return [10, 50, 100, 300].map((usd) => ({
+    id: `usd_${usd}`,
+    name: `$${usd}`,
+    price: usd * USD_RATE,
+    price_usd: usd,
+    credit: 0,
+    token_quota: 0,
+    rpm_limit: 30,
+    description: `${usd}.000 VNĐ = ${usd}$`,
+    active: 1,
+    category: "usd",
+    duration_days: 30,
+  }));
+}
+
 const insertPkg = db.prepare(`
-  INSERT OR IGNORE INTO packages (id, name, price, credit, token_quota, rpm_limit, description, active)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT OR IGNORE INTO packages (id, name, price, price_usd, credit, token_quota, rpm_limit, description, active, category, duration_days)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
-for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.credit, p.token_quota, p.rpm_limit, p.description, p.active);
+for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.price_usd || 0, p.credit, p.token_quota, p.rpm_limit, p.description, p.active, p.category, p.duration_days || 0);
 
 // RPM theo goi: chi NANG len tier, KHONG ha (giu custom RPM admin dat tay).
 // (Truoc day ep tat ca ve 30 moi lan boot, xoa ca custom cua admin.)
@@ -103,8 +129,8 @@ db.prepare(`
 
 // ── Prepared statements ───────────────────────────────────────────────────────
 const stmts = {
-  listPackages:  db.prepare("SELECT * FROM packages WHERE active = 1 ORDER BY price ASC"),
-  listAllPackages: db.prepare("SELECT * FROM packages ORDER BY price ASC"),
+  listPackages:  db.prepare("SELECT * FROM packages WHERE active = 1 ORDER BY category ASC, price ASC"),
+  listAllPackages: db.prepare("SELECT * FROM packages ORDER BY category ASC, price ASC"),
   getPackage:    db.prepare("SELECT * FROM packages WHERE id = ?"),
   getOrder:      db.prepare("SELECT * FROM orders WHERE id = ?"),
   getOrderCode:  db.prepare("SELECT * FROM orders WHERE order_code = ?"),
@@ -120,7 +146,7 @@ const stmts = {
   listByEmail:   db.prepare("SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC"),
   insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, token_quota, rpm_limit, customer_name, customer_email, customer_phone)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-  updatePackage: db.prepare("UPDATE packages SET name=?, price=?, credit=?, token_quota=?, rpm_limit=?, description=?, active=? WHERE id=?"),
+  updatePackage: db.prepare("UPDATE packages SET name=?, price=?, price_usd=?, credit=?, token_quota=?, rpm_limit=?, description=?, active=?, category=?, duration_days=? WHERE id=?"),
   setOrderExpiry: db.prepare("UPDATE orders SET expires_at=? WHERE id=?"),
   markPaid:      db.prepare("UPDATE orders SET status='paid', api_key=?, paid_at=datetime('now'), note=? WHERE id=?"),
   markCancelled: db.prepare("UPDATE orders SET status='cancelled' WHERE id=?"),
@@ -153,9 +179,10 @@ function createOrder({ packageId, customerName, customerEmail, customerPhone }) 
   const id = genOrderId();
   const code = genOrderCode();
 
-  // Tính ngày hết hạn theo giờ Việt Nam để tránh lệch timezone
+  // Tính ngày hết hạn theo giờ Việt Nam để tránh lệch timezone.
+  // Ưu tiên duration_days của gói (admin set), fallback map tĩnh theo id.
   let expiresAt = null;
-  const days = getPackageDurationDays(packageId);
+  const days = Number(pkg.duration_days || 0) || getPackageDurationDays(packageId);
   if (days) {
     const now = new Date();
     const vnNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Ho_Chi_Minh" }));
@@ -193,12 +220,18 @@ function cancelExpiredOrders() {
   return result.changes;
 }
 
-function updatePackage(id, { name, price, requestQuota, tokenQuota, rpmLimit, description, active }) {
+function updatePackage(id, { name, price, priceUsd, requestQuota, tokenQuota, rpmLimit, description, active, category, durationDays }) {
   const token_quota = Math.max(0, Math.floor(Number(tokenQuota) || 0));
   const credit = Math.max(0, Math.floor(Number(requestQuota) || 0));
   const rpm_limit = Math.max(1, Math.floor(Number(rpmLimit) || 30));
-  const amount = Math.max(0, Math.floor(Number(price) || 0));
-  const result = stmts.updatePackage.run(String(name || "").trim(), amount, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, id);
+  const cat = category === "usd" ? "usd" : "token";
+  const price_usd = Math.max(0, Math.floor(Number(priceUsd) || 0));
+  const duration_days = Math.max(0, Math.floor(Number(durationDays) || 0));
+  // Gói USD: giá VNĐ tính từ giá USD theo tỷ giá; gói token: dùng giá VNĐ nhập tay.
+  const amount = cat === "usd" && price_usd > 0
+    ? price_usd * USD_RATE
+    : Math.max(0, Math.floor(Number(price) || 0));
+  const result = stmts.updatePackage.run(String(name || "").trim(), amount, price_usd, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, cat, duration_days, id);
   if (!result.changes) throw new Error(`Package not found: ${id}`);
   return getPackage(id);
 }
