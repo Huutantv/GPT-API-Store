@@ -272,8 +272,11 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
     if (Number(p.credit) > 0) return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">${Number(p.credit).toLocaleString()} credit</span>`;
     return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">Gói nạp</span>`;
   };
-  const packageCard = (p) => `
-    <div class="pkg-card border border-white/10 rounded-xl p-5 cursor-pointer hover:border-primary/50 transition bg-dark-700" data-id="${p.id}" onclick="selectPkg(${JSON.stringify(p).replace(/"/g,'&quot;')})">
+  const packageCard = (p) => {
+    const external = String(p.external_url || "").trim() !== "";
+    const click = external ? `buyExternal('${p.id}')` : `selectPkg(${JSON.stringify(p).replace(/"/g,'&quot;')})`;
+    return `
+    <div class="pkg-card border border-white/10 rounded-xl p-5 cursor-pointer hover:border-primary/50 transition bg-dark-700" data-id="${p.id}"${external ? ' data-external="1"' : ''} onclick="${click}">
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center text-primary font-bold text-sm">${p.name[0]}</div>
@@ -287,13 +290,16 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
       </div>
       <div class="flex gap-2 flex-wrap">
         ${packageBadges(p)}
+        ${external ? `<span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-300 text-xs rounded-full">Mua tại taphoaai</span>` : ""}
         <span class="px-2 py-0.5 bg-dark-600 text-gray-400 text-xs rounded-full">${p.rpm_limit} RPM</span>
       </div>
     </div>`;
+  };
   const packageGroup = (title, items) => items.length
     ? `<div><h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">${title}</h2><div class="space-y-3">${items.map(packageCard).join("")}</div></div>`
     : "";
   const pkgs = data.packages || [];
+  window.__pkgById = Object.fromEntries(pkgs.map(p => [p.id, p]));
   list.innerHTML = packageGroup("Gói Token", pkgs.filter(p => !isUsd(p)))
     + packageGroup("Gói USD", pkgs.filter(isUsd));
 
@@ -309,6 +315,13 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
     }, 300);
   }
 });
+
+function buyExternal(id) {
+  const p = (window.__pkgById || {})[id];
+  const url = p && String(p.external_url || "").trim();
+  if (!url) { alert("Gói sắp có, vui lòng quay lại sau."); return; }
+  window.location.href = url;
+}
 
 function selectPkg(pkg) {
   selectedPkg = pkg;

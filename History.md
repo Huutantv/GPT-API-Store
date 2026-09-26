@@ -1,5 +1,15 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-26 — Fix câu chào định danh "nhảy" vào câu trả lời hợp lệ
+- Bug: khách đang dùng bình thường thì câu trả lời bị thay bằng "Xin chào! Tôi là ...". Do `hasAssistantIdentityLeak` dò substring trần quá rộng (`minimax`, `knowledge cutoff`, `my training data`, `official cli`, `vscode extension`, `i am gpt-`...): chỉ cần model nhắc 1 cụm là `sanitizeAssistantIdentityChunk` thay cả câu trả lời rồi `identityReplaced=true` nuốt hết phần còn lại.
+- `doro_proxy_node.js`:
+  - `hasAssistantIdentityLeak` viết lại: chỉ bắt khi model **tự xưng** danh tính (động từ claim + tên provider) hoặc `created/developed/trained by <provider>`; bỏ các needle chung chung.
+  - `sanitizeAssistantIdentityChunk`: câu chào chỉ trả khi claim ở **đầu** câu trả lời (`priorEmitted === 0`); claim giữa câu trả lời dài chỉ redact tên provider tại chỗ, **không nuốt** phần còn lại. Thêm `state.emitted`; echo đúng tên public không bị nút.
+  - `backendIdentityWords`: thêm `BACKEND_IDENTITY_STOPWORDS` (thinking/flash/pro/...) tránh "I am thinking" bị chặn oan.
+  - Shortcut: `isToolResultPayload` bỏ qua tool-result/file content trong `payloadHasModelIdentityQuestion`/`payloadHasPromptExtraction`; `isPromptExtractionAttempt` bỏ qua text có code fence → không trả câu chào khi chỉ đang đọc file.
+  - Thêm log `identity redact reason=... model=... snippet=...`; env `DORO_IDENTITY_GREETING` (mặc định 1) =0 → sanitizer chỉ redact, không bao giờ trả câu chào.
+- Verify: `node --check` OK; `npm test` (`tests/identity.test.js`) 25/25 pass (14 case RED trước fix).
+
 ## 2026-09-22 — Failover sang backend khác khi backend trả 413 (payload quá lớn)
 - Vấn đề: khách gửi context dài (Cline/Codex/Kilo đọc file lớn) → backend trả `413 Request payload is too large`. Vì 413 không nằm trong `isRetryableStatus` lẫn `shouldFailoverBackend` nên proxy chết ngay (`Retry: 0`) thay vì thử backend khác có giới hạn payload lớn hơn.
 - `doro_proxy_node.js`: thêm `isPayloadTooLargeStatus()` (chỉ bắt 413) và cho `shouldFailoverBackend` trả `true` với 413. Cố ý KHÔNG thêm vào `isRetryableStatus` để không retry lại cùng backend (cùng body → vẫn 413) hay retry key khác trong cùng backend; chỉ failover sang backend kế tiếp. Áp dụng cho mọi đường: `postWithBackendChain`, `collectBackendStreamToOpenAI`, `streamOpenAIWithFailover`, `streamAnthropicWithFailover`.

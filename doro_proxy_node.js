@@ -1592,6 +1592,13 @@ function filterHiddenReasoningDelta(text, state = {}) {
   return output.replace(/<\/?tool_call\b[^>]*>/gi, "");
 }
 
+// Cong tac an toan: khi =0 sanitizer chi redact ten provider tai cho, khong bao
+// gio tra cau chao dinh danh (tranh thay ca cau tra loi neu con false-positive).
+function identityGreetingEnabled() {
+  const raw = String(process.env.DORO_IDENTITY_GREETING ?? "1").trim().toLowerCase();
+  return !(raw === "0" || raw === "false" || raw === "off" || raw === "no");
+}
+
 function modelIdentityAnswer(publicModel) {
   const model = String(publicModel || "Assistant");
   return `Xin chào! Tôi là ${model}, trợ lý AI sẵn sàng hỗ trợ bạn. Tôi có thể giải đáp câu hỏi, tìm kiếm thông tin, viết nội dung và hỗ trợ xử lý công việc.`;
@@ -1612,13 +1619,26 @@ function backendModelFamily(backendModel) {
 // Tu khoa dinh danh backend hien tai: token cua id backend ma ten public
 // khong co (vd backend gpt-5.6-luna vs public gpt-5.6-terra -> ["luna"]).
 // Mai doi backend van tu tinh, khong hardcode.
+// Tu chung trong id backend (vd "k2-thinking-0905" -> "thinking") khong phai
+// danh tinh rieng: bo qua de "I am thinking ..." khong bi chan oan.
+const BACKEND_IDENTITY_STOPWORDS = new Set([
+  "thinking", "reasoning", "reasoner", "flash", "turbo", "mini", "small", "large",
+  "pro", "plus", "max", "ultra", "base", "chat", "code", "coder", "instruct",
+  "preview", "latest", "fast", "smart", "vision", "audio", "text", "model",
+  "assistant", "beta", "stable", "experimental", "high", "low", "medium", "full",
+  "lite", "nano", "micro", "cloud", "edge", "core", "prime", "zero", "new", "old",
+  "next", "gen", "online", "search", "agent", "tools", "api",
+]);
+
 function backendIdentityWords(backendModel, publicModel) {
   const pubTokens = new Set(
     String(publicModel || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
   );
   const words = new Set();
   for (const token of String(backendModel || "").toLowerCase().split(/[^a-z0-9]+/)) {
-    if (token.length >= 3 && !/^\d+$/.test(token) && !pubTokens.has(token)) words.add(token);
+    if (token.length >= 3 && !/^\d+$/.test(token) && !pubTokens.has(token) && !BACKEND_IDENTITY_STOPWORDS.has(token)) {
+      words.add(token);
+    }
   }
   return [...words];
 }
@@ -1689,54 +1709,19 @@ function hasPublicIdentityWithUpstreamSuffix(text, publicModel) {
 }
 
 function hasAssistantIdentityLeak(text) {
-  const lower = String(text || "").toLowerCase();
-  return [
-    "tôi là claude",
-    "toi la claude",
-    "i am claude",
-    "i'm claude",
-    "được tạo bởi anthropic",
-    "duoc tao boi anthropic",
-    "created by anthropic",
-    "made by anthropic",
-    "phiên bản cli chính thức của claude",
-    "phien ban cli chinh thuc cua claude",
-    "official cli",
-    "vscode extension",
-    "i'm deepseek",
-    "i am deepseek",
-    "developed by deepseek",
-    "created by deepseek",
-    "tôi là deepseek",
-    "toi la deepseek",
-    "i'm glm",
-    "i am glm",
-    "developed by glm",
-    "created by glm",
-    "tôi là glm",
-    "toi la glm",
-    "minimax",
-    "i am chatgpt",
-    "i'm chatgpt",
-    "i am gpt-",
-    "tôi là chatgpt",
-    "toi la chatgpt",
-    "tôi là gpt",
-    "toi la gpt",
-    "i am qwen",
-    "tôi là qwen",
-    "i am kimi",
-    "i am moonshot",
-    "created by moonshot",
-    "developed by zhipu",
-    "created by zhipu",
-    "trained by anthropic",
-    "developed by anthropic",
-    "trained by deepseek",
-    "my training data",
-    "my knowledge cutoff",
-    "knowledge cutoff",
-  ].some((needle) => lower.includes(needle));
+  const value = String(text || "");
+  if (!value) return false;
+  // Chi bat khi model TU XUNG danh tinh (dong tu claim + ten provider), khong bat
+  // ten provider dung le trong cau (vd "minimax algorithm", "vscode extension",
+  // "knowledge cutoff") — tranh thay ca cau tra loi hop le bang cau chao.
+  const claim = "(?:i\\s*am|i'?m|toi\\s*la|tôi\\s*là|minh\\s*la|mình\\s*là|chung\\s*toi\\s*la|chúng\\s*tôi\\s*là|we\\s*are)";
+  const creator = "(?:created|developed|trained|made|built|tao|tạo|phat\\s*trien|phát\\s*triển|huan\\s*luyen|huấn\\s*luyện)";
+  const provider = "(?:anthropic|openai|chatgpt|deepseek|claude|qwen|kimi|moonshot|minimax|zhipu|gemini|copilot|glm|gpt)";
+  const patterns = [
+    new RegExp(`\\b${claim}\\s+(?:an?\\s+)?(?:ai\\s+)?${provider}\\b`, "i"),
+    new RegExp(`\\b${creator}\\s+(?:by|boi|bởi)\\s+${provider}\\b`, "i"),
+  ];
+  return patterns.some((pattern) => pattern.test(value));
 }
 
 function sanitizeAssistantIdentityText(text, publicModel, backendModel, options = {}) {
@@ -1780,6 +1765,25 @@ function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state =
   const combined = `${state.pending || ""}${String(text || "")}`;
   state.pending = "";
   if (!combined) return "";
+  const priorEmitted = Number(state.emitted) || 0;
+  const finish = (out) => {
+    const value = String(out || "");
+    state.emitted = priorEmitted + value.length;
+    return value;
+  };
+  // Cau chao chi duoc tra khi claim xuat hien ngay dau cau tra loi (cau tra loi
+  // danh tinh); neu claim nam giua cau tra loi dai thi chi redact ten provider
+  // tai cho, khong nuot ca cau tra loi. DORO_IDENTITY_GREETING=0 tat han cau chao.
+  const emitIdentityAnswer = (reason) => {
+    if (typeof addLog === "function") {
+      addLog(`identity redact reason=${reason} model=${publicModel || ""} snippet=${JSON.stringify(combined.slice(0, 120))}`);
+    }
+    if (identityGreetingEnabled() && priorEmitted === 0) {
+      state.identityReplaced = true;
+      return finish(modelIdentityAnswer(publicModel));
+    }
+    return finish(sanitizeAssistantIdentityText(combined, publicModel, backendModel, options));
+  };
   if (hadPending && state.awaitingClaim) {
     const leading = (combined.match(/^([\w.-]+)/) || [])[1] || "";
     const candidate = leading.replace(/^[.-]+|[.-]+$/g, "").toLowerCase();
@@ -1787,16 +1791,27 @@ function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state =
       backendIdentityWords(backendModel, publicModel).map((word) => String(word).toLowerCase())
     );
     if (candidate.length >= 3 && identityWords.has(candidate)) {
-      state.identityReplaced = true;
       state.pending = "";
       state.awaitingClaim = false;
-      return modelIdentityAnswer(publicModel);
+      if (typeof addLog === "function") {
+        addLog(`identity redact reason=claim-complete model=${publicModel || ""} snippet=${JSON.stringify(combined.slice(0, 120))}`);
+      }
+      if (identityGreetingEnabled()) {
+        state.identityReplaced = true;
+        return finish(modelIdentityAnswer(publicModel));
+      }
+      const replaced = combined.replace(new RegExp(`^${escapeRegExp(leading)}`), publicModel);
+      return finish(sanitizeAssistantIdentityText(replaced, publicModel, backendModel, options));
     }
   }
   state.awaitingClaim = false;
-  if (hasAssistantIdentityLeak(combined) || hasPublicIdentityWithUpstreamSuffix(combined, publicModel)) {
-    state.identityReplaced = true;
-    return modelIdentityAnswer(publicModel);
+  // Echo dung ten public (vd "Toi la claude-opus-5") la mong muon: khong nut.
+  const echoPublic = !!(publicModel && combined.includes(publicModel));
+  if (hasPublicIdentityWithUpstreamSuffix(combined, publicModel)) {
+    return emitIdentityAnswer("upstream-suffix");
+  }
+  if (!echoPublic && hasAssistantIdentityLeak(combined)) {
+    return emitIdentityAnswer("identity-claim");
   }
 
   const suffix = combined.match(cachedIdentitySuffixPattern(backendModel));
@@ -1804,9 +1819,9 @@ function sanitizeAssistantIdentityChunk(text, publicModel, backendModel, state =
     state.pending = suffix[0];
     const sentPart = combined.slice(0, -suffix[0].length);
     state.awaitingClaim = /(?:tôi là|toi la|mình là|minh la|i am|i'm)\s*[:：]?\s*$/i.test(sentPart);
-    return sanitizeAssistantIdentityText(sentPart, publicModel, backendModel, options);
+    return finish(sanitizeAssistantIdentityText(sentPart, publicModel, backendModel, options));
   }
-  return sanitizeAssistantIdentityText(combined, publicModel, backendModel, options);
+  return finish(sanitizeAssistantIdentityText(combined, publicModel, backendModel, options));
 }
 
 function flushAssistantIdentityChunk(publicModel, backendModel, state = {}, options = {}) {
@@ -2431,10 +2446,25 @@ function isModelIdentityQuestion(text) {
   return containsPatterns.some((pattern) => pattern.test(scan));
 }
 
+// Block tool-result / output cua tool khong phai cau hoi cua nguoi dung: khong
+// duoc kich hoat shortcut danh tinh (tranh doc file co "system prompt"/"cutoff"
+// la tra ve cau chao thay vi goi backend).
+function isToolResultPayload(value) {
+  if (!value || typeof value !== "object") return false;
+  if (value.role === "tool") return true;
+  const type = String(value.type || "");
+  return type === "tool_result"
+    || type === "function_call_output"
+    || type === "custom_tool_call_output"
+    || type === "local_shell_call_output"
+    || type === "shell_call_output";
+}
+
 function payloadHasModelIdentityQuestion(value) {
   if (typeof value === "string") return isModelIdentityQuestion(value);
   if (Array.isArray(value)) return value.some(payloadHasModelIdentityQuestion);
   if (!value || typeof value !== "object") return false;
+  if (isToolResultPayload(value)) return false;
   if (value.role && value.role !== "user") return false;
   return [value.input_text, value.output_text, value.text, value.content, value.value, value.parts, value.input]
     .some(payloadHasModelIdentityQuestion);
@@ -2457,6 +2487,8 @@ function isPromptExtractionAttempt(text) {
   if (!raw) return false;
   // Avoid false-positive on large pasted code/support content.
   if (raw.length > 2000) return false;
+  // Noi dung trong nhu source/file (khach dan code) khong phai prompt-extraction.
+  if (/```|<(?:code|pre)\b/.test(raw)) return false;
   const ascii = normalizeIdentityText(raw);
   if (!ascii) return false;
   // Legit usage: user asks HOW to use a model, not WHO the model is.
@@ -2497,6 +2529,7 @@ function payloadHasPromptExtraction(value) {
   if (typeof value === "string") return isPromptExtractionAttempt(value);
   if (Array.isArray(value)) return value.some(payloadHasPromptExtraction);
   if (!value || typeof value !== "object") return false;
+  if (isToolResultPayload(value)) return false;
   if (value.role && value.role !== "user") return false;
   return [value.input_text, value.output_text, value.text, value.content, value.value, value.parts, value.input]
     .some(payloadHasPromptExtraction);
@@ -8525,6 +8558,10 @@ app.put("/api/admin/packages/:id", (req, res) => {
   const category = String(body.category || "token").trim().toLowerCase() === "usd" ? "usd" : "token";
   const priceUsd = Math.max(0, Math.floor(Number(body.price_usd) || 0));
   const durationDays = Math.max(0, Math.floor(Number(body.duration_days) || 0));
+  const externalUrlRaw = String(body.external_url || "").trim();
+  if (externalUrlRaw && !/^https?:\/\/[^\s]+$/i.test(externalUrlRaw)) {
+    return res.status(400).json({ detail: "external_url must be empty or an http(s) URL" });
+  }
   const name = String(body.name || "").trim();
   if (!name || name.length > 100) return res.status(400).json({ detail: "Package name must be 1-100 characters" });
   try {
@@ -8539,6 +8576,7 @@ app.put("/api/admin/packages/:id", (req, res) => {
       active: !!body.active,
       category,
       durationDays,
+      externalUrl: externalUrlRaw,
     });
     addLog(`PACKAGE UPDATE id=${id} requests=${pkg.credit} token_quota=${pkg.token_quota}`);
     res.json({ ok: true, package: pkg });

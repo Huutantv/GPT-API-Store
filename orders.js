@@ -65,6 +65,8 @@ try { db.exec("ALTER TABLE orders ADD COLUMN token_quota INTEGER NOT NULL DEFAUL
 try { db.exec("ALTER TABLE packages ADD COLUMN category TEXT NOT NULL DEFAULT 'token'"); } catch (_) {}
 try { db.exec("ALTER TABLE packages ADD COLUMN price_usd INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
 try { db.exec("ALTER TABLE packages ADD COLUMN duration_days INTEGER NOT NULL DEFAULT 0"); } catch (_) {}
+// Link ngoài: gói có external_url sẽ dẫn khách sang shop khác (không tạo đơn trên shop này).
+try { db.exec("ALTER TABLE packages ADD COLUMN external_url TEXT NOT NULL DEFAULT ''"); } catch (_) {}
 
 // Tỷ giá quy đổi cho gói USD: mặc định 1.000 VNĐ = $1 (DORO_USD_RATE).
 const USD_RATE = Math.max(1, Math.floor(Number(process.env.DORO_USD_RATE) || 1000));
@@ -92,14 +94,15 @@ function usdSeedPackages() {
     active: 1,
     category: "usd",
     duration_days: 30,
+    external_url: "https://api.taphoaai.info.vn/buy",
   }));
 }
 
 const insertPkg = db.prepare(`
-  INSERT OR IGNORE INTO packages (id, name, price, price_usd, credit, token_quota, rpm_limit, description, active, category, duration_days)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT OR IGNORE INTO packages (id, name, price, price_usd, credit, token_quota, rpm_limit, description, active, category, duration_days, external_url)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
-for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.price_usd || 0, p.credit, p.token_quota, p.rpm_limit, p.description, p.active, p.category, p.duration_days || 0);
+for (const p of seedPkgs) insertPkg.run(p.id, p.name, p.price, p.price_usd || 0, p.credit, p.token_quota, p.rpm_limit, p.description, p.active, p.category, p.duration_days || 0, p.external_url || "");
 
 // RPM theo goi: chi NANG len tier, KHONG ha (giu custom RPM admin dat tay).
 // (Truoc day ep tat ca ve 30 moi lan boot, xoa ca custom cua admin.)
@@ -146,7 +149,7 @@ const stmts = {
   listByEmail:   db.prepare("SELECT * FROM orders WHERE customer_email = ? ORDER BY created_at DESC"),
   insertOrder:   db.prepare(`INSERT INTO orders (id, order_code, package_id, amount, credit, token_quota, rpm_limit, customer_name, customer_email, customer_phone)
                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
-  updatePackage: db.prepare("UPDATE packages SET name=?, price=?, price_usd=?, credit=?, token_quota=?, rpm_limit=?, description=?, active=?, category=?, duration_days=? WHERE id=?"),
+  updatePackage: db.prepare("UPDATE packages SET name=?, price=?, price_usd=?, credit=?, token_quota=?, rpm_limit=?, description=?, active=?, category=?, duration_days=?, external_url=? WHERE id=?"),
   setOrderExpiry: db.prepare("UPDATE orders SET expires_at=? WHERE id=?"),
   markPaid:      db.prepare("UPDATE orders SET status='paid', api_key=?, paid_at=datetime('now'), note=? WHERE id=?"),
   markCancelled: db.prepare("UPDATE orders SET status='cancelled' WHERE id=?"),
@@ -176,6 +179,7 @@ function listByEmail(email)      { return stmts.listByEmail.all(email); }
 function createOrder({ packageId, customerName, customerEmail, customerPhone }) {
   const pkg = getPackage(packageId);
   if (!pkg) throw new Error(`Package not found: ${packageId}`);
+  if (String(pkg.external_url || "").trim()) throw new Error("Gói này được mua tại taphoaai.info.vn");
   const id = genOrderId();
   const code = genOrderCode();
 
@@ -220,18 +224,19 @@ function cancelExpiredOrders() {
   return result.changes;
 }
 
-function updatePackage(id, { name, price, priceUsd, requestQuota, tokenQuota, rpmLimit, description, active, category, durationDays }) {
+function updatePackage(id, { name, price, priceUsd, requestQuota, tokenQuota, rpmLimit, description, active, category, durationDays, externalUrl }) {
   const token_quota = Math.max(0, Math.floor(Number(tokenQuota) || 0));
   const credit = Math.max(0, Math.floor(Number(requestQuota) || 0));
   const rpm_limit = Math.max(1, Math.floor(Number(rpmLimit) || 30));
   const cat = category === "usd" ? "usd" : "token";
   const price_usd = Math.max(0, Math.floor(Number(priceUsd) || 0));
   const duration_days = Math.max(0, Math.floor(Number(durationDays) || 0));
+  const ext = String(externalUrl || "").trim();
   // Gói USD: giá VNĐ tính từ giá USD theo tỷ giá; gói token: dùng giá VNĐ nhập tay.
   const amount = cat === "usd" && price_usd > 0
     ? price_usd * USD_RATE
     : Math.max(0, Math.floor(Number(price) || 0));
-  const result = stmts.updatePackage.run(String(name || "").trim(), amount, price_usd, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, cat, duration_days, id);
+  const result = stmts.updatePackage.run(String(name || "").trim(), amount, price_usd, credit, token_quota, rpm_limit, String(description || "").trim(), active ? 1 : 0, cat, duration_days, ext, id);
   if (!result.changes) throw new Error(`Package not found: ${id}`);
   return getPackage(id);
 }
