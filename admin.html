@@ -13,6 +13,12 @@ body{font-family:'Inter',sans-serif}
 .tab-active{background:rgba(99,102,241,0.15);color:#6366f1;font-weight:600}
 #mobileSidebarOverlay{display:none}
 #mobileSidebarOverlay.open{display:flex}
+summary{list-style:none}
+summary::-webkit-details-marker{display:none}
+.backend-card>summary{cursor:pointer;user-select:none}
+.backend-card>summary:hover{background:rgba(255,255,255,0.03)}
+.backend-card[open]{box-shadow:0 0 0 1px rgba(255,255,255,0.04)}
+.bk-nav.active{background:rgba(99,102,241,0.2);color:#a5b4fc}
 </style>
 </head>
 <body class="bg-dark-900 text-white min-h-screen antialiased">
@@ -1818,7 +1824,7 @@ function showTab(name) {
   if (name === "ops") loadOps();
   if (name === "orders") loadOrders();
   if (name === "packages") loadPackages();
-  if (name === "backend") { loadBackendConfig(); startModelUsageRefresh(); }
+  if (name === "backend") { setupBackendCards(); loadBackendConfig(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
   if (name === "keyshare") loadKeyshare();
@@ -2786,6 +2792,101 @@ function updateBackendRouterStatus(data) {
   });
   var activeLabel = data && data.active_backend_label ? data.active_backend_label : (selected.length ? selected.map(function(id) { return "Backend " + id; }).join(" + ") : "—");
   el.textContent = "Hiện tại: " + activeLabel;
+}
+
+function setAllBackendCards(open) {
+  document.querySelectorAll("#tab-backend details.backend-card").forEach(function(d){ d.open = !!open; });
+}
+
+// Chuyển các card cấu hình backend/vision thành card thu gọn + gom vào lưới.
+// Giữ nguyên toàn bộ DOM con (id input, key list...) nên load/save không đổi.
+function setupBackendCards() {
+  var tab = document.getElementById("tab-backend");
+  if (!tab || tab.dataset.cardsReady === "1") return;
+  tab.dataset.cardsReady = "1";
+
+  // Sticky quick-nav + nút mở/thu tất cả
+  var nav = document.createElement("div");
+  nav.className = "sticky top-0 z-20 -mx-1 px-1 py-2 bg-dark-900/95 backdrop-blur border-b border-white/10 flex flex-wrap items-center gap-2";
+  nav.innerHTML =
+    '<span class="text-xs text-gray-500 mr-1">Chuy\u1ec3n nhanh:</span>' +
+    '<button type="button" class="bk-nav" data-target="sec-select">Ch\u1ecdn backend</button>' +
+    '<button type="button" class="bk-nav" data-target="sec-context">Context</button>' +
+    '<button type="button" class="bk-nav" data-target="sec-vision">Vision</button>' +
+    '<button type="button" class="bk-nav" data-target="sec-backup">Backup</button>' +
+    '<span class="flex-1"></span>' +
+    '<button type="button" id="bkExpandAll" class="text-xs px-3 py-1 bg-dark-600 hover:bg-dark-500 rounded-lg text-gray-300 transition">M\u1edf r\u1ed9ng t\u1ea5t c\u1ea3</button>' +
+    '<button type="button" id="bkCollapseAll" class="text-xs px-3 py-1 bg-dark-600 hover:bg-dark-500 rounded-lg text-gray-300 transition">Thu g\u1ecdn t\u1ea5t c\u1ea3</button>';
+  var h2 = tab.querySelector("h2");
+  if (h2 && h2.nextElementSibling) h2.nextElementSibling.after(nav); else tab.prepend(nav);
+  nav.querySelectorAll(".bk-nav").forEach(function(b){
+    b.className = "bk-nav text-xs px-3 py-1 rounded-lg bg-dark-600 hover:bg-dark-500 text-gray-300 transition";
+    b.addEventListener("click", function(){
+      var t = document.getElementById(b.dataset.target);
+      if (t) t.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+  nav.querySelector("#bkExpandAll").addEventListener("click", function(){ setAllBackendCards(true); });
+  nav.querySelector("#bkCollapseAll").addEventListener("click", function(){ setAllBackendCards(false); });
+
+  var selectorCard = tab.querySelector("#chkBackend1") ? tab.querySelector("#chkBackend1").closest("div.bg-dark-700") : null;
+  if (selectorCard) { selectorCard.id = "sec-select"; selectorCard.classList.add("scroll-mt-16"); }
+
+  var cards = Array.prototype.slice.call(tab.querySelectorAll("div.bg-dark-700.rounded-xl"));
+  var contextCards = [], visionCards = [];
+  cards.forEach(function(card){
+    if (card.querySelector("#chkBackend1")) return; // card chọn backend đang hoạt động
+    var header = card.firstElementChild;
+    if (!header || !header.querySelector("h3")) return;
+    var statusEl = header.querySelector('[id$="Status"]');
+    var sid = statusEl ? statusEl.id : "";
+
+    var details = document.createElement("details");
+    details.className = card.className.replace(/\bp-5\b/g, "").replace(/\bspace-y-4\b/g, "").trim() + " backend-card group";
+    var summary = document.createElement("summary");
+    summary.className = "px-4 py-3 flex items-center justify-between gap-2";
+    var right = document.createElement("div");
+    right.className = "flex items-center gap-2";
+    if (statusEl) right.appendChild(statusEl);
+    var chev = document.createElement("span");
+    chev.className = "text-gray-500 transition-transform duration-200 group-open:rotate-180";
+    chev.textContent = "\u25BE";
+    right.appendChild(chev);
+    summary.appendChild(header);
+    header.appendChild(right);
+    details.appendChild(summary);
+
+    var body = document.createElement("div");
+    body.className = "px-5 pb-5 pt-1 space-y-3 border-t border-white/5";
+    while (card.firstChild) body.appendChild(card.firstChild);
+    details.appendChild(body);
+
+    card.replaceWith(details);
+    if (/^backend[0-9]+vStatus$/.test(sid)) visionCards.push(details);
+    else if (/^backend[0-9]+Status$/.test(sid)) contextCards.push(details);
+  });
+
+  function makeSection(id, title, cardsArr, gridId) {
+    if (!cardsArr.length) return;
+    var sec = document.createElement("div");
+    sec.id = id;
+    sec.className = "space-y-3 scroll-mt-16";
+    var head = document.createElement("h3");
+    head.className = "text-sm font-semibold text-gray-300";
+    head.textContent = title;
+    var grid = document.createElement("div");
+    grid.id = gridId;
+    grid.className = "grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4";
+    sec.appendChild(head);
+    sec.appendChild(grid);
+    cardsArr[0].before(sec);
+    cardsArr.forEach(function(c){ grid.appendChild(c); });
+  }
+  makeSection("sec-context", "Context backends (1\u20137)", contextCards, "ctxGrid");
+  makeSection("sec-vision", "Vision backends (5v/6v/7v)", visionCards, "visionGrid");
+
+  var backupGrid = tab.querySelector("details.backend-card") ? Array.prototype.slice.call(tab.querySelectorAll("details.backend-card")).filter(function(c){ return contextCards.indexOf(c) === -1 && visionCards.indexOf(c) === -1; })[0] : null;
+  if (backupGrid && backupGrid.parentElement) backupGrid.parentElement.id = "sec-backup";
 }
 
 async function loadBackendConfig() {
