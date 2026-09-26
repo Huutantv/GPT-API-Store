@@ -9,11 +9,6 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 body{font-family:'Inter',sans-serif}
-.pk-card{position:relative;display:flex;flex-direction:column}
-@media (hover:hover){.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}}
-.pk-price{font-size:2rem;line-height:1;font-weight:900;letter-spacing:-0.02em}
-@media (max-width:480px){.pk-price{font-size:1.6rem}}
-.pk-accent-usd{--pk-accent:#10b981}
 </style>
 </head>
 <body class="bg-dark-900 text-white min-h-screen antialiased">
@@ -90,31 +85,6 @@ body{font-family:'Inter',sans-serif}
     <div class="flex gap-3 shrink-0">
       <a href="/#pricing" class="flex-1 lg:flex-none text-center px-5 py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mua thêm gói</a>
       <a href="/#pricing" class="flex-1 lg:flex-none text-center px-5 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm transition">Xem bảng giá</a>
-    </div>
-  </section>
-
-  <section>
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="font-semibold">Gói nạp USD</h2>
-      <span class="text-xs text-gray-500">Thanh toán qua shop</span>
-    </div>
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
-        <p class="pk-price text-white">$10</p>
-        <p class="text-xs text-emerald-300 mt-2">&#8776; 10.000 VN&#272;</p>
-      </a>
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_50" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
-        <p class="pk-price text-white">$50</p>
-        <p class="text-xs text-emerald-300 mt-2">&#8776; 50.000 VN&#272;</p>
-      </a>
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_100" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
-        <p class="pk-price text-white">$100</p>
-        <p class="text-xs text-emerald-300 mt-2">&#8776; 100.000 VN&#272;</p>
-      </a>
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_300" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
-        <p class="pk-price text-white">$300</p>
-        <p class="text-xs text-emerald-300 mt-2">&#8776; 300.000 VN&#272;</p>
-      </a>
     </div>
   </section>
 
@@ -349,20 +319,6 @@ window.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// Gói USD: dẫn khách sang shop ngoài (external_url) hoặc báo sắp có.
-fetch(BASE + "/api/orders/packages").then(function(r) { return r.ok ? r.json() : null; }).then(function(data) {
-  (data && data.packages || []).forEach(function(pkg) {
-    document.querySelectorAll('[data-package-link="' + pkg.id + '"]').forEach(function(el) {
-      var url = String(pkg.external_url || "").trim();
-      if (url) {
-        el.setAttribute("href", url);
-      } else {
-        el.setAttribute("href", "javascript:void(0)");
-        el.onclick = function(e) { e.preventDefault(); alert("Gói sắp có, vui lòng quay lại sau."); };
-      }
-    });
-  });
-}).catch(function() {});
 </script>
 </body>
 </html>
