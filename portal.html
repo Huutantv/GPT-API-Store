@@ -160,29 +160,6 @@ Model    : gpt-5.5</code></pre>
     </div>
   </section>
 
-  <!-- History -->
-  <section class="bg-dark-700 border border-white/10 rounded-3xl p-4 md:p-6">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-semibold">L&#7883;ch s&#7917; s&#7917; d&#7909;ng</h2>
-      <button onclick="loadHistory()" class="text-xs text-gray-400 hover:text-white transition px-3 py-1.5 rounded-lg hover:bg-white/5">L&#224;m m&#7899;i</button>
-    </div>
-    <div class="overflow-x-auto -mx-4 md:mx-0 md:rounded-2xl md:border md:border-white/5">
-      <table class="w-full text-xs md:text-sm min-w-[560px]">
-        <thead class="bg-dark-900/50">
-          <tr class="text-xs text-gray-500 border-b border-white/5">
-            <th class="text-left p-3">Th&#7901;i gian</th>
-            <th class="text-left p-3">Lo&#7841;i</th>
-            <th class="text-left p-3">Model</th>
-            <th class="text-right p-3">Token</th>
-          </tr>
-        </thead>
-        <tbody id="historyTable">
-          <tr><td colspan="4" class="text-center text-gray-500 py-8">&#272;ang t&#7843;i...</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
 </div>
 
 <script>
@@ -206,7 +183,6 @@ function login() {
       document.getElementById("loginOverlay").classList.add("hidden");
       document.getElementById("mainContent").classList.remove("hidden");
       renderBalance(data);
-      loadHistory();
     })
     .catch(() => {
       const err = document.getElementById("loginErr");
@@ -276,6 +252,7 @@ function renderBalance(data) {
 
 function loadHistory() {
   if (!currentKey) return;
+  if (!document.getElementById("historyTable")) return;
   fetch(`${BASE}/api/credit/my-history?limit=30`, { headers: { Authorization: `Bearer ${currentKey}` } })
     .then(r => r.json())
     .then(data => {
