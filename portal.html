@@ -10,8 +10,9 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 body{font-family:'Inter',sans-serif}
 .pk-card{position:relative;display:flex;flex-direction:column}
-.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}
+@media (hover:hover){.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}}
 .pk-price{font-size:2rem;line-height:1;font-weight:900;letter-spacing:-0.02em}
+@media (max-width:480px){.pk-price{font-size:1.6rem}}
 .pk-accent-usd{--pk-accent:#10b981}
 </style>
 </head>

@@ -10,8 +10,9 @@
 <link rel="stylesheet" href="/output.css">
 <style>
   /* Pricing cards — light upgrade (inline, không cần build output.css) */
-  .pk-card { position: relative; display: flex; flex-direction: column; }
-  .pk-card:hover { transform: translateY(-6px); box-shadow: 0 22px 48px rgba(0,0,0,.45), 0 0 0 1px var(--pk-accent, #6366f1); }
+  .pk-card { position: relative; display: flex; flex-direction: column; padding: 1.5rem; }
+  @media (min-width: 640px) { .pk-card { padding: 2rem; } }
+  @media (hover: hover) { .pk-card:hover { transform: translateY(-6px); box-shadow: 0 22px 48px rgba(0,0,0,.45), 0 0 0 1px var(--pk-accent, #6366f1); } }
   .pk-cta { margin-top: auto; }
   .pk-price { font-size: 2.75rem; line-height: 1; font-weight: 900; letter-spacing: -0.02em; }
   .pk-feat { position: relative; padding-left: 1.5rem; }
@@ -38,6 +39,15 @@
   .pk-list-tight { margin-bottom: 1.5rem; }
   .pk-divider { margin: 4rem auto 0; max-width: 80rem; border-top: 1px solid rgba(255,255,255,.05); }
   .pk-head { margin-top: 2.5rem; margin-bottom: 2rem; }
+  /* Mobile tuning */
+  @media (max-width: 480px) {
+    .pk-price { font-size: 2.25rem; }
+    .badge-pulse { padding-left: 1rem; padding-right: 1rem; font-size: .65rem; }
+  }
+  @media (max-width: 640px) {
+    .pk-divider { margin-top: 2.5rem; }
+    .pk-head { margin-top: 1.75rem; }
+  }
 </style>
 </head>
 <body class="bg-dark-900 text-white antialiased">

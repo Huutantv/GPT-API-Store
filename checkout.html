@@ -11,7 +11,7 @@
 body{font-family:'Inter',sans-serif}
 .step-active{border-color:#6366f1;background:rgba(99,102,241,0.08)}
 .pk-card{position:relative;display:flex;flex-direction:column}
-.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}
+@media (hover:hover){.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}}
 .pk-accent-starter{--pk-accent:#94a3b8}
 .pk-accent-pro{--pk-accent:#6366f1}
 .pk-accent-prov2{--pk-accent:#3b82f6}
@@ -285,15 +285,15 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
     const click = external ? `buyExternal('${p.id}')` : `selectPkg(${JSON.stringify(p).replace(/"/g,'&quot;')})`;
     return `
     <div class="pkg-card pk-card ${accentFor(p)} border border-white/10 rounded-xl p-5 cursor-pointer hover:border-primary/50 transition bg-dark-700" data-id="${p.id}"${external ? ' data-external="1"' : ''} onclick="${click}">
-      <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-3">
-          <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center text-primary font-bold text-sm">${p.name[0]}</div>
-          <div><p class="font-bold">${p.name}</p><p class="text-xs text-gray-500">${packageDescription(p)}</p></div>
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center text-primary font-bold text-sm shrink-0">${p.name[0]}</div>
+          <div class="min-w-0"><p class="font-bold truncate">${p.name}</p><p class="text-xs text-gray-500 truncate">${packageDescription(p)}</p></div>
         </div>
-        <div class="text-right">
+        <div class="text-right shrink-0">
           ${isUsd(p)
-            ? `<p class="text-xl font-black">${Number(p.price).toLocaleString("vi-VN")} VNĐ = ${Number(p.price_usd)} $</p>`
-            : `<p class="text-2xl font-black">${Number(p.price/1000).toFixed(0)}K</p><p class="text-xs text-gray-500">VNĐ</p>`}
+            ? `<p class="text-base sm:text-xl font-black whitespace-nowrap">${Number(p.price).toLocaleString("vi-VN")} VNĐ = ${Number(p.price_usd)} $</p>`
+            : `<p class="text-xl sm:text-2xl font-black">${Number(p.price/1000).toFixed(0)}K</p><p class="text-xs text-gray-500">VNĐ</p>`}
         </div>
       </div>
       <div class="flex gap-2 flex-wrap">
