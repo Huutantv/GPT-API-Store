@@ -2876,6 +2876,15 @@ function firstNonEmptyString(...values) {
   return "";
 }
 
+// Windows paths often arrive with unescaped backslashes (C:\Users, C:\Temp).
+// JSON rejects \U \A \P \N ... and turns \t \n \r \b \f into control chars, so
+// parsing fails or paths get corrupted. Escape only backslashes that do NOT
+// start a valid JSON escape, then retry parsing. Valid JSON is untouched
+// because the original candidates are tried first.
+function repairInvalidJsonBackslashes(text) {
+  return String(text || "").replace(/\\(?!["\\/bfnrt]|u[0-9a-fA-F]{4})/g, "\\\\");
+}
+
 function normalizeToolArgumentsJson(raw) {
   if (raw && typeof raw === "object") return JSON.stringify(raw);
   const text = String(raw || "").trim();
@@ -2896,6 +2905,13 @@ function normalizeToolArgumentsJson(raw) {
       .replace(/([{,]\s*)([A-Za-z_$][\w$-]*)(\s*:)/g, '$1"$2"$3')
       .replace(/'/g, '"');
     if (relaxed !== candidate) candidates.push(relaxed);
+  }
+
+  // Last resort: repair invalid backslash escapes (Windows paths) before
+  // deciding the args are truly truncated/unparseable.
+  for (const candidate of [...candidates]) {
+    const repaired = repairInvalidJsonBackslashes(candidate);
+    if (repaired !== candidate) candidates.push(repaired);
   }
 
   for (const candidate of candidates) {
@@ -4869,6 +4885,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       trackBackendKeyResult(ordered[i], err);
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
+      addLog(`stream anthropic abort code=${err.code || "-"} status=${err.status || 0} wrote=${wroteResponse} preview=${logPreview(err.text || err.message || String(err))}`);
       if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
         const isTruncatedStream = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
@@ -5128,6 +5145,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       trackBackendKeyResult(ordered[i], err);
       if (stopHeartbeat) stopHeartbeat();
       lastError = err;
+      addLog(`stream openai abort code=${err.code || "-"} status=${err.status || 0} wrote=${wroteResponse} retryDepth=${retryDepth} preview=${logPreview(err.text || err.message || String(err))}`);
       if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
         const failureSignal = backendFailureSignal(err.status, err.text || err.message || "", err.code);

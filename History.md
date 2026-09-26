@@ -1,5 +1,13 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Repair backslash tool-args + log lý do abort stream
+- Vấn đề: khách Kilo trên Windows compile Java, file args (`%TEMP%\kilo\src_args.txt`) mất giữa các bước; model backend xuất tool-call args chứa backslash Windows không escape (`C:\Users`, `C:\Temp`) → `JSON.parse` fail (hoặc `\t`/`\n` biến thành control char) → client không thực thi được bước ghi file. Log chỉ thấy `RES ... status=200` dù stream bị cắt giữa chừng (mojibake/truncated/empty) nên không rõ lý do.
+- `doro_proxy_node.js`:
+  - Thêm `repairInvalidJsonBackslashes()` — escape backslash không bắt đầu một escape JSON hợp lệ (`\U \A \P \N`, `\u` thiếu hex), chỉ chạy khi candidate gốc fail parse. `normalizeToolArgumentsJson` thêm candidate đã repair sau candidate relaxed; JSON hợp lệ không bị đụng, chuỗi bị cắt cụt thật vẫn passthrough + log `tool args passthrough`.
+  - Log abort ở catch entry của `streamOpenAIWithFailover` và `streamAnthropicWithFailover`: `stream <openai|anthropic> abort code=... status=... wrote=... preview=...` (ghi mọi lần, kể cả lần sẽ retry).
+  - Giới hạn đã biết: va chạm chữ thường `C:\temp`/`C:\new`/`C:\build` (escape hợp lệ) chưa xử lý — follow-up nếu cần.
+- Verify: `node --check` OK; `tests/tool-args.test.js` mới 16/16 pass; full suite 124/124 pass (identity 29, credit 8, stream-failover 28, backend-health 16, backend-vision 13, auto-backup 14, tool-args 16).
+
 ## 2026-09-26 — Hết credit nhưng token vẫn còn (bất biến quota)
 - Bug: key-check hiện "Request còn lại: 0" nhưng "Số token còn lại" vẫn còn (vd 632.460). Bất biến "hết credit ⇒ token về 0" chỉ được ép trong `deductCredit()` (đường chết), còn đường sống là `reserveRequest`/`settleRequest` chỉ dựa vào công thức chia ngẫu nhiên nên lệch khi có reservation `reserved` bị bỏ quên (crash/restart — không có dọn) hoặc khi `adjustCredit` kéo credit về 0.
 - `credit.js`:
