@@ -40,7 +40,7 @@ body{font-family:'Inter',sans-serif}
         <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
       </div>
       <h1 class="text-2xl font-bold mb-2">Qu&#7843;n l&#253; t&#224;i kho&#7843;n</h1>
-      <p class="text-gray-400 text-sm">Nh&#7853;p API key c&#7911;a b&#7841;n &#273;&#7875; xem s&#7889; d&#432; v&#224; l&#7883;ch s&#7917;</p>
+      <p class="text-gray-400 text-sm">Nh&#7853;p API key c&#7911;a b&#7841;n &#273;&#7875; xem s&#7889; d&#432; v&#224; th&#244;ng tin g&#243;i</p>
     </div>
     <div class="space-y-4">
       <input id="apiKeyInput" type="password" placeholder="sk-..." class="w-full px-4 py-3 bg-dark-900 border border-white/10 rounded-xl text-sm focus:outline-none focus:border-primary transition" style="font-size:16px" onkeydown="if(event.key==='Enter')login()">
@@ -57,41 +57,47 @@ body{font-family:'Inter',sans-serif}
 <div id="mainContent" class="hidden max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-5">
 
   <!-- Account overview -->
-  <section class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-    <div class="lg:col-span-5 bg-gradient-to-br from-cyan-500/15 via-dark-700 to-blue-900/20 border border-cyan-400/20 rounded-3xl p-5 md:p-6 shadow-2xl shadow-cyan-500/5">
-        <p class="text-sm text-gray-400 mb-2">Token còn lại</p>
+  <section class="bg-gradient-to-br from-cyan-500/15 via-dark-700 to-blue-900/20 border border-cyan-400/20 rounded-3xl p-5 md:p-7 shadow-2xl shadow-cyan-500/5">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 lg:gap-6 lg:items-center">
+      <div class="lg:col-span-5">
+        <p class="text-xs uppercase tracking-wider text-cyan-300/80 mb-2">Token còn lại</p>
         <div class="text-4xl md:text-5xl font-black tracking-tight text-white break-words" id="tokenBalance">—</div>
         <p class="text-xs text-gray-500 mt-2">Quota token của gói</p>
-    </div>
-
-    <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
-        <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">RPM Limit</p>
-        <div class="text-3xl font-bold" id="rpmLimit">—</div>
-        <p class="text-xs text-gray-500 mt-2">requests/ph&#250;t</p>
       </div>
-      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
-        <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">Tr&#7841;ng th&#225;i</p>
-        <div class="text-2xl md:text-3xl font-bold" id="keyStatus">—</div>
-      </div>
-      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5">
-        <p class="text-xs text-gray-500 mb-3 uppercase tracking-wider">H&#7871;t h&#7841;n</p>
-        <div class="text-sm font-semibold leading-relaxed" id="expiresAt">—</div>
+      <div class="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div class="rounded-2xl bg-dark-900/50 border border-white/10 p-4">
+          <p class="text-[11px] uppercase tracking-wider text-gray-500 mb-1">RPM Limit</p>
+          <div class="text-2xl font-bold" id="rpmLimit">—</div>
+          <p class="text-[11px] text-gray-500 mt-1">requests/phút</p>
+        </div>
+        <div class="rounded-2xl bg-dark-900/50 border border-white/10 p-4">
+          <p class="text-[11px] uppercase tracking-wider text-gray-500 mb-1">Trạng thái</p>
+          <div class="text-xl md:text-2xl font-bold mt-0.5" id="keyStatus">—</div>
+        </div>
+        <div class="rounded-2xl bg-dark-900/50 border border-white/10 p-4">
+          <p class="text-[11px] uppercase tracking-wider text-gray-500 mb-1">Hết hạn</p>
+          <div class="text-sm font-semibold leading-relaxed mt-0.5" id="expiresAt">—</div>
+        </div>
       </div>
     </div>
   </section>
 
-  <div class="rounded-2xl bg-primary/10 border border-primary/20 px-4 py-3 text-sm text-primary-100">
-    API key hoạt động theo quota gói, thời hạn sử dụng và giới hạn RPM.
-  </div>
-
-  <section class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-    <a href="/#pricing" class="text-center py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mua thêm gói</a>
-    <a href="/#pricing" class="text-center py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm transition">Xem bảng giá</a>
+  <section class="flex flex-col lg:flex-row lg:items-center gap-3">
+    <div class="flex-1 flex items-center gap-3 rounded-2xl bg-primary/10 border border-primary/20 px-4 py-3 text-sm text-indigo-200">
+      <svg class="w-4 h-4 text-primary shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <span>API key hoạt động theo quota gói, thời hạn sử dụng và giới hạn RPM.</span>
+    </div>
+    <div class="flex gap-3 shrink-0">
+      <a href="/#pricing" class="flex-1 lg:flex-none text-center px-5 py-3 bg-primary hover:bg-primary/90 rounded-xl text-sm font-semibold transition">Mua thêm gói</a>
+      <a href="/#pricing" class="flex-1 lg:flex-none text-center px-5 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm transition">Xem bảng giá</a>
+    </div>
   </section>
 
   <section>
-    <h2 class="font-semibold mb-3">Gói nạp USD</h2>
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold">Gói nạp USD</h2>
+      <span class="text-xs text-gray-500">Thanh toán qua shop</span>
+    </div>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
         <p class="pk-price text-white">$10</p>
@@ -113,48 +119,70 @@ body{font-family:'Inter',sans-serif}
   </section>
 
   <section class="grid grid-cols-1 xl:grid-cols-12 gap-5">
-    <div class="xl:col-span-5 space-y-5">
-      <!-- API Key info -->
-      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6">
-        <h2 class="font-semibold mb-5">Th&#244;ng tin API Key</h2>
+    <div class="xl:col-span-5">
+      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 h-full">
+        <h2 class="font-semibold mb-5">Thông tin API Key</h2>
         <div class="space-y-4">
-          <div class="rounded-2xl bg-dark-900/60 border border-white/5 p-4">
+          <div>
             <span class="block text-xs text-gray-500 mb-2 uppercase tracking-wider">API Key</span>
-            <div class="flex items-center gap-2 min-w-0">
-              <code class="flex-1 text-xs sm:text-sm font-mono bg-black/40 px-3 py-2 rounded-xl truncate" id="keyDisplay">—</code>
-              <button onclick="copyKey()" class="text-xs text-gray-400 hover:text-white transition px-3 py-2 bg-white/5 border border-white/10 rounded-xl shrink-0">Copy</button>
+            <div class="flex items-center gap-2 rounded-xl bg-dark-900/60 border border-white/5 p-2 min-w-0">
+              <code class="flex-1 text-xs sm:text-sm font-mono px-2 truncate" id="keyDisplay">—</code>
+              <button onclick="copyKey(this)" class="text-xs text-gray-300 hover:text-white transition px-3 py-2 bg-white/5 border border-white/10 rounded-lg shrink-0">Copy</button>
             </div>
           </div>
-          <div class="rounded-2xl bg-dark-900/60 border border-white/5 p-4">
+          <div>
             <span class="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Base URL</span>
-            <code class="block text-xs sm:text-sm font-mono bg-black/40 px-3 py-2 rounded-xl text-green-400 break-all" id="baseUrlDisplay">—</code>
+            <div class="flex items-center gap-2 rounded-xl bg-dark-900/60 border border-white/5 p-2">
+              <code class="flex-1 text-xs sm:text-sm font-mono px-2 text-green-400 break-all" id="baseUrlDisplay">—</code>
+              <button onclick="copyValue('baseUrlDisplay', this)" class="text-xs text-gray-300 hover:text-white transition px-3 py-2 bg-white/5 border border-white/10 rounded-lg shrink-0">Copy</button>
+            </div>
           </div>
-          <div class="rounded-2xl bg-dark-900/60 border border-white/5 p-4">
+          <div>
             <span class="block text-xs text-gray-500 mb-2 uppercase tracking-wider">Models</span>
-            <span class="text-sm text-gray-300 leading-relaxed">gpt-5.5, gpt-5.5-turbo, gpt-5.4, gpt-4o, deepseek-v4-pro, glm-5.2, claude-opus-4-8, claude-opus-4-7, claude-opus-4-6, claude-sonnet-5, qwen-3.6</span>
+            <div class="flex flex-wrap gap-2">
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">gpt-5.5</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">gpt-5.5-turbo</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">gpt-5.4</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">gpt-4o</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">deepseek-v4-pro</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">glm-5.2</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">claude-opus-4-8</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">claude-opus-4-7</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">claude-opus-4-6</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">claude-sonnet-5</span>
+              <span class="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs text-gray-300">qwen-3.6</span>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <div class="xl:col-span-7 bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6">
-      <h2 class="font-semibold mb-5">C&#224;i &#273;&#7863;t nhanh</h2>
-      <div class="space-y-4">
-        <div>
-          <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Python</p>
-          <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="pythonCode">from openai import OpenAI
+    <div class="xl:col-span-7">
+      <div class="bg-dark-700 border border-white/10 rounded-3xl p-5 md:p-6 h-full">
+        <h2 class="font-semibold mb-5">Cài đặt nhanh</h2>
+        <div class="space-y-4">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <p class="text-xs text-gray-500 uppercase tracking-wider">Python</p>
+              <button onclick="copyValue('pythonCode', this)" class="text-xs text-gray-400 hover:text-white transition px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg">Copy</button>
+            </div>
+            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="pythonCode">from openai import OpenAI
 client = OpenAI(api_key="sk-...", base_url="https://zplay.io.vn/v1")
 response = client.chat.completions.create(model="gpt-5.5", messages=[{"role":"user","content":"Hello"}])</code></pre>
-        </div>
-        <div>
-          <p class="text-xs text-gray-500 mb-2 uppercase tracking-wider">Cline / Kilo Code</p>
-          <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code>Provider : OpenAI Compatible
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <p class="text-xs text-gray-500 uppercase tracking-wider">Cline / Kilo Code</p>
+              <button onclick="copyValue('clineBlock', this)" class="text-xs text-gray-400 hover:text-white transition px-2.5 py-1 bg-white/5 border border-white/10 rounded-lg">Copy</button>
+            </div>
+            <pre class="bg-dark-900 rounded-2xl p-4 text-xs text-gray-300 overflow-x-auto"><code id="clineBlock">Provider : OpenAI Compatible
 Base URL : https://zplay.io.vn/v1
 API Key  : <span id="clineKey">sk-...</span>
 Model    : gpt-5.5</code></pre>
-          <a href="/#docs" class="inline-flex items-center gap-2 mt-4 px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-xs text-primary font-semibold hover:bg-primary/20 transition">
-            Xem h&#432;&#7899;ng d&#7851;n c&#7845;u h&#236;nh Cline / Kilo Code chi ti&#7871;t
-          </a>
+            <a href="/#docs" class="inline-flex items-center gap-2 mt-4 px-4 py-2.5 bg-primary/10 border border-primary/20 rounded-xl text-xs text-primary font-semibold hover:bg-primary/20 transition">
+              Xem hướng dẫn cấu hình Cline / Kilo Code chi tiết
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -285,13 +313,22 @@ function loadHistory() {
     .then(() => {});
 }
 
-function copyKey() {
+function flashCopied(btn) {
+  if (!btn) return;
+  const original = btn.dataset.label || btn.textContent;
+  btn.textContent = "Đã copy";
+  setTimeout(() => { btn.textContent = original; }, 1500);
+}
+
+function copyKey(btn) {
   if (!currentKey) return;
-  navigator.clipboard.writeText(currentKey).then(() => {
-    const btn = event.target;
-    btn.textContent = "&#272;&#227; copy";
-    setTimeout(() => btn.textContent = "Copy", 1500);
-  });
+  navigator.clipboard.writeText(currentKey).then(() => flashCopied(btn)).catch(() => {});
+}
+
+function copyValue(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent.trim()).then(() => flashCopied(btn)).catch(() => {});
 }
 
 // Auto login theo key trên URL, nếu không có thì dùng key trong session
