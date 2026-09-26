@@ -10,6 +10,13 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 body{font-family:'Inter',sans-serif}
 .step-active{border-color:#6366f1;background:rgba(99,102,241,0.08)}
+.pk-card{position:relative;display:flex;flex-direction:column}
+.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}
+.pk-accent-starter{--pk-accent:#94a3b8}
+.pk-accent-pro{--pk-accent:#6366f1}
+.pk-accent-prov2{--pk-accent:#3b82f6}
+.pk-accent-ultra{--pk-accent:#f59e0b}
+.pk-accent-usd{--pk-accent:#10b981}
 </style>
 </head>
 <body class="bg-dark-900 text-white min-h-screen antialiased">
@@ -272,11 +279,12 @@ fetch(`${BASE}/api/orders/packages`).then(r => r.json()).then(data => {
     if (Number(p.credit) > 0) return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">${Number(p.credit).toLocaleString()} credit</span>`;
     return `<span class=\"px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full\">Gói nạp</span>`;
   };
+  const accentFor = (p) => isUsd(p) ? "pk-accent-usd" : ({ starter: "pk-accent-starter", pro: "pk-accent-pro", pro_v2: "pk-accent-prov2", ultra: "pk-accent-ultra" }[p.id] || "pk-accent-pro");
   const packageCard = (p) => {
     const external = String(p.external_url || "").trim() !== "";
     const click = external ? `buyExternal('${p.id}')` : `selectPkg(${JSON.stringify(p).replace(/"/g,'&quot;')})`;
     return `
-    <div class="pkg-card border border-white/10 rounded-xl p-5 cursor-pointer hover:border-primary/50 transition bg-dark-700" data-id="${p.id}"${external ? ' data-external="1"' : ''} onclick="${click}">
+    <div class="pkg-card pk-card ${accentFor(p)} border border-white/10 rounded-xl p-5 cursor-pointer hover:border-primary/50 transition bg-dark-700" data-id="${p.id}"${external ? ' data-external="1"' : ''} onclick="${click}">
       <div class="flex items-center justify-between mb-3">
         <div class="flex items-center gap-3">
           <div class="w-8 h-8 bg-primary/20 rounded-lg flex items-center justify-center text-primary font-bold text-sm">${p.name[0]}</div>

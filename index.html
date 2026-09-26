@@ -8,6 +8,37 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/output.css">
+<style>
+  /* Pricing cards — light upgrade (inline, không cần build output.css) */
+  .pk-card { position: relative; display: flex; flex-direction: column; }
+  .pk-card:hover { transform: translateY(-6px); box-shadow: 0 22px 48px rgba(0,0,0,.45), 0 0 0 1px var(--pk-accent, #6366f1); }
+  .pk-cta { margin-top: auto; }
+  .pk-price { font-size: 2.75rem; line-height: 1; font-weight: 900; letter-spacing: -0.02em; }
+  .pk-feat { position: relative; padding-left: 1.5rem; }
+  .pk-feat::before {
+    content: ""; position: absolute; left: 0; top: .18rem; width: 1rem; height: 1rem;
+    background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2334d399'%3E%3Cpath fill-rule='evenodd' d='M16.7 5.3a1 1 0 010 1.4l-7.5 7.5a1 1 0 01-1.4 0L3.3 9.7a1 1 0 011.4-1.4l3.3 3.29 6.8-6.79a1 1 0 011.4 0z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  }
+  .pk-feat-time::before {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23fbbf24'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4c0 .27.1.52.29.71l2.5 2.5a1 1 0 001.42-1.42L11 9.59V6z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  }
+  .pk-ext { display: flex; align-items: center; gap: .375rem; }
+  .pk-ext::before {
+    content: ""; flex: 0 0 .85rem; width: .85rem; height: .85rem;
+    background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2310b981'%3E%3Cpath d='M11 3a1 1 0 100 2h2.586l-4.293 4.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V3h-6z'/%3E%3Cpath d='M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 100-2H5z'/%3E%3C/svg%3E");
+  }
+  .pk-accent-starter { --pk-accent: #94a3b8; }
+  .pk-accent-pro { --pk-accent: #6366f1; }
+  .pk-accent-prov2 { --pk-accent: #3b82f6; }
+  .pk-accent-ultra { --pk-accent: #f59e0b; }
+  .pk-accent-usd { --pk-accent: #10b981; }
+  /* helper layout (không phụ thuộc output.css) */
+  .pk-price-row { display: flex; align-items: flex-end; gap: .25rem; margin-bottom: .25rem; }
+  .pk-list { margin-bottom: 2rem; }
+  .pk-list-tight { margin-bottom: 1.5rem; }
+  .pk-divider { margin: 4rem auto 0; max-width: 80rem; border-top: 1px solid rgba(255,255,255,.05); }
+  .pk-head { margin-top: 2.5rem; margin-bottom: 2rem; }
+</style>
 </head>
 <body class="bg-dark-900 text-white antialiased">
 
@@ -153,149 +184,154 @@
 </div>
 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 max-w-7xl mx-auto pt-6 md:pt-8">
 <!-- Starter -->
-<div class="reveal pricing-card bg-dark-700 border border-white/10 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal pricing-card pk-card pk-accent-starter bg-dark-700 border border-white/10 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">Starter</h3>
 <span class="px-3 py-1 bg-primary/15 border border-primary/30 rounded-full text-xs font-bold text-primary whitespace-nowrap">D&#249;ng th&#7917;</span>
 </div>
 <p class="text-sm text-gray-400 mb-4">C&#225; nh&#226;n, b&#7855;t &#273;&#7847;u nhanh</p>
-<div class="mb-2"><span class="text-4xl font-black text-white" data-package-price="starter">20K</span><span class="text-sm text-gray-400 ml-1">VN&#272;</span></div>
+<div class="pk-price-row"><span class="pk-price text-white" data-package-price="starter">20K</span><span class="text-sm text-gray-400 mb-1">VN&#272;</span></div>
 <p class="text-xs text-red-400 font-semibold mb-5">&#x1F525; Sale c&#243; th&#7901;i h&#7841;n</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; 30M token</li>
-<li>&#x2705; 30 RPM</li>
-<li>&#x2705; GPT-5.6-Terra, Luna, SOL &amp; h&#417;n 15 models</li>
-<li>&#x2705; Streaming, Vision, Tools</li>
-<li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>1 ng&#224;y</strong></li>
+<ul class="text-sm text-gray-300 space-y-2 pk-list">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">30M token</li>
+<li class="pk-feat">30 RPM</li>
+<li class="pk-feat">GPT-5.6-Terra, Luna, SOL &amp; h&#417;n 15 models</li>
+<li class="pk-feat">Streaming, Vision, Tools</li>
+<li class="pk-feat pk-feat-time">Th&#7901;i h&#7841;n: <strong>1 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=starter" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<a href="/checkout?pkg=starter" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 <!-- Pro (n?i b?t) -->
-<div class="reveal reveal-delay-1 pricing-card pricing-card-featured bg-gradient-to-b from-primary/20 via-dark-700 to-dark-700 border-2 border-primary rounded-2xl p-8 flex flex-col relative shadow-2xl shadow-primary/25">
+<div class="reveal reveal-delay-1 pricing-card pricing-card-featured pk-card pk-accent-pro bg-gradient-to-b from-primary/20 via-dark-700 to-dark-700 border-2 border-primary rounded-2xl p-8 shadow-2xl shadow-primary/25">
 <div class="absolute -top-6 left-1/2 -translate-x-1/2 z-10"><div class="badge-pulse px-5 py-1.5 bg-primary rounded-full text-xs font-black uppercase tracking-wide shadow-lg shadow-primary/40 whitespace-nowrap">Khuy&#7871;n ngh&#7883; &#183; Ph&#7893; bi&#7871;n nh&#7845;t</div></div>
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">Pro</h3>
 <span class="px-3 py-1 bg-green-500/15 border border-green-500/30 rounded-full text-xs font-bold text-green-300 whitespace-nowrap">Gi&#225; t&#7889;t nh&#7845;t</span>
 </div>
 <p class="text-sm text-gray-400 mb-4">Developer, freelancer</p>
-<div class="mb-2"><span class="text-4xl font-black text-white" data-package-price="pro">270K</span><span class="text-sm text-gray-400 ml-1">VN&#272;/th&#225;ng</span></div>
+<div class="pk-price-row"><span class="pk-price text-white" data-package-price="pro">270K</span><span class="text-sm text-gray-400 mb-1">VN&#272;/th&#225;ng</span></div>
 <p class="text-xs text-primary font-semibold mb-5">Ph&#249; h&#7907;p nh&#7845;t cho Developer</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; 900M token / 30 ng&#224;y</li>
-<li>&#x2705; 30M token / ng&#224;y</li>
-<li>&#x2705; 30 RPM</li>
-<li>&#x2705; GPT-5.6-Terra, Luna, SOL &amp; h&#417;n 15 models</li>
-<li>&#x2705; Streaming, Vision, Tools</li>
-<li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
+<ul class="text-sm text-gray-300 space-y-2 pk-list">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">900M token / 30 ng&#224;y</li>
+<li class="pk-feat">30M token / ng&#224;y</li>
+<li class="pk-feat">30 RPM</li>
+<li class="pk-feat">GPT-5.6-Terra, Luna, SOL &amp; h&#417;n 15 models</li>
+<li class="pk-feat">Streaming, Vision, Tools</li>
+<li class="pk-feat pk-feat-time">Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=pro" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<a href="/checkout?pkg=pro" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 <!-- Pro v2 -->
-<div class="reveal reveal-delay-2 pricing-card bg-dark-700 border border-blue-400/40 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal reveal-delay-2 pricing-card pk-card pk-accent-prov2 bg-dark-700 border border-blue-400/40 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">Pro v2</h3>
 <span class="px-3 py-1 bg-blue-500/15 border border-blue-400/30 rounded-full text-xs font-bold text-blue-300 whitespace-nowrap">M&#7899;i</span>
 </div>
 <p class="text-sm text-gray-400 mb-4">Developer, freelancer</p>
-<div class="mb-2"><span class="text-4xl font-black text-white" data-package-price="pro_v2">290K</span><span class="text-sm text-gray-400 ml-1">VN&#272;/th&#225;ng</span></div>
+<div class="pk-price-row"><span class="pk-price text-white" data-package-price="pro_v2">290K</span><span class="text-sm text-gray-400 mb-1">VN&#272;/th&#225;ng</span></div>
 <p class="text-xs text-blue-300 font-semibold mb-5">900M token trong 30 ng&#224;y</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; 900M token / 30 ng&#224;y</li>
-<li>&#x2705; 30 RPM</li>
-<li>&#x2705; GPT-5.6-Terra, Luna, SOL &amp; h&#417;n 15 models</li>
-<li>&#x2705; Streaming, Vision, Tools</li>
-<li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
+<ul class="text-sm text-gray-300 space-y-2 pk-list">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">900M token / 30 ng&#224;y</li>
+<li class="pk-feat">30 RPM</li>
+<li class="pk-feat">GPT-5.6-Terra, Luna, SOL &amp; h&#417;n 15 models</li>
+<li class="pk-feat">Streaming, Vision, Tools</li>
+<li class="pk-feat pk-feat-time">Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=pro_v2" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<a href="/checkout?pkg=pro_v2" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 <!-- Ultra -->
-<div class="reveal reveal-delay-3 pricing-card bg-dark-700 border border-yellow-500/30 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal reveal-delay-3 pricing-card pk-card pk-accent-ultra bg-dark-700 border border-yellow-500/30 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">Ultra</h3>
 <span class="px-3 py-1 bg-yellow-500/15 border border-yellow-500/30 rounded-full text-xs font-bold text-yellow-300 whitespace-nowrap">M&#7841;nh nh&#7845;t</span>
 </div>
 <p class="text-sm text-gray-400 mb-4">Team, doanh nghi&#7879;p</p>
-<div class="mb-2"><span class="text-4xl font-black text-white" data-package-price="ultra">450K</span><span class="text-sm text-gray-400 ml-1">VN&#272;</span></div>
+<div class="pk-price-row"><span class="pk-price text-white" data-package-price="ultra">450K</span><span class="text-sm text-gray-400 mb-1">VN&#272;</span></div>
 <p class="text-xs text-yellow-300 font-semibold mb-5">1.5B token trong 30 ng&#224;y</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; 30 RPM</li>
-<li>&#x2705; GPT-5.6-Terra, Luna, SOL &amp; 15 models</li>
-<li>&#x2705; Streaming, Vision, Tools</li>
-<li>&#x23F1;&#xFE0F; Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
+<ul class="text-sm text-gray-300 space-y-2 pk-list">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">30 RPM</li>
+<li class="pk-feat">GPT-5.6-Terra, Luna, SOL &amp; 15 models</li>
+<li class="pk-feat">Streaming, Vision, Tools</li>
+<li class="pk-feat pk-feat-time">Th&#7901;i h&#7841;n: <strong>30 ng&#224;y</strong></li>
 </ul>
-<a href="/checkout?pkg=ultra" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<a href="/checkout?pkg=ultra" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 </div>
 <!-- G�i n?p USD -->
-<div class="text-center mt-16 mb-8">
+<div class="reveal pk-divider"></div>
+<div class="text-center pk-head">
 <span class="reveal inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-300 text-xs font-bold uppercase tracking-wider">N&#7841;p theo USD</span>
 <h2 class="reveal text-3xl md:text-4xl font-black mt-4 mb-3">G&#243;i n&#7841;p USD</h2>
 <p class="reveal text-gray-400 text-sm md:text-base">Thanh to&#225;n VN&#272;, quy &#273;&#7893;i theo t&#7927; gi&#225; 1.000 VN&#272; = $1</p>
 </div>
 <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 max-w-7xl mx-auto">
 <!-- $10 -->
-<div class="reveal pricing-card bg-dark-700 border border-emerald-400/30 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">G&#243;i $10</h3>
 <span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
 </div>
-<div class="mb-2"><span class="text-4xl font-black text-white">$10</span></div>
-<p class="text-sm text-emerald-300 font-semibold mb-5">10.000 VN&#272; = 10$</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
-<li>&#x23F1;&#xFE0F; H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+<div class="pk-price-row"><span class="pk-price text-white">$10</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 10.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
 </ul>
-<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 <!-- $50 -->
-<div class="reveal reveal-delay-1 pricing-card bg-dark-700 border border-emerald-400/30 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal reveal-delay-1 pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">G&#243;i $50</h3>
 <span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
 </div>
-<div class="mb-2"><span class="text-4xl font-black text-white">$50</span></div>
-<p class="text-sm text-emerald-300 font-semibold mb-5">50.000 VN&#272; = 50$</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
-<li>&#x23F1;&#xFE0F; H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+<div class="pk-price-row"><span class="pk-price text-white">$50</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 50.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
 </ul>
-<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_50" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_50" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 <!-- $100 -->
-<div class="reveal reveal-delay-2 pricing-card bg-dark-700 border border-emerald-400/30 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal reveal-delay-2 pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">G&#243;i $100</h3>
 <span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
 </div>
-<div class="mb-2"><span class="text-4xl font-black text-white">$100</span></div>
-<p class="text-sm text-emerald-300 font-semibold mb-5">100.000 VN&#272; = 100$</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
-<li>&#x23F1;&#xFE0F; H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+<div class="pk-price-row"><span class="pk-price text-white">$100</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 100.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
 </ul>
-<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_100" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_100" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 <!-- $300 -->
-<div class="reveal reveal-delay-3 pricing-card bg-dark-700 border border-emerald-400/30 rounded-2xl p-8 flex flex-col relative">
+<div class="reveal reveal-delay-3 pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
 <div class="flex items-center justify-between mb-2 gap-2">
 <h3 class="text-lg font-bold">G&#243;i $300</h3>
 <span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
 </div>
-<div class="mb-2"><span class="text-4xl font-black text-white">$300</span></div>
-<p class="text-sm text-emerald-300 font-semibold mb-5">300.000 VN&#272; = 300$</p>
-<ul class="text-sm text-gray-300 space-y-2 mb-8 flex-1">
-<li>&#x2705; 1 API Key</li>
-<li>&#x2705; D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
-<li>&#x23F1;&#xFE0F; H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+<div class="pk-price-row"><span class="pk-price text-white">$300</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 300.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
 </ul>
-<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_300" class="btn-glow block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_300" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 </div>
 <div class="reveal text-center mt-8 text-xs text-gray-500">&#128274; K&#237;ch ho&#7841;t nhanh &nbsp; &#8226; &nbsp; Kh&#244;ng t&#7921; &#273;&#7897;ng gia h&#7841;n &nbsp; &#8226; &nbsp; H&#7895; tr&#7907; 24/7</div>

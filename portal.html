@@ -9,6 +9,10 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 body{font-family:'Inter',sans-serif}
+.pk-card{position:relative;display:flex;flex-direction:column}
+.pk-card:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,0,0,.45),0 0 0 1px var(--pk-accent,#6366f1)}
+.pk-price{font-size:2rem;line-height:1;font-weight:900;letter-spacing:-0.02em}
+.pk-accent-usd{--pk-accent:#10b981}
 </style>
 </head>
 <body class="bg-dark-900 text-white min-h-screen antialiased">
@@ -88,21 +92,21 @@ body{font-family:'Inter',sans-serif}
   <section>
     <h2 class="font-semibold mb-3">Gói nạp USD</h2>
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 hover:border-emerald-400/60 transition">
-        <p class="text-2xl font-black text-white">$10</p>
-        <p class="text-xs text-emerald-300 mt-1">10.000 VNĐ = 10$</p>
+      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
+        <p class="pk-price text-white">$10</p>
+        <p class="text-xs text-emerald-300 mt-2">&#8776; 10.000 VN&#272;</p>
       </a>
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_50" class="block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 hover:border-emerald-400/60 transition">
-        <p class="text-2xl font-black text-white">$50</p>
-        <p class="text-xs text-emerald-300 mt-1">50.000 VNĐ = 50$</p>
+      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_50" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
+        <p class="pk-price text-white">$50</p>
+        <p class="text-xs text-emerald-300 mt-2">&#8776; 50.000 VN&#272;</p>
       </a>
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_100" class="block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 hover:border-emerald-400/60 transition">
-        <p class="text-2xl font-black text-white">$100</p>
-        <p class="text-xs text-emerald-300 mt-1">100.000 VNĐ = 100$</p>
+      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_100" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
+        <p class="pk-price text-white">$100</p>
+        <p class="text-xs text-emerald-300 mt-2">&#8776; 100.000 VN&#272;</p>
       </a>
-      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_300" class="block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 hover:border-emerald-400/60 transition">
-        <p class="text-2xl font-black text-white">$300</p>
-        <p class="text-xs text-emerald-300 mt-1">300.000 VNĐ = 300$</p>
+      <a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_300" class="pk-card pk-accent-usd block bg-dark-700 border border-emerald-400/30 rounded-2xl p-4 transition">
+        <p class="pk-price text-white">$300</p>
+        <p class="text-xs text-emerald-300 mt-2">&#8776; 300.000 VN&#272;</p>
       </a>
     </div>
   </section>
