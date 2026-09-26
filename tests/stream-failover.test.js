@@ -30,6 +30,7 @@ const flagCluster = slice("function safeStreamFailoverEnabled(", "function force
 const bufferCluster = slice("function ssePayloadHasCompletionMarker(", "function emitAnthropicBufferedStream(");
 const streamOpenAICluster = slice("async function streamOpenAIWithFailover(", "function friendlyErrorMessage(");
 const streamAnthropicCluster = slice("async function streamAnthropicWithFailover(", "async function streamOpenAIWithFailover(");
+const keyScopedCluster = slice("function isKeyScopedFailure(", "function trackBackendFailure(");
 
 const stubs = `
 function orderedBackendKeys(keys){ return Array.isArray(keys) ? keys : []; }
@@ -37,8 +38,8 @@ function backendChatUrl(settings, fallbackUrl){ return fallbackUrl || ((settings
 function backendWireHeaders(){ return {}; }
 function backendWirePayload(payload){ return payload; }
 const backendStreamTimeoutMs = 300000;
-async function withBackendKeySlot(key, fn){ return fn(); }
-async function fetchWithTimeout(){ return globalThis.__nextResp; }
+async function withBackendKeySlot(key, fn){ globalThis.__lastKey = key; return fn(); }
+async function fetchWithTimeout(){ return (globalThis.__respByKey && globalThis.__respByKey[globalThis.__lastKey]) || globalThis.__nextResp; }
 async function rejectHtmlUpstreamResponse(resp){ return resp; }
 function addLog(){}
 function logPreview(t){ return String(t || "").slice(0, 40); }
@@ -55,7 +56,8 @@ function trackBackendSuccess(){}
 function trackBackendKeyResult(){}
 function clearBackendErrorObservation(){}
 function trackBackendError(){}
-function backendFailureSignal(){ return null; }
+function trackBackendFailure(){}
+function backendFailureSignal(status){ const s = Number(status) || 0; if ([401,402,403,429].includes(s)) return { track: true, immediate: true, reason: "key_auth" }; return null; }
 function isRetryableStatus(s){ return [408,401,402,403,429,500,502,503,504,524].includes(Number(s)); }
 function isRetryableAcrossKeys(s){ return [408,429,500,502,503,504,524].includes(Number(s)); }
 function shouldFailoverBackend(){ return true; }
@@ -91,7 +93,7 @@ const ctx = {
 ctx.globalThis = ctx;
 vm.createContext(ctx);
 vm.runInContext(
-  [envFlagCluster, optionalIntCluster, sseCluster, incompleteCluster, flagCluster, bufferCluster, stubs, streamAnthropicCluster, streamOpenAICluster].join("\n"),
+  [envFlagCluster, optionalIntCluster, sseCluster, incompleteCluster, flagCluster, bufferCluster, keyScopedCluster, stubs, streamAnthropicCluster, streamOpenAICluster].join("\n"),
   ctx,
 );
 
@@ -178,6 +180,23 @@ async function runMessages(res, deferErrorToCaller) {
     "http://x/v1/chat/completions",
     payload,
     ["k1"],
+    "gpt-public",
+    "m",
+    null,
+    null,
+    "gpt-public",
+    "req1",
+    settings,
+    deferErrorToCaller,
+  );
+}
+
+async function runStreamKeys(res, keys, deferErrorToCaller) {
+  return streamOpenAIWithFailover(
+    res,
+    "http://x/v1/chat/completions",
+    payload,
+    keys,
     "gpt-public",
     "m",
     null,
@@ -297,6 +316,28 @@ async function runMessages(res, deferErrorToCaller) {
     await runMessages(res, true);
     check("messages buffered: piped on complete", res._piped === true);
     check("messages buffered: marker set on success", res.__chatStreamFlushed === true);
+  }
+
+  // ── Key failover: key1 403/quota -> dùng key2 ──────────────────────────────
+  {
+    const res = makeRes();
+    const errResp = { ok: false, status: 403, body: null, headers: new Headers(), text: async () => '{"error":{"message":"quota exceeded"}}' };
+    ctx.__respByKey = { k1: errResp, k2: sseResponse(COMPLETE_OPENAI) };
+    await runStreamKeys(res, ["k1", "k2"], false);
+    const out = res._chunks.join("");
+    check("key failover: success on 2nd key", out.includes("hello ") && out.includes("world"));
+    check("key failover: ended", res._ended === true);
+    check("key failover: no error JSON to client", !res._json);
+    ctx.__respByKey = null;
+  }
+  {
+    // key1 403, key2 403 (hết key) -> trả lỗi cho khách, không treo.
+    const res = makeRes();
+    const errResp = () => ({ ok: false, status: 403, body: null, headers: new Headers(), text: async () => '{"error":{"message":"quota exceeded"}}' });
+    ctx.__respByKey = { k1: errResp(), k2: errResp() };
+    await runStreamKeys(res, ["k1", "k2"], false);
+    check("key failover: all keys 403 -> error to client", !!res._json || res._chunks.join("").includes("[DONE]"));
+    ctx.__respByKey = null;
   }
 
   console.log(`\n${pass} passed, ${failures.length} failed`);

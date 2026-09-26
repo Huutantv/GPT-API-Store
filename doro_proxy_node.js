@@ -856,6 +856,37 @@ function trackBackendError(id, status, text = "", code = "") {
   }
 }
 
+// Lỗi thuộc về 1 KEY (auth/quota/rate-limit) chứ không phải cả backend:
+// các key khác trong cùng backend có thể vẫn chạy được.
+function isKeyScopedFailure(status, text = "", code = "") {
+  const s = Number(status) || 0;
+  if ([401, 402, 403, 429].includes(s)) return true;
+  const lower = `${text || ""} ${code || ""}`.toLowerCase();
+  return lower.includes("quota") || lower.includes("exceeded")
+    || lower.includes("limit reached") || lower.includes("insufficient");
+}
+
+// Ghi nhận lỗi backend, nhưng KHÔNG hạ backend khi lỗi chỉ thuộc 1 key mà backend
+// vẫn còn key khác khả dụng (key lỗi đã được trackBackendKeyResult mark sick trước đó).
+// Chỉ hạ backend khi hết sạch key hoặc lỗi thật sự thuộc backend (5xx/network).
+function trackBackendFailure(backendId, apiKeys, status, text = "", code = "") {
+  if (!backendId) return;
+  if (isKeyScopedFailure(status, text, code)) {
+    let othersAvailable = false;
+    try {
+      const ranked = keyHealth.rankKeys(Array.isArray(apiKeys) ? apiKeys : [], backendKeyInflight);
+      othersAvailable = ranked.available.length > 0;
+    } catch (_) {
+      othersAvailable = false;
+    }
+    if (othersAvailable) {
+      addLog(`auto-mode: skip backend-down ${backendId} (key-level ${Number(status) || "quota"}, con key khac)`);
+      return;
+    }
+  }
+  trackBackendError(backendId, status, text, code);
+}
+
 function trackBackendSuccess(id) {
   trackAutoSwitchSuccess(id);
   if (!_backendHealth[id]) return;
@@ -3271,7 +3302,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
 
         const shouldTryNextBackend = shouldFailoverBackend(err, i < settingsChain.length - 1);
         if (shouldTryNextBackend) {
-          trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+          trackBackendFailure(settings.profileId, settings.apiKeys, err.status || 0, err.text || err.message || "", err.code);
           if (obs) {
             obs.is_retry = true;
             obs.retry_count += 1;
@@ -3296,7 +3327,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
         }
 
         // Auto-mode: track backend lỗi để tự ngắt
-        trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+        trackBackendFailure(settings.profileId, settings.apiKeys, err.status || 0, err.text || err.message || "", err.code);
         const canTryNext = shouldFailoverBackend(err, i < settingsChain.length - 1);
         if (canTryNext) {
           if (obs) {
@@ -4156,7 +4187,7 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
         return fetchWithTimeout(url, { method: "POST", headers: backendWireHeaders(orderedKeys[i], settings), body: JSON.stringify(payload), timeoutMs: Math.min(backendStreamTimeoutMs, ttfbTimeoutMs()) });
       });
       if (obs) obs.final_backend_status = resp.status;
-      if (isRetryableAcrossKeys(resp.status) && i < orderedKeys.length - 1) {
+      if ((isRetryableAcrossKeys(resp.status) || isKeyScopedFailure(resp.status, text, "")) && i < orderedKeys.length - 1) {
         trackBackendKeyResult(orderedKeys[i], { status: resp.status });
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
         addLog(`backend retry(stream) status=${resp.status} key=${i + 1}/${orderedKeys.length}`);
@@ -4177,7 +4208,7 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
       trackBackendKeyResult(orderedKeys[i], err);
       lastError = err;
       if (obs && err.status) obs.final_backend_status = err.status;
-      if (err.status && isRetryableAcrossKeys(err.status) && i < orderedKeys.length - 1) {
+      if (err.status && (isRetryableAcrossKeys(err.status) || isKeyScopedFailure(err.status, err.text || err.message || "", err.code)) && i < orderedKeys.length - 1) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
         addLog(`backend retry(stream) status=${err.status} key=${i + 1}/${orderedKeys.length} body=${logPreview(err.text || "")}`);
         await new Promise((r) => setTimeout(r, retryDelayMs(i + 1)));
@@ -4279,7 +4310,7 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
         }
         const shouldTryNextBackend = !isTruncated && shouldFailoverBackend(err, i < settingsChain.length - 1);
         if (shouldTryNextBackend) {
-          trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+          trackBackendFailure(settings.profileId, settings.apiKeys, err.status || 0, err.text || err.message || "", err.code);
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = err.status ? "backend" : "network"; obs.final_backend_status = err.status || obs.final_backend_status; }
           addLog(`backend profile retry(stream) ${settings.profileLabel} -> ${settingsChain[i + 1].profileLabel} error=${err.status || err.name || "network"}`);
           break;
@@ -4291,7 +4322,7 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(attempt + 1)));
           continue;
         }
-        trackBackendError(settings.profileId, err.status || 0, err.text || err.message || "", err.code);
+        trackBackendFailure(settings.profileId, settings.apiKeys, err.status || 0, err.text || err.message || "", err.code);
         const canTryNext = !isTruncated && shouldFailoverBackend(err, i < settingsChain.length - 1);
         if (canTryNext) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = err.status ? "backend" : "network"; obs.final_backend_status = err.status || obs.final_backend_status; }
@@ -4718,7 +4749,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
         const isTruncatedStream = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
-        if (!wroteResponse && !isTruncatedStream && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
+        if (!wroteResponse && !isTruncatedStream && (isRetryableAcrossKeys(err.status) || isKeyScopedFailure(err.status, err.text || err.message || "", err.code)) && i < ordered.length - 1) {
           if (obs) {
             obs.is_retry = true;
             obs.retry_count += 1;
@@ -4731,7 +4762,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           obs.error_type = "backend";
           recordBackendErrorObservation(obs, err.status, err.text || err.message || "", backendModel, publicModel, err.code);
         }
-        if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
+        if (obs && obs.backend_id) trackBackendFailure(obs.backend_id, apiKeys, err.status, err.text || err.message || "", err.code);
         if (!wroteResponse && deferErrorToCaller && shouldFailoverBackend(err, true)) throw err;
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (wroteResponse) {
@@ -4762,7 +4793,7 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
         obs.error_type = "network";
         obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180);
       }
-      if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
+      if (obs && obs.backend_id) trackBackendFailure(obs.backend_id, apiKeys, 0, err.message || String(err), err.code);
       if (!wroteResponse && deferErrorToCaller) throw err;
       if (wroteResponse) {
         sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
@@ -4977,7 +5008,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
         const failureSignal = backendFailureSignal(err.status, err.text || err.message || "", err.code);
-        if (obs && obs.backend_id) trackBackendError(obs.backend_id, err.status, err.text || err.message || "", err.code);
+        if (obs && obs.backend_id) trackBackendFailure(obs.backend_id, apiKeys, err.status, err.text || err.message || "", err.code);
         const isTruncatedStream = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
         if (!wroteResponse && !isTruncatedStream && (!failureSignal || !failureSignal.immediate) && isRetryableStatus(err.status) && retryDepth < backendStreamRetryCount) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
@@ -4985,7 +5016,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
           return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, deferErrorToCaller, retryDepth + 1);
         }
-        if (!wroteResponse && !isTruncatedStream && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
+        if (!wroteResponse && !isTruncatedStream && (isRetryableAcrossKeys(err.status) || isKeyScopedFailure(err.status, err.text || err.message || "", err.code)) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           continue;
         }
@@ -5008,7 +5039,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         res.write("data: [DONE]\n\n");
         return res.end();
       }
-      if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
+      if (obs && obs.backend_id) trackBackendFailure(obs.backend_id, apiKeys, 0, err.message || String(err), err.code);
       if (!wroteResponse && retryDepth < backendStreamRetryCount) {
         if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "network"; }
         addLog(`stream openai retry attempt=${retryDepth + 1}/${backendStreamRetryCount + 1} error=${err.name || "Error"}: ${err.message}`);
@@ -5021,7 +5052,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       }
       if (!wroteResponse && deferErrorToCaller) throw err;
       if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
-      if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
+      if (obs && obs.backend_id) trackBackendFailure(obs.backend_id, apiKeys, 0, err.message || String(err), err.code);
       if (!wroteResponse) {
         if (res.__chatStreamFlushed) {
           try {
