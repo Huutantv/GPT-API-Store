@@ -37,6 +37,7 @@ function profileToSettings(p){ return { profileId: p.id, profileLabel: p.label, 
 function latestUserImageCount(){ return __img; }
 function totalImageCount(){ return __img; }
 function stripHistoricalImages(m){ return m; }
+function withAutoBackup(chain){ return chain; }
 `;
 
 const ctx = { console, process };

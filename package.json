@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node doro_proxy_node.js",
     "check": "node --check doro_proxy_node.js",
-    "test": "node tests/identity.test.js && node tests/credit.test.js && node tests/stream-failover.test.js && node tests/backend-health.test.js && node tests/backend-vision.test.js",
+    "test": "node tests/identity.test.js && node tests/credit.test.js && node tests/stream-failover.test.js && node tests/backend-health.test.js && node tests/backend-vision.test.js && node tests/auto-backup.test.js",
     "build:css": "npx tailwindcss -i ./src/input.css -o ./public/output.css --minify",
     "watch:css": "npx tailwindcss -i ./src/input.css -o ./public/output.css --watch",
     "dev": "concurrently \"npm run watch:css\" \"node doro_proxy_node.js\""

@@ -508,8 +508,9 @@ function getSettingsChain(requestedModel) {
   loadLocalEnv(true);
   if (autoSwitchEnabled()) return getAutoSwitchSettingsChain(requestedModel);
   const ids = orderActiveBackendIds(activeBackendIds());
-  return ids.map((id) => profileToSettings(backendProfile(id), requestedModel))
+  const chain = ids.map((id) => profileToSettings(backendProfile(id), requestedModel))
     .filter((settings) => settings.apiKeys.length);
+  return withAutoBackup(chain, requestedModel);
 }
 // Sắp xếp backend id active theo auto-mode health filter + router mode
 // (round_robin/weighted/failover). Dùng chung cho getSettingsChain và Backend 5
@@ -643,6 +644,96 @@ function getAutoSwitchSettingsChain(requestedModel) {
   return backup.length ? backup : main;
 }
 
+// ── Auto Backup ──────────────────────────────────────────────────────────────
+// Khi TẤT CẢ backend main 1-7 đang chọn đều lỗi -> tự chạy Backup 1/2 để giữ
+// dịch vụ; trong lúc đó probe lại main mỗi DORO_AUTO_BACKUP_RECOVERY_MS; main
+// sống lại -> quay về. Chạy song song Auto Mode, độc lập Auto Switch.
+function autoBackupEnabled() {
+  return String(process.env.DORO_AUTO_BACKUP || "0") === "1";
+}
+function autoBackupRecoveryMs() {
+  return Number(process.env.DORO_AUTO_BACKUP_RECOVERY_MS || "60000") || 60000;
+}
+const _autoBackup = { active: false, since: null, lastProbeAt: null, bothDownNotified: false };
+
+function shouldProbeAutoBackup() {
+  if (!_autoBackup.active) return false;
+  const now = Date.now();
+  if (now - (_autoBackup.lastProbeAt || _autoBackup.since || now) < autoBackupRecoveryMs()) return false;
+  return true;
+}
+
+function enterAutoBackup(reason = "") {
+  if (_autoBackup.active) return;
+  _autoBackup.active = true;
+  _autoBackup.since = Date.now();
+  _autoBackup.lastProbeAt = Date.now();
+  _autoBackup.bothDownNotified = false;
+  addLog(`auto-backup: main 1-7 DOWN -> dung backup${reason ? " (" + reason + ")" : ""}`);
+  notifyTelegram(
+    `\u{1F534} <b>Auto Backup: chuy\u1ec3n sang Backup</b>\n` +
+    `Main 1\u20137 \u0111\u1ec1u l\u1ed7i${reason ? " (" + reason + ")" : ""}\n` +
+    `<b>Backup:</b> ${autoSwitchBackupLabel()}\n` +
+    `\u23F0 Th\u1eed l\u1ea1i main sau ${Math.round(autoBackupRecoveryMs() / 1000)}s\n` +
+    `\u{1F552} ${vnNowText()}`
+  );
+}
+
+function exitAutoBackup(reason = "") {
+  if (!_autoBackup.active) return;
+  _autoBackup.active = false;
+  _autoBackup.since = null;
+  _autoBackup.lastProbeAt = null;
+  _autoBackup.bothDownNotified = false;
+  addLog(`auto-backup: main phuc hoi -> quay ve main${reason ? " (" + reason + ")" : ""}`);
+  notifyTelegram(
+    `\u2705 <b>Auto Backup: main \u0111\u00e3 ph\u1ee5c h\u1ed3i</b>\n` +
+    `${reason || ""}\n` +
+    `Quay v\u1ec1 d\u00f9ng main 1\u20137\n` +
+    `\u{1F552} ${vnNowText()}`
+  );
+}
+
+// Gọi khi chain bắt đầu dùng 1 backend: nếu là backup => đã thử hết main.
+function noteAutoBackupAttempt(profileId) {
+  if (!autoBackupEnabled()) return;
+  if (BACKUP_BACKEND_IDS.includes(String(profileId))) enterAutoBackup("het main");
+}
+
+// Gọi khi 1 request đã thử hết cả main lẫn backup mà vẫn fail.
+function noteAutoBackupExhausted() {
+  if (!autoBackupEnabled() || !_autoBackup.active) return;
+  if (_autoBackup.bothDownNotified) return;
+  _autoBackup.bothDownNotified = true;
+  addLog("auto-backup: ca main lan backup deu loi");
+  notifyTelegram(
+    `\u{1F6A8} <b>Auto Backup: c\u1ea3 main v\u00e0 backup \u0111\u1ec1u l\u1ed7i</b>\n` +
+    `Main 1\u20137 v\u00e0 Backup \u0111\u1ec1u kh\u00f4ng ph\u1ea3n h\u1ed3i \u2014 request th\u1ea5t b\u1ea1i\n` +
+    `\u{1F552} ${vnNowText()}`
+  );
+}
+
+// Thêm backup vào cuối/đầu chain tuỳ trạng thái backup mode.
+function withAutoBackup(chain, requestedModel) {
+  if (!autoBackupEnabled()) return chain;
+  if (autoSwitchEnabled()) return chain; // auto-switch da lo backup
+  const backups = autoSwitchBackupSettings(requestedModel)
+    .filter((b) => !chain.some((c) => c.profileId === b.profileId));
+  if (!backups.length) {
+    if (_autoBackup.active) exitAutoBackup("khong con backup");
+    return chain;
+  }
+  if (_autoBackup.active) {
+    if (shouldProbeAutoBackup()) {
+      _autoBackup.lastProbeAt = Date.now();
+      addLog("auto-backup: probing main before backup");
+      return chain.concat(backups);
+    }
+    return backups.concat(chain);
+  }
+  return chain.concat(backups);
+}
+
 function trackAutoSwitchError(id, status, text = "", code = "") {
   if (!autoSwitchEnabled() || !BACKEND_IDS.includes(String(id))) return;
   const signal = backendFailureSignal(status, text, code);
@@ -757,7 +848,7 @@ function resolveContextVisionPair(messages, requestedModel) {
     .map((id) => profileToSettings(backendProfile(id), requestedModel))
     .filter((settings) => settings.apiKeys.length);
   return {
-    chain,
+    chain: withAutoBackup(chain, requestedModel),
     requestType: "text",
     imageCount: 0,
     historicalImageCount,
@@ -908,6 +999,9 @@ function trackBackendFailure(backendId, apiKeys, status, text = "", code = "") {
 
 function trackBackendSuccess(id) {
   trackAutoSwitchSuccess(id);
+  if (autoBackupEnabled() && _autoBackup.active && BACKEND_IDS.includes(String(id))) {
+    exitAutoBackup(`Backend ${id} OK`);
+  }
   if (!_backendHealth[id]) return;
   const state = _backendHealth[id];
   if (state.downSince) {
@@ -3261,6 +3355,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
   let lastError;
   for (let i = 0; i < settingsChain.length; i += 1) {
     const settings = settingsChain[i];
+    noteAutoBackupAttempt(settings.profileId);
     for (let attempt = 0; attempt <= backendRequestRetryCount; attempt += 1) {
       try {
         if (obs) {
@@ -3368,6 +3463,7 @@ async function postWithBackendChain(settingsChain, payloadBuilder, pathSuffix = 
       }
     }
   }
+  noteAutoBackupExhausted();
   throw lastError || new Error("No backend profile available");
 }
 
@@ -4258,6 +4354,7 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
   let lastError;
   for (let i = 0; i < settingsChain.length; i += 1) {
     const settings = settingsChain[i];
+    noteAutoBackupAttempt(settings.profileId);
     for (let attempt = 0; attempt <= backendRequestRetryCount; attempt += 1) {
       try {
         if (obs) {
@@ -4358,6 +4455,7 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
       }
     }
   }
+  noteAutoBackupExhausted();
   throw lastError || new Error("No backend profile available");
 }
 
@@ -5643,6 +5741,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
     for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
       const chainSettings = settingsChain[chainIdx];
+      noteAutoBackupAttempt(chainSettings.profileId);
       req.obs.backend_id = chainSettings.profileId || "";
       req.obs.backend_profile = chainSettings.profileLabel || chainSettings.profileId || "";
       req.obs.backend_model = chainSettings.backendModel || "";
@@ -5673,6 +5772,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
         return;
       } catch (streamErr) {
         if ((res.headersSent && !res.__chatStreamFlushed) || chainIdx >= settingsChain.length - 1) {
+          if (chainIdx >= settingsChain.length - 1) noteAutoBackupExhausted();
           if (!res.headersSent) return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
           if (res.__chatStreamFlushed) {
             sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
@@ -6772,6 +6872,7 @@ async function openAIChatCompletionsHandler(req, res) {
     // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
     for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
       const chainSettings = settingsChain[chainIdx];
+      noteAutoBackupAttempt(chainSettings.profileId);
       req.obs.backend_id = chainSettings.profileId || "";
       req.obs.backend_profile = chainSettings.profileLabel || chainSettings.profileId || "";
       req.obs.backend_model = chainSettings.backendModel || "";
@@ -6804,6 +6905,7 @@ async function openAIChatCompletionsHandler(req, res) {
       } catch (streamErr) {
         const responseCommitted = res.headersSent && !res.__responsesBridge && !res.__chatStreamFlushed;
         if (responseCommitted || chainIdx >= settingsChain.length - 1) {
+          if (chainIdx >= settingsChain.length - 1) noteAutoBackupExhausted();
           if (!responseCommitted) {
             if (res.__chatStreamFlushed) {
               try {
@@ -7605,6 +7707,9 @@ app.get("/api/config", (req, res) => {
     auto_switch: autoSwitchEnabled(),
     auto_switch_recovery_ms: autoSwitchRecoveryMs(),
     auto_switch_active_backup: activeBackupBackendId(),
+    auto_backup: autoBackupEnabled(),
+    auto_backup_recovery_ms: autoBackupRecoveryMs(),
+    auto_backup_active: _autoBackup.active,
     auto_switch_health: {
       main_healthy: !_autoSwitchHealth.mainDownSince,
       using_backup: !!_autoSwitchHealth.usingBackup,
@@ -7770,6 +7875,8 @@ app.put("/api/config", (req, res) => {
     "DORO_AUTO_MODE",
     "DORO_AUTO_SWITCH",
     "DORO_AUTO_SWITCH_RECOVERY_MS",
+    "DORO_AUTO_BACKUP",
+    "DORO_AUTO_BACKUP_RECOVERY_MS",
     "DORO_BACKUP_ACTIVE_BACKEND",
     "DORO_BACKUP1_NAME",
     "DORO_BACKUP1_BASE_URL",
@@ -7818,6 +7925,8 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_AUTO_MODE") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_AUTO_SWITCH") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_AUTO_SWITCH_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
+    if (field === "DORO_AUTO_BACKUP") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AUTO_BACKUP_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_BACKUP_ACTIVE_BACKEND") value = normalizeBackupBackendSelection(value);
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";

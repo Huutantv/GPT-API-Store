@@ -569,6 +569,11 @@ summary::-webkit-details-marker{display:none}
           <span class="text-sm font-medium">Auto Switch</span>
           <span class="text-xs text-gray-500">(main/backup)</span>
         </label>
+        <label class="flex items-center gap-2 bg-dark-900 border border-white/10 rounded-lg px-3 py-2 cursor-pointer hover:border-amber-500/50 transition">
+          <input type="checkbox" id="chkAutoBackup" class="w-4 h-4 accent-amber-500">
+          <span class="text-sm font-medium">Auto Backup</span>
+          <span class="text-xs text-gray-500">(1-7 fail &rarr; backup)</span>
+        </label>
         <span id="activeStatus" class="text-xs text-gray-500">&mdash;</span>
       </div>
       <button onclick="saveActiveBackend()" class="px-5 py-2 bg-primary hover:bg-primary/90 rounded-lg text-sm font-semibold transition">L&#432;u l&#7921;a ch&#7885;n</button>
@@ -597,6 +602,18 @@ summary::-webkit-details-marker{display:none}
         <div>
           <label class="text-xs text-gray-400 block mb-1">Recovery ms</label>
           <input id="cfgAutoSwitchRecoveryMs" type="number" min="1000" step="1000" value="60000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+        </div>
+      </div>
+    </div>
+    <div id="autoBackupInfo" class="hidden bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 text-xs text-amber-300 space-y-3">
+      <div>
+        <p><strong>Auto Backup:</strong> Khi <b>T&#7844;T C&#7842;</b> backend 1-7 &#273;ang ch&#7885;n &#273;&#7873;u l&#7895;i, t&#7921; chuy&#7875;n sang Backup 1/2 &#273;&#7875; gi&#7919; d&#7883;ch v&#7909;. Trong l&#250;c &#273;&#243; v&#7851;n th&#7917; l&#7841;i main theo chu k&#7923;; main s&#7889;ng l&#7841;i s&#7869; t&#7921; quay v&#7873;. Ch&#7841;y song song v&#7899;i Auto Mode.</p>
+        <p id="autoBackupStatus"></p>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div>
+          <label class="text-xs text-gray-400 block mb-1">Recovery ms (probe main)</label>
+          <input id="cfgAutoBackupRecoveryMs" type="number" min="1000" step="1000" value="60000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
         </div>
       </div>
     </div>
@@ -2944,6 +2961,15 @@ async function loadBackendConfig() {
     swStatus.textContent = "Main: " + (swHealth.main_healthy ? "OK" : "DOWN") + " | Route: " + (swHealth.using_backup ? "backup" : "main") + " | Down count: " + (swHealth.down_count || 0) + swReason;
   }
 
+  var autoBackupEl = document.getElementById("chkAutoBackup");
+  autoBackupEl.checked = !!data.auto_backup;
+  autoBackupEl.dataset.loadedValue = data.auto_backup ? "1" : "0";
+  autoBackupEl.dataset.dirty = "0";
+  document.getElementById("autoBackupInfo").classList.toggle("hidden", !autoBackupEl.checked);
+  document.getElementById("cfgAutoBackupRecoveryMs").value = data.auto_backup_recovery_ms || 60000;
+  var abStatus = document.getElementById("autoBackupStatus");
+  if (abStatus) abStatus.textContent = "Trạng thái hiện tại: " + (data.auto_backup_active ? "Backup" : "Main") + (data.auto_backup ? "" : " (Auto Backup đang tắt)");
+
   // Toggle router box + auto mode info
   document.getElementById("chkAutoMode").onchange = function() {
     this.dataset.dirty = "1";
@@ -2962,6 +2988,10 @@ async function loadBackendConfig() {
       document.getElementById("chkAutoMode").dataset.dirty = "1";
       document.getElementById("autoModeInfo").classList.add("hidden");
     }
+  };
+  document.getElementById("chkAutoBackup").onchange = function() {
+    this.dataset.dirty = "1";
+    document.getElementById("autoBackupInfo").classList.toggle("hidden", !this.checked);
   };
 
   // Backend profiles
@@ -3628,6 +3658,8 @@ async function saveActiveBackend() {
     DORO_BACKEND_ROUTER_MODE: document.getElementById("cfgRouter").value,
     DORO_BACKUP_ACTIVE_BACKEND: selectedBackups.join(","),
     DORO_AUTO_SWITCH_RECOVERY_MS: document.getElementById("cfgAutoSwitchRecoveryMs").value,
+    DORO_AUTO_BACKUP: document.getElementById("chkAutoBackup").checked ? "1" : "0",
+    DORO_AUTO_BACKUP_RECOVERY_MS: document.getElementById("cfgAutoBackupRecoveryMs").value,
   };
   // Gui dung nhung gi checkbox dang hien, chi khi user doi (dirty) hoac khac server.
   // Khong tu y flip: truoc day co dong `if (autoSwitch) nextAutoMode = "0"` khien
