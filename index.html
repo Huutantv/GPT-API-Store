@@ -23,17 +23,30 @@
   .pk-feat-time::before {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23fbbf24'%3E%3Cpath fill-rule='evenodd' d='M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4c0 .27.1.52.29.71l2.5 2.5a1 1 0 001.42-1.42L11 9.59V6z' clip-rule='evenodd'/%3E%3C/svg%3E");
   }
+  .pk-ext { display: flex; align-items: center; gap: .375rem; }
+  .pk-ext::before {
+    content: ""; flex: 0 0 .85rem; width: .85rem; height: .85rem;
+    background: no-repeat center/contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2310b981'%3E%3Cpath d='M11 3a1 1 0 100 2h2.586l-4.293 4.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V3h-6z'/%3E%3Cpath d='M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 100-2H5z'/%3E%3C/svg%3E");
+  }
   .pk-accent-starter { --pk-accent: #94a3b8; }
   .pk-accent-pro { --pk-accent: #6366f1; }
   .pk-accent-prov2 { --pk-accent: #3b82f6; }
   .pk-accent-ultra { --pk-accent: #f59e0b; }
+  .pk-accent-usd { --pk-accent: #10b981; }
   /* helper layout (không phụ thuộc output.css) */
   .pk-price-row { display: flex; align-items: flex-end; gap: .25rem; margin-bottom: .25rem; }
   .pk-list { margin-bottom: 2rem; }
+  .pk-list-tight { margin-bottom: 1.5rem; }
+  .pk-divider { margin: 4rem auto 0; max-width: 80rem; border-top: 1px solid rgba(255,255,255,.05); }
+  .pk-head { margin-top: 2.5rem; margin-bottom: 2rem; }
   /* Mobile tuning */
   @media (max-width: 480px) {
     .pk-price { font-size: 2.25rem; }
     .badge-pulse { padding-left: 1rem; padding-right: 1rem; font-size: .65rem; }
+  }
+  @media (max-width: 640px) {
+    .pk-divider { margin-top: 2.5rem; }
+    .pk-head { margin-top: 1.75rem; }
   }
 </style>
 </head>
@@ -258,11 +271,84 @@
 <a href="/checkout?pkg=ultra" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
 </div>
 </div>
+<!-- G�i n?p USD -->
+<div class="reveal pk-divider"></div>
+<div class="text-center pk-head">
+<span class="reveal inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-300 text-xs font-bold uppercase tracking-wider">N&#7841;p theo USD</span>
+<h2 class="reveal text-3xl md:text-4xl font-black mt-4 mb-3">G&#243;i n&#7841;p USD</h2>
+<p class="reveal text-gray-400 text-sm md:text-base">Thanh to&#225;n VN&#272;, quy &#273;&#7893;i theo t&#7927; gi&#225; 1.000 VN&#272; = $1</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8 max-w-7xl mx-auto">
+<!-- $10 -->
+<div class="reveal pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
+<div class="flex items-center justify-between mb-2 gap-2">
+<h3 class="text-lg font-bold">G&#243;i $10</h3>
+<span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
+</div>
+<div class="pk-price-row"><span class="pk-price text-white">$10</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 10.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+</ul>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_10" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+</div>
+<!-- $50 -->
+<div class="reveal reveal-delay-1 pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
+<div class="flex items-center justify-between mb-2 gap-2">
+<h3 class="text-lg font-bold">G&#243;i $50</h3>
+<span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
+</div>
+<div class="pk-price-row"><span class="pk-price text-white">$50</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 50.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+</ul>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_50" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+</div>
+<!-- $100 -->
+<div class="reveal reveal-delay-2 pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
+<div class="flex items-center justify-between mb-2 gap-2">
+<h3 class="text-lg font-bold">G&#243;i $100</h3>
+<span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
+</div>
+<div class="pk-price-row"><span class="pk-price text-white">$100</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 100.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+</ul>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_100" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+</div>
+<!-- $300 -->
+<div class="reveal reveal-delay-3 pricing-card pk-card pk-accent-usd bg-dark-700 border border-emerald-400/30 rounded-2xl p-8">
+<div class="flex items-center justify-between mb-2 gap-2">
+<h3 class="text-lg font-bold">G&#243;i $300</h3>
+<span class="px-3 py-1 bg-emerald-500/15 border border-emerald-400/30 rounded-full text-xs font-bold text-emerald-300 whitespace-nowrap">USD</span>
+</div>
+<div class="pk-price-row"><span class="pk-price text-white">$300</span></div>
+<p class="text-sm text-emerald-300 font-semibold mb-5">&#8776; 300.000 VN&#272;</p>
+<ul class="text-sm text-gray-300 space-y-2 pk-list-tight">
+<li class="pk-feat">1 API Key</li>
+<li class="pk-feat">D&#249;ng &#273;&#432;&#7907;c nhi&#7873;u model</li>
+<li class="pk-feat pk-feat-time">H&#7841;n d&#249;ng: c&#7845;u h&#236;nh theo g&#243;i</li>
+</ul>
+<p class="pk-ext text-xs text-gray-500 mb-4">Mua &amp; nh&#7853;n key t&#7841;i taphoaai</p>
+<a href="https://api.taphoaai.info.vn/buy" data-package-link="usd_300" class="btn-glow pk-cta block text-center px-6 py-3 bg-primary hover:bg-primary/90 rounded-xl font-semibold text-sm transition-all duration-300 shadow-lg shadow-primary/25 hover:shadow-primary/40">Mua ngay</a>
+</div>
+</div>
 <div class="reveal text-center mt-8 text-xs text-gray-500">&#128274; K&#237;ch ho&#7841;t nhanh &nbsp; &#8226; &nbsp; Kh&#244;ng t&#7921; &#273;&#7897;ng gia h&#7841;n &nbsp; &#8226; &nbsp; H&#7895; tr&#7907; 24/7</div>
 <div class="reveal text-center mt-10">
 <p class="text-gray-500 text-sm mb-3">&#272;&#227; c&#243; API key?</p>
 <a href="/portal" class="inline-flex items-center gap-2 px-6 py-3 bg-dark-700 border border-white/10 hover:bg-dark-600 rounded-xl text-sm font-semibold transition-all duration-300 hover:border-white/20 hover:scale-105">
-&#128274; Xem s&#7889; d&#432; &amp; th&#244;ng tin g&#243;i
+&#128274; Xem s&#7889; d&#432; &amp; l&#7883;ch s&#7917; s&#7917; d&#7909;ng
 </a>
 </div>
 </div>
@@ -364,6 +450,15 @@ fetch('/api/orders/packages')
       document.querySelectorAll('[data-package-price="' + pkg.id + '"]').forEach(function(element) {
         var price = Number(pkg.price || 0);
         element.textContent = price % 1000 === 0 ? (price / 1000).toLocaleString('vi-VN') + 'K' : price.toLocaleString('vi-VN');
+      });
+      document.querySelectorAll('[data-package-link="' + pkg.id + '"]').forEach(function(element) {
+        var url = String(pkg.external_url || '').trim();
+        if (url) {
+          element.setAttribute('href', url);
+        } else {
+          element.setAttribute('href', 'javascript:void(0)');
+          element.onclick = function(e) { e.preventDefault(); alert('Gói sắp có, vui lòng quay lại sau.'); };
+        }
       });
     });
   })
