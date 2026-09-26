@@ -1,5 +1,14 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-26 — Hết credit nhưng token vẫn còn (bất biến quota)
+- Bug: key-check hiện "Request còn lại: 0" nhưng "Số token còn lại" vẫn còn (vd 632.460). Bất biến "hết credit ⇒ token về 0" chỉ được ép trong `deductCredit()` (đường chết), còn đường sống là `reserveRequest`/`settleRequest` chỉ dựa vào công thức chia ngẫu nhiên nên lệch khi có reservation `reserved` bị bỏ quên (crash/restart — không có dọn) hoặc khi `adjustCredit` kéo credit về 0.
+- `credit.js`:
+  - `settleRequestTransaction`: sau khi settle, nếu `credit <= 0` thì ép `token_remaining = 0`.
+  - `adjustCredit`: nếu credit sau chỉnh `<= 0` thì ép `token_remaining = 0`.
+  - `getQuotaInfo`: credit `<= 0` luôn báo `token_remaining = 0` (cho `/api/credit/balance`, admin list).
+  - Mới `refundStaleReservations()` (hoàn credit cho reservation `reserved` sót sau crash + dọn pending) và `reconcileQuotaInvariant()` (kéo token về 0 cho key cũ đã lệch). Cả hai chạy 1 lần khi khởi động (hoàn trước, đồng bộ sau) và được export.
+- Verify: `node --check` OK; `npm test` — `tests/credit.test.js` 8/8 pass (7 case RED trước fix), `tests/identity.test.js` 29/29 pass.
+
 ## 2026-09-26 — Fix câu chào định danh "nhảy" vào câu trả lời hợp lệ
 - Bug: khách đang dùng bình thường thì câu trả lời bị thay bằng "Xin chào! Tôi là ...". Do `hasAssistantIdentityLeak` dò substring trần quá rộng (`minimax`, `knowledge cutoff`, `my training data`, `official cli`, `vscode extension`, `i am gpt-`...): chỉ cần model nhắc 1 cụm là `sanitizeAssistantIdentityChunk` thay cả câu trả lời rồi `identityReplaced=true` nuốt hết phần còn lại.
 - `doro_proxy_node.js`:

@@ -173,11 +173,15 @@ function isDailyLimitedQuotaKey(row) {
 }
 
 function getQuotaInfo(row) {
+  // Bat bien: het credit (request quota) => token quota ve 0. Key cu co the lech
+  // (credit=0, token>0) do reservation treo / admin adjust -> luon bao 0.
+  const credit = Number((row && row.credit) || 0);
+  const tokenRemaining = credit <= 0 ? 0 : Math.max(0, Number((row && row.token_remaining) || 0));
   return {
     package_id: getPackageIdFromLabel(row),
-    token_quota: Math.max(0, Number((row && row.token_remaining) || 0)),
+    token_quota: tokenRemaining,
     token_per_request: getTokenPerRequest(),
-    token_remaining: inferQuotaTokenRemaining(row),
+    token_remaining: tokenRemaining,
   };
 }
 
@@ -374,6 +378,11 @@ const settleRequestTransaction = db.transaction((reqId, tokensIn, tokensOut, mod
 
   stmts.insertTxn.run(reservation.key, -cost, "usage", tIn, tOut, model || reservation.model || "", reqId);
   stmts.settleReservation.run(tokenDebit, reqId);
+  // Het request quota => token quota ve 0 (giu bat bien credit<=0 <=> token=0),
+  // tranh truong hop credit=0 ma token con du do reservation treo / lech truoc do.
+  if (Number(row.credit || 0) <= 0) {
+    db.prepare("UPDATE api_keys SET token_remaining = 0 WHERE key = ? AND token_remaining > 0").run(reservation.key);
+  }
   const updated = stmts.getKey.get(reservation.key);
   return { ok: true, state: "settled", credited: cost, remaining: updated ? updated.credit : 0, token_remaining: updated ? updated.token_remaining : 0 };
 });
@@ -505,6 +514,8 @@ function adjustCredit(apiKey, delta, reason = "admin_adjustment") {
     const nextCredit = Number(row.credit || 0) + amount;
     if (nextCredit < 0) throw new Error("Credit cannot be reduced below zero");
     stmts.setCredit.run(nextCredit, apiKey);
+    // Het credit => token quota ve 0 (giu bat bien).
+    if (nextCredit <= 0) stmts.setTokenRemaining.run(0, apiKey);
     stmts.insertTxn.run(apiKey, amount, reason, 0, 0, "", "");
     return stmts.getKey.get(apiKey);
   });
@@ -715,6 +726,47 @@ function getStats() {
   return { ...keys, ...txns };
 }
 
+// ── Bất biến quota & dọn reservation treo ─────────────────────────────────────
+
+/**
+ * Bất biến: hết credit (request quota) => token quota phải về 0.
+ * Key cũ có thể lệch (credit=0 nhưng token>0) do reservation treo hoặc admin
+ * chỉnh credit tay. Kéo token về 0 để khớp với credit.
+ * @returns {number} số key được đồng bộ
+ */
+function reconcileQuotaInvariant() {
+  const result = db.prepare("UPDATE api_keys SET token_remaining = 0 WHERE credit <= 0 AND token_remaining > 0").run();
+  return result.changes;
+}
+
+/**
+ * Reservation để trạng thái 'reserved' qua crash/restart: request chưa settle nên
+ * credit đã bị trừ ở bước reserve -> hoàn lại credit (không mất oan) và dọn pending
+ * để công thức chia token không bị lệch.
+ * @returns {number} số reservation được hoàn
+ */
+function refundStaleReservations() {
+  const stale = db.prepare("SELECT req_id, key FROM request_reservations WHERE state = 'reserved'").all();
+  if (!stale.length) return 0;
+  const tx = db.transaction(() => {
+    const refundOne = db.prepare("UPDATE request_reservations SET state = 'refunded', completed_at = datetime('now') WHERE req_id = ? AND state = 'reserved'");
+    const giveBack = db.prepare("UPDATE api_keys SET credit = credit + 1 WHERE key = ?");
+    let refunded = 0;
+    for (const r of stale) {
+      if (refundOne.run(r.req_id).changes === 1) {
+        giveBack.run(r.key);
+        refunded += 1;
+      }
+    }
+    return refunded;
+  });
+  return tx();
+}
+
+// Chạy 1 lần khi khởi động: hoàn reservation treo TRƯỚC, rồi đồng bộ bất biến.
+refundStaleReservations();
+reconcileQuotaInvariant();
+
 module.exports = {
   generateKey,
   tokensToCredit,
@@ -742,4 +794,6 @@ module.exports = {
   getQuotaInfo,
   getStats,
   parseExpiryTime,
+  reconcileQuotaInvariant,
+  refundStaleReservations,
 };
