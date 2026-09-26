@@ -4131,6 +4131,13 @@ function safeStreamBufferLimitBytes() {
   return configured || (8 * 1024 * 1024);
 }
 
+// Buffer toàn bộ stream của backend đầu (chat/messages) khi còn backend kế tiếp,
+// để nếu backend cắt stream giữa chừng thì failover sạch sang backend khác thay vì
+// trả nội dung dở dang cho khách. Mặc định TẮT (đổi hành vi stream token-token).
+function safeStreamFailoverChatEnabled() {
+  return envFlag(process.env.DORO_SAFE_STREAM_FAILOVER_CHAT, false);
+}
+
 // Ép stream cho path non-stream: gửi stream:true lên backend rồi gộp thành JSON.
 // Giúp ổn định/liên tục (tránh 504/502 do upstream idle timeout khi phản hồi dài).
 // Mặc định tắt để rollback dễ; bật = 1.
@@ -4679,9 +4686,18 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           err.text = text;
           throw err;
         }
+        const bufferedChat = deferErrorToCaller && safeStreamFailoverChatEnabled();
+        if (bufferedChat) {
+          // Mở SSE + heartbeat trước khi buffer để Cloudflare không cắt kết nối idle.
+          setSseHeaders(res);
+          if (!stopHeartbeat) stopHeartbeat = startSseHeartbeat(res);
+          res.__chatStreamFlushed = true;
+          resp = await bufferCompleteBackendStream(resp, settings && settings.apiStyle === "anthropic");
+          addLog(`stream ant safely buffered for backend failover profile=${settings && settings.profileId || ""}`);
+        }
         wroteResponse = true;
         setSseHeaders(res);
-        stopHeartbeat = startSseHeartbeat(res);
+        if (!stopHeartbeat) stopHeartbeat = startSseHeartbeat(res);
         return settings && settings.apiStyle === "anthropic"
           ? pipeAnthropicStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages))
           : pipeOpenAIStreamToAnthropic(resp, res, publicModel, backendModel, messagesLookLikeSourceEdit(payload.messages));
@@ -4701,7 +4717,8 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       lastError = err;
       if (obs && err.status) obs.final_backend_status = err.status;
       if (err.status) {
-        if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
+        const isTruncatedStream = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
+        if (!wroteResponse && !isTruncatedStream && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) {
             obs.is_retry = true;
             obs.retry_count += 1;
@@ -4721,11 +4738,15 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
           sseWrite(res, "error", anthropicErrorPayload(err.status, parsed.message, parsed.type, parsed.code));
           // Stream đã gửi message_start/content rồi mới bị cắt giữa chừng:
           // gửi message_stop để Anthropic SDK thoát gọn thay vì treo chờ.
-          const isTruncatedAnthropic = err.code === "truncated_backend_stream" || err.code === "incomplete_backend_stream";
-          if (isTruncatedAnthropic) sseWrite(res, "message_stop", { type: "message_stop" });
+          if (isTruncatedStream) sseWrite(res, "message_stop", { type: "message_stop" });
           return res.end();
         }
         const clientStatus = clientBackendStatus(err.status);
+        if (res.__chatStreamFlushed) {
+          sseWrite(res, "error", anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
+          sseWrite(res, "message_stop", { type: "message_stop" });
+          return res.end();
+        }
         return res.status(clientStatus).json(anthropicErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
       }
       if (!wroteResponse && i < ordered.length - 1) {
@@ -4745,6 +4766,11 @@ async function streamAnthropicWithFailover(res, url, payload, apiKeys, publicMod
       if (!wroteResponse && deferErrorToCaller) throw err;
       if (wroteResponse) {
         sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
+        return res.end();
+      }
+      if (res.__chatStreamFlushed) {
+        sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
+        sseWrite(res, "message_stop", { type: "message_stop" });
         return res.end();
       }
       return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
@@ -4784,7 +4810,16 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           err.text = text;
           throw err;
         }
-        const safeBuffered = deferErrorToCaller && !!res.__responsesBridge && safeStreamFailoverEnabled();
+        const bufferedResponses = deferErrorToCaller && !!res.__responsesBridge && safeStreamFailoverEnabled();
+        const bufferedChat = deferErrorToCaller && !res.__responsesBridge && safeStreamFailoverChatEnabled();
+        const safeBuffered = bufferedResponses || bufferedChat;
+        if (bufferedChat) {
+          // Phải mở SSE + heartbeat TRƯỚC khi buffer để Cloudflare không cắt
+          // kết nối idle trong lúc chờ backend trả xong (có thể vài phút).
+          setSseHeaders(res);
+          if (!stopHeartbeat) stopHeartbeat = startSseHeartbeat(res);
+          res.__chatStreamFlushed = true;
+        }
         if (safeBuffered) {
           resp = await bufferCompleteBackendStream(resp, anthropicWire);
           addLog(`stream safely buffered for backend failover profile=${settings && settings.profileId || ""}`);
@@ -4811,7 +4846,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           if (streamOpened) return;
           if (!res.__responsesBridge) wroteResponse = true;
           setSseHeaders(res);
-          stopHeartbeat = startSseHeartbeat(res);
+          if (!stopHeartbeat) stopHeartbeat = startSseHeartbeat(res);
           for (const pending of pendingChunks) res.write(pending);
           pendingChunks.length = 0;
           streamOpened = true;
@@ -4950,7 +4985,7 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
           await new Promise((resolve) => setTimeout(resolve, retryDelayMs(retryDepth + 1)));
           return streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel, backendModel, obs, apiKeyToken, modelName, reqId, settings, deferErrorToCaller, retryDepth + 1);
         }
-        if (!wroteResponse && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
+        if (!wroteResponse && !isTruncatedStream && isRetryableAcrossKeys(err.status) && i < ordered.length - 1) {
           if (obs) { obs.is_retry = true; obs.retry_count += 1; obs.error_type = "backend"; }
           continue;
         }
@@ -4959,6 +4994,13 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
         const parsed = publicBackendError(err.status, err.text || "", backendModel, publicModel, err.code);
         if (!wroteResponse) {
           const clientStatus = clientBackendStatus(err.status);
+          if (res.__chatStreamFlushed) {
+            try {
+              res.write(`data: ${JSON.stringify(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code))}\n\n`);
+              res.write("data: [DONE]\n\n");
+            } catch (_) {}
+            return res.end();
+          }
           return res.status(clientStatus).json(openaiErrorPayload(clientStatus, parsed.message, parsed.type, parsed.code));
         }
         const clientStatus = clientBackendStatus(err.status);
@@ -4981,6 +5023,13 @@ async function streamOpenAIWithFailover(res, url, payload, apiKeys, publicModel,
       if (obs) { obs.error_type = "network"; obs.error_message = `${err.name || "Error"}: ${err.message}`.slice(0, 180); }
       if (obs && obs.backend_id) trackBackendError(obs.backend_id, 0, err.message || String(err), err.code);
       if (!wroteResponse) {
+        if (res.__chatStreamFlushed) {
+          try {
+            res.write(`data: ${JSON.stringify(openaiErrorPayload(502, publicBackendFallbackMessage(502)))}\n\n`);
+            res.write("data: [DONE]\n\n");
+          } catch (_) {}
+          return res.end();
+        }
         return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
       }
       res.write(`data: ${JSON.stringify(openaiErrorPayload(502, publicBackendFallbackMessage(502)))}\n\n`);
@@ -5566,8 +5615,13 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
         );
         return;
       } catch (streamErr) {
-        if (res.headersSent || chainIdx >= settingsChain.length - 1) {
+        if ((res.headersSent && !res.__chatStreamFlushed) || chainIdx >= settingsChain.length - 1) {
           if (!res.headersSent) return res.status(502).json(anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
+          if (res.__chatStreamFlushed) {
+            sseWrite(res, "error", anthropicErrorPayload(502, publicBackendFallbackMessage(502)));
+            sseWrite(res, "message_stop", { type: "message_stop" });
+            return res.end();
+          }
           return;
         }
         addLog(`stream anthropic backend-chain failover from backend ${chainSettings.profileId} to ${settingsChain[chainIdx+1].profileId} err=${streamErr.status||streamErr.message}`);
@@ -6691,9 +6745,18 @@ async function openAIChatCompletionsHandler(req, res) {
         );
         return;
       } catch (streamErr) {
-        const responseCommitted = res.headersSent && !res.__responsesBridge;
+        const responseCommitted = res.headersSent && !res.__responsesBridge && !res.__chatStreamFlushed;
         if (responseCommitted || chainIdx >= settingsChain.length - 1) {
-          if (!responseCommitted) return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
+          if (!responseCommitted) {
+            if (res.__chatStreamFlushed) {
+              try {
+                res.write(`data: ${JSON.stringify(openaiErrorPayload(502, publicBackendFallbackMessage(502)))}\n\n`);
+                res.write("data: [DONE]\n\n");
+              } catch (_) {}
+              return res.end();
+            }
+            return res.status(502).json(openaiErrorPayload(502, publicBackendFallbackMessage(502)));
+          }
           return;
         }
         addLog(`stream openai backend-chain failover from backend ${chainSettings.profileId} to ${settingsChain[chainIdx+1].profileId} err=${streamErr.status||streamErr.message}`);
@@ -7624,6 +7687,7 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKUP2_API_STYLE",
     "DORO_AUTO_RECOVERY_MS",
     "DORO_FORCE_STREAM_NONSTREAM",
+    "DORO_SAFE_STREAM_FAILOVER_CHAT",
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
     "DORO_MODEL_LIMITS",
@@ -7655,6 +7719,7 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_BACKUP_ACTIVE_BACKEND") value = normalizeBackupBackendSelection(value);
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-5]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
       continue;
