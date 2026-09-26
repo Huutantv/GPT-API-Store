@@ -2251,6 +2251,54 @@ function prependAgentToolGuard(messages, tools) {
   ];
 }
 
+// Codex dùng exec_command/write_stdin/apply_patch; trên Windows hay mất file
+// tạm giữa các bước vì model dùng đường dẫn tương đối trong khi mỗi lệnh chạy
+// ở working directory khác. Guard này chỉ hướng model dùng đường dẫn tuyệt đối
+// + working_directory rõ ràng. Bật/tắt bằng DORO_CODEX_PATH_GUARD (mặc định bật).
+const CODEX_PATH_TOOL_RE = /^(?:exec_command|write_stdin|apply_patch)$/i;
+
+function codexPathGuardEnabled() {
+  return envFlag(process.env.DORO_CODEX_PATH_GUARD, true);
+}
+
+function isCodexToolset(tools) {
+  return (Array.isArray(tools) ? tools : []).some((tool) => {
+    if (!tool || typeof tool !== "object") return false;
+    const name = tool.function && typeof tool.function === "object" ? tool.function.name : tool.name;
+    return CODEX_PATH_TOOL_RE.test(String(name || "").trim());
+  });
+}
+
+function codexPathGuardMessage() {
+  return {
+    role: "system",
+    content: [
+      "Shell/patch path policy (Windows):",
+      "- Use absolute paths (with drive letter, e.g. C:\\proj\\src\\File.java) for any file you create, read, or reference across separate commands.",
+      "- When creating a scratch/temp file, write it with an absolute path and reuse that exact absolute path in later commands; never assume a relative path resolves to the same folder across separate tool calls.",
+      "- Pass an explicit working_directory on shell/exec calls when the command depends on the current directory.",
+      "- Prefer one command that both creates and consumes a temp file over two separate commands.",
+    ].join("\n"),
+  };
+}
+
+function prependCodexPathGuard(messages, tools) {
+  if (!codexPathGuardEnabled()) return Array.isArray(messages) ? messages : [];
+  const original = Array.isArray(messages) ? messages : [];
+  if (!isCodexToolset(tools)) return original;
+  const alreadyPresent = original.some((message) =>
+    message && message.role === "system" && String(message.content || "").includes("Shell/patch path policy (Windows):")
+  );
+  if (alreadyPresent) return original;
+  const firstNonSystem = original.findIndex((message) => message && message.role !== "system");
+  if (firstNonSystem === -1) return [...original, codexPathGuardMessage()];
+  return [
+    ...original.slice(0, firstNonSystem),
+    codexPathGuardMessage(),
+    ...original.slice(firstNonSystem),
+  ];
+}
+
 function extractToken(req) {
   const auth = req.get("authorization") || "";
   if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7);
@@ -6797,7 +6845,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (imageCount) addLog(`responses images count=${imageCount}`);
   const rawResponseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
   const responseMessages = hydrateResponsesContinuation(original.previous_response_id, rawResponseMessages);
-  const guardedResponseMessages = prependEncodingGuard(prependAgentToolGuard(responseMessages, chatTools));
+  const guardedResponseMessages = prependEncodingGuard(prependCodexPathGuard(prependAgentToolGuard(responseMessages, chatTools), chatTools));
   req.body = {
     model: original.model || "opus",
     messages: guardedResponseMessages,
@@ -6897,6 +6945,7 @@ async function openAIChatCompletionsHandler(req, res) {
       req.obs.backend_base_url = chainSettings.baseUrl || "";
       const payload = { ...body, model: chainSettings.backendModel };
       if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
+      if (Array.isArray(payload.messages)) payload.messages = prependCodexPathGuard(payload.messages, payload.tools);
       if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
       if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
       applyBackendPayloadLimits(payload, chainSettings);
@@ -6961,6 +7010,7 @@ async function openAIChatCompletionsHandler(req, res) {
         result = await collectBackendStreamToOpenAI(settingsChain, (profileSettings) => {
           const payload = { ...roundBody, model: profileSettings.backendModel };
           if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
+          if (Array.isArray(payload.messages)) payload.messages = prependCodexPathGuard(payload.messages, payload.tools);
           if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
           if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
           normalizeOpenAIChatPayloadForBackend(payload, profileSettings);
@@ -6970,6 +7020,7 @@ async function openAIChatCompletionsHandler(req, res) {
         result = await postWithBackendChain(settingsChain, (profileSettings) => {
           const payload = { ...roundBody, model: profileSettings.backendModel };
           if (Array.isArray(payload.messages)) payload.messages = prependAgentToolGuard(payload.messages, payload.tools);
+          if (Array.isArray(payload.messages)) payload.messages = prependCodexPathGuard(payload.messages, payload.tools);
           if (Array.isArray(payload.messages)) payload.messages = prependIdentityGuard(payload.messages, publicModel);
           if (Array.isArray(payload.messages)) payload.messages = prependEncodingGuard(payload.messages);
           applyBackendPayloadLimits(payload, profileSettings);
@@ -7728,6 +7779,7 @@ app.get("/api/config", (req, res) => {
     auto_backup: autoBackupEnabled(),
     auto_backup_recovery_ms: autoBackupRecoveryMs(),
     auto_backup_active: _autoBackup.active,
+    codex_path_guard: codexPathGuardEnabled(),
     auto_switch_health: {
       main_healthy: !_autoSwitchHealth.mainDownSince,
       using_backup: !!_autoSwitchHealth.usingBackup,
@@ -7915,6 +7967,7 @@ app.put("/api/config", (req, res) => {
     "DORO_AUTO_RECOVERY_MS",
     "DORO_FORCE_STREAM_NONSTREAM",
     "DORO_SAFE_STREAM_FAILOVER_CHAT",
+    "DORO_CODEX_PATH_GUARD",
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
     "DORO_MODEL_LIMITS",
@@ -7949,6 +8002,7 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_CODEX_PATH_GUARD") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-7]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
       continue;

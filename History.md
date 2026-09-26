@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Codex path guard (chống mất file tạm giữa các bước)
+- Vấn đề: khách Codex trên Windows hay mất file tạm giữa các tool call (`exec_command`/`apply_patch` ghi file rồi lệnh sau không thấy) do model dùng đường dẫn tương đối trong khi mỗi lệnh chạy ở working directory khác.
+- `doro_proxy_node.js`: thêm `codexPathGuardEnabled()` (`DORO_CODEX_PATH_GUARD`, mặc định bật), `isCodexToolset()` (nhận `exec_command`/`write_stdin`/`apply_patch`), `codexPathGuardMessage()` + `prependCodexPathGuard()` (idempotent, chèn 1 system hint ở firstNonSystem: dùng đường dẫn tuyệt đối, reuse đúng path, truyền `working_directory`, ưu tiên 1 lệnh create+consume). Áp tại `/v1/responses` và 3 điểm của chat/completions (stream + 2 builder non-stream). Guard chỉ kích hoạt khi có tool-set Codex.
+- Env plumbing: `DORO_CODEX_PATH_GUARD` vào whitelist `PUT /api/config` + normalize; `codex_path_guard` trong `GET /api/config`; thêm vào `.env.example`.
+- Verify: `node --check` OK; `tests/codex-guard.test.js` mới 16/16 pass; full suite 140/140 pass.
+
 ## 2026-09-27 — Repair backslash tool-args + log lý do abort stream
 - Vấn đề: khách Kilo trên Windows compile Java, file args (`%TEMP%\kilo\src_args.txt`) mất giữa các bước; model backend xuất tool-call args chứa backslash Windows không escape (`C:\Users`, `C:\Temp`) → `JSON.parse` fail (hoặc `\t`/`\n` biến thành control char) → client không thực thi được bước ghi file. Log chỉ thấy `RES ... status=200` dù stream bị cắt giữa chừng (mojibake/truncated/empty) nên không rõ lý do.
 - `doro_proxy_node.js`:
