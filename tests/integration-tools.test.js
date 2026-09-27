@@ -180,6 +180,7 @@ function collectAnthropicToolUse(sse) {
 function collectResponsesItems(sse) {
   const items = [];
   let completed = false;
+  let completedResponse = null;
   for (const block of sse.split(/\n\n/)) {
     const dataLine = block.split(/\n/).find((l) => l.startsWith("data:"));
     if (!dataLine) continue;
@@ -188,9 +189,9 @@ function collectResponsesItems(sse) {
     let j;
     try { j = JSON.parse(d); } catch (_) { continue; }
     if (j.type === "response.output_item.done" && j.item) items.push(j.item);
-    if (j.type === "response.completed") completed = true;
+    if (j.type === "response.completed") { completed = true; completedResponse = j.response; }
   }
-  return { items, completed };
+  return { items, completed, completedResponse };
 }
 
 function parseJson(text) {
@@ -364,6 +365,7 @@ async function main() {
     check("responses: function_call present", !!item, JSON.stringify((j.output || []).map((o) => o.type)));
     check("responses: function name kept", item && item.name === "write_file", item && item.name);
     check("responses: arguments kept", item && item.arguments === '{"path":"out.txt","content":"hello"}', item && item.arguments);
+    check("responses: usage has input_tokens", !!(j.usage && typeof j.usage.input_tokens === "number" && typeof j.usage.output_tokens === "number"), JSON.stringify(j.usage));
     const sent = captured[before].body;
     check("responses->backend: tool forwarded", sent.tools && sent.tools[0].function.name === "write_file", JSON.stringify((sent.tools || []).map((t) => t.function && t.function.name)));
   }
@@ -400,6 +402,7 @@ async function main() {
     check("responses stream: name kept", item && item.name === "write_file", item && item.name);
     check("responses stream: arguments kept", item && item.arguments === '{"path":"out.txt","content":"hello"}', item && item.arguments);
     check("responses stream: response.completed", got.completed === true);
+    check("responses stream: usage has input_tokens", !!(got.completedResponse && got.completedResponse.usage && typeof got.completedResponse.usage.input_tokens === "number"), JSON.stringify(got.completedResponse && got.completedResponse.usage));
   }
 
   // ── 8. Auto-continue: vòng 1 "hứa tiếp" (không tool) → vòng 2 tool call ────
@@ -437,6 +440,7 @@ async function main() {
     check("autocont resp stream: function_call after nudge", !!item && item.name === "write_file", JSON.stringify(got.items.map((o) => o.type)));
     check("autocont resp stream: args kept", item && item.arguments === '{"path":"out.txt","content":"hello"}', item && item.arguments);
     check("autocont resp stream: completed", got.completed === true);
+    check("autocont resp stream: usage has input_tokens", !!(got.completedResponse && got.completedResponse.usage && typeof got.completedResponse.usage.input_tokens === "number"), JSON.stringify(got.completedResponse && got.completedResponse.usage));
     check("autocont resp stream: backend called twice", autoContinueCalls.resp === 2, String(autoContinueCalls.resp));
   }
 

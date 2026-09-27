@@ -3624,7 +3624,7 @@ function failBufferedResponsesStream(res, publicModel, error) {
     model: publicModel,
     output: [],
     output_text: "",
-    usage: null,
+    usage: normalizeResponsesUsage(null),
   });
   try {
     responseSseWrite(res, "response.created", { type: "response.created", response });
@@ -5797,8 +5797,19 @@ function chatCompletionToResponses(data, publicModel, customToolNames = new Set(
     model: publicModel || data.model,
     output,
     output_text: text,
-    usage: data.usage || null,
+    usage: normalizeResponsesUsage(data.usage),
   });
+}
+
+// Codex (Responses API) parse `usage` cua response.completed va BAT BUOC co
+// input_tokens/output_tokens. Backend OpenAI-style tra prompt_tokens/completion_tokens
+// nen phai normalize, neu thieu field Codex se "missing field input_tokens" -> reconnect.
+function normalizeResponsesUsage(usage) {
+  const u = usage && typeof usage === "object" ? usage : {};
+  const input = Number(u.input_tokens ?? u.prompt_tokens ?? 0) || 0;
+  const output = Number(u.output_tokens ?? u.completion_tokens ?? 0) || 0;
+  const total = Number(u.total_tokens) || (input + output);
+  return { input_tokens: input, output_tokens: output, total_tokens: total };
 }
 
 function withResponsesCompatFields(response) {
@@ -5890,6 +5901,7 @@ function createResponsesStreamBridge(res, publicModel, customToolNames = new Set
     object: "response",
     created_at: createdAt,
     model: publicModel,
+    usage: normalizeResponsesUsage(null),
   });
 
   const startResponse = () => {
@@ -5989,11 +6001,7 @@ function createResponsesStreamBridge(res, publicModel, customToolNames = new Set
   const complete = () => {
     if (completed) return;
     if (!responseStarted) startResponse();
-    const normalizedUsage = usage ? {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-      total_tokens: usage.total_tokens || ((usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0)),
-    } : null;
+    const normalizedUsage = normalizeResponsesUsage(usage);
 
     const output = [];
 
@@ -6207,7 +6215,7 @@ app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
     model: publicModel,
     output: [],
     output_text: "",
-    usage: null,
+    usage: normalizeResponsesUsage(null),
   });
   addLog(`responses compact ok model=${publicModel}`);
   res.json(response);

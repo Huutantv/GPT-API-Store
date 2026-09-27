@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — FIX GỐC: Responses `usage` thiếu `input_tokens` → Codex "stream disconnected"
+- Triệu chứng thật: Codex báo `stream disconnected before completion: failed to parse ResponseCompleted: missing field input_tokens` → reconnect liên tục rồi dừng giữa chừng. Đây là **nguyên nhân gốc** của "hứa rồi dừng".
+- Nguyên nhân: event `response.completed` (và response non-stream/compact) trả `usage` kiểu OpenAI (`prompt_tokens`/`completion_tokens`) hoặc `null`; Codex (Responses API) bắt buộc có `input_tokens`/`output_tokens`.
+- `doro_proxy_node.js`: thêm `normalizeResponsesUsage(usage)` → luôn `{input_tokens, output_tokens, total_tokens}` (fallback 0). Áp tại `chatCompletionToResponses`, bridge `complete()` (`responseBase` + `response.completed`), `/responses/compact`, `failBufferedResponsesStream`, `response.created`/`in_progress`.
+- Test: `tests/integration-tools.test.js` thêm assert `usage.input_tokens` là number cho Responses non-stream + stream + auto-continue. Verify: full suite 210/210 pass.
+
 ## 2026-09-27 — Agent guard + auto-continue (chống Codex "hứa rồi dừng")
 - Vấn đề: Codex/agent qua proxy hay kết thúc turn bằng lời hứa ("tôi sẽ đọc tiếp...") mà không gọi tool → client dừng giữa chừng. Xác minh: proxy không làm mất tool call (test 3 wire), nguyên nhân là model tự kết thúc turn text-only.
 - `doro_proxy_node.js`:
