@@ -3528,8 +3528,8 @@ function agentAutoContinueEnabled() {
 }
 
 function agentAutoContinueMax() {
-  const value = Number(process.env.DORO_AGENT_AUTO_CONTINUE_MAX || "1");
-  if (!Number.isFinite(value)) return 1;
+  const value = Number(process.env.DORO_AGENT_AUTO_CONTINUE_MAX || "2");
+  if (!Number.isFinite(value)) return 2;
   return Math.max(0, Math.min(3, Math.floor(value)));
 }
 
@@ -3542,7 +3542,8 @@ function agentAutoContinueMode() {
 
 function isExplicitCompletionText(text) {
   const value = String(text || "").trim();
-  if (!value || value.length > 600) return false;
+  if (!value || value.length > 1200) return false;
+  if (/\b(now verify|now read|now run|now check|now look|now inspect|now examine|now build|now test|now fix)\b/i.test(value)) return false;
   return /(đã xong|đã hoàn thành|đã hoàn tất|hoàn thành|hoàn tất|xong hết|đã xử lý xong|đã làm xong|kết thúc|all done|task complete|task is complete|everything is done|completed|finished|i'?m done)/i.test(value);
 }
 
@@ -3578,7 +3579,7 @@ function prependAgentContinueGuard(messages, tools) {
 
 function agentAutoContinueNudgeMessage() {
   return {
-    role: "system",
+    role: "user",
     content: "Bạn chưa hoàn thành nhiệm vụ. Không được kết thúc bằng lời hứa. Hãy gọi tool cần thiết ngay bây giờ (đọc/ghi file, chạy lệnh, kiểm tra...) để tiếp tục; chỉ trả lời văn bản khi công việc đã thực sự xong.",
   };
 }
@@ -3672,6 +3673,7 @@ async function runAgentRounds(settingsChain, chatBody, obs, hasTools) {
   const messages = Array.isArray(chatBody.messages) ? chatBody.messages.slice() : [];
   const baseBody = { ...chatBody, messages, stream: false };
   const buildPayload = (profileSettings) => ({ ...baseBody, model: profileSettings.backendModel });
+  let accumulatedUsage = null;
   for (let round = 0; ; round += 1) {
     // Dung cung co che voi path non-stream cua handler (forceStreamNonstream) de
     // backend reasoning/stream-only khong tra rong khi goi non-stream.
@@ -3683,8 +3685,21 @@ async function runAgentRounds(settingsChain, chatBody, obs, hasTools) {
         if (payloadError) throw payloadError;
         return parsed;
       });
+    // Tich luy usage tu tat ca vong (khong chi vong cuoi).
+    if (result && result.data && result.data.usage) {
+      if (!accumulatedUsage) accumulatedUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
+      accumulatedUsage.total_tokens += Number(result.data.usage.total_tokens || 0);
+      accumulatedUsage.prompt_tokens += Number(result.data.usage.prompt_tokens || result.data.usage.input_tokens || 0);
+      accumulatedUsage.completion_tokens += Number(result.data.usage.completion_tokens || result.data.usage.output_tokens || 0);
+    }
     if (!shouldAutoContinue(result.data, hasTools, round, maxRounds)) {
       if (round > 0) addLog(`auto-continue done rounds=${round + 1} model=${(result.settings && result.settings.backendModel) || ""}`);
+      if (accumulatedUsage && result && result.data) {
+        result.data.usage = result.data.usage || {};
+        result.data.usage.total_tokens = accumulatedUsage.total_tokens || result.data.usage.total_tokens || 0;
+        result.data.usage.prompt_tokens = accumulatedUsage.prompt_tokens || result.data.usage.prompt_tokens || 0;
+        result.data.usage.completion_tokens = accumulatedUsage.completion_tokens || result.data.usage.completion_tokens || 0;
+      }
       return result;
     }
     appendAutoContinueNudge(messages, result.data);
@@ -6329,6 +6344,11 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     if (!responsesAutoContinue) {
       res.__responsesBridge = true;
       streamBridge.start();
+    } else if (!res.__stopHeartbeat) {
+      // Auto-continue chay non-stream (co the vai phut) — giu heartbeat de
+      // Cloudflare khong cat ket noi idle (524) khi client stream Responses.
+      res.__stopHeartbeat = startSseHeartbeat(res);
+      res.on("close", () => { try { res.__stopHeartbeat && res.__stopHeartbeat(); } catch (_) {} });
     }
   }
   const oldJson = res.json.bind(res);

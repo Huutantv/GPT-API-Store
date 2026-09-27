@@ -1,5 +1,16 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Auto-continue: 4 fix cho lỗi #2 "model hứa rồi đứng"
+- Bối cảnh: guard + auto-continue đã bắt phần lớn, nhưng còn 4 lỗ hổng khiến agent (Codex/Cline/Kilo) vẫn dừng giữa task.
+- `doro_proxy_node.js`:
+  1. `agentAutoContinueMax()` mặc định **2** (trước 1) — trước đây chỉ nudge đúng 1 vòng; model hứa lần 2 là hết, client nhận text-only promise rồi dừng.
+  2. `agentAutoContinueNudgeMessage()` đổi `role: "system"` → **`role: "user"`** — system message chèn SAU assistant bị nhiều backend OpenAI-compatible xử lý sai/bỏ qua; user message tương thích rộng hơn.
+  3. `isExplicitCompletionText()`: nâng trần độ dài 600 → **1200** (final answer dài bị coi nhầm là chưa xong → nudge thừa) + loại trừ preamble `now verify/read/run/check/...` (khớp "now verify and add ..." nhưng KHÔNG phải câu hoàn thành).
+  4. `runAgentRounds()` **cộng dồn usage qua mọi vòng** vào `result.data.usage` — trước đây chỉ tính usage vòng cuối, các vòng bị bỏ (nudge) không được tính token → under-charge credit + sai stats.
+  5. Responses wire (`/v1/responses`) khi auto-continue: giữ **SSE heartbeat 15s** trong lúc chạy non-stream nhiều vòng (trước đây chỉ flush header, không byte nào → nguy cơ Cloudflare cắt 524 vì idle).
+- `.env.example`: `DORO_AGENT_AUTO_CONTINUE_MAX=2` + ghi chú.
+- Test: `tests/agent-continue.test.js` cập nhật (default max 2, nudge role user, completion long/now-verify). Verify: `node --check` OK; full suite **233/233** pass.
+
 ## 2026-09-27 — Auto-continue: mặc định chuyển sang `aggressive` (fix triệt để hơn)
 - Pattern-based vẫn bỏ sót các câu như "Now verify and add on_accent_idx helper to theme.rs." → chuyển **mặc định `DORO_AGENT_AUTO_CONTINUE_MODE=aggressive`**: nudge mọi turn text-only có tools, trừ khi `isExplicitCompletionText` và không kết thúc bằng ":".
 - Bổ sung pattern `(now|next|then|finally) … (add|verify|check|read|run|update|fix|test|build|apply|implement|…)` + tiếng Việt `(bây giờ|tiếp theo|sau đó|kế tiếp) … (thêm|kiểm tra|sửa|…)`.

@@ -126,7 +126,7 @@ check("promise-false:too-long", isContinuationPromiseText("Tôi sẽ đọc ti�
 // 5. max clamp + active helper.
 {
   delete process.env.DORO_AGENT_AUTO_CONTINUE_MAX;
-  check("max: default 1", agentAutoContinueMax() === 1);
+  check("max: default 2", agentAutoContinueMax() === 2);
   process.env.DORO_AGENT_AUTO_CONTINUE_MAX = "9";
   check("max: clamp 3", agentAutoContinueMax() === 3);
   process.env.DORO_AGENT_AUTO_CONTINUE_MAX = "0";
@@ -142,8 +142,8 @@ check("promise-false:too-long", isContinuationPromiseText("Tôi sẽ đọc ti�
   const data = { choices: [{ message: { role: "assistant", content: "Tôi sẽ đọc tiếp." } }] };
   appendAutoContinueNudge(messages, data);
   check("nudge: assistant appended", messages[1].role === "assistant" && messages[1].content === "Tôi sẽ đọc tiếp.");
-  check("nudge: system nudge appended", messages[2].role === "system" && messages[2].content.includes("chưa hoàn thành"));
-  check("nudge: message shape", agentAutoContinueNudgeMessage().role === "system");
+  check("nudge: nudge appended as user", messages[2].role === "user" && messages[2].content.includes("chưa hoàn thành"));
+  check("nudge: message shape", agentAutoContinueNudgeMessage().role === "user");
 }
 
 // 7. Mode + explicit completion (aggressive).
@@ -157,6 +157,10 @@ check("promise-false:too-long", isContinuationPromiseText("Tôi sẽ đọc ti�
 
   check("completion: true", isExplicitCompletionText("Đã hoàn thành tất cả các bước.") === true);
   check("completion: false", isExplicitCompletionText("Tôi sẽ đọc tiếp.") === false);
+  // Fix: final answer dài (>600) vẫn phải nhận ra là xong (trước đây bị nudge sai).
+  check("completion: long done true", isExplicitCompletionText("Đã hoàn thành tất cả các bước. " + "x".repeat(800)) === true);
+  // Fix: 'now verify/add...' là preamble, KHÔNG tính là xong dù chứa từ khóa.
+  check("completion: now-verify false", isExplicitCompletionText("Now verify and add on_accent_idx helper to theme.rs.") === false);
 
   // aggressive: nudge moi text-only tru khi noi ro da xong.
   const plain = { choices: [{ message: { role: "assistant", content: "Đang xử lý bước quan trọng." } }] };
