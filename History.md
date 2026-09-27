@@ -1,5 +1,14 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Fix `empty_assistant_response` (backend reasoning trả rỗng)
+- Log: `/v1/chat/completions`, backend `creq/deepseek-v4.1-flash-req`, latency 93.6s, 502 `empty_assistant_response`. Backend trả 200 nhưng assistant rỗng (không content/tool_calls).
+- Nghi vấn: `runAgentRounds` (auto-continue) gọi backend **non-stream** trực tiếp, bỏ qua `DORO_FORCE_STREAM_NONSTREAM=1` → backend reasoning/stream-only trả rỗng.
+- `doro_proxy_node.js`:
+  - `runAgentRounds`: dùng cùng cơ chế với path non-stream của handler — `collectBackendStreamToOpenAI` khi `forceStreamNonstreamEnabled()`, ngược lại `postWithBackendChain`.
+  - `hasOpenAIAssistantOutput`: chấp nhận thêm `reasoning_content` (model reasoning chỉ trả reasoning).
+  - Log chi tiết khi rỗng: `empty assistant response backend=... finish=... content_len=... reasoning_len=... tool_calls=... usage=...`.
+- Verify: full suite 228/228 pass.
+
 ## 2026-09-27 — Auto-continue mode: pattern (mặc định) / aggressive (càn quét)
 - Codex/Cline/Kilo dùng tín hiệu ngầm "turn không tool_call = xong" → model dừng sớm thì proxy không biết chắc. Thêm mode để chọn mức bắt.
 - `DORO_AGENT_AUTO_CONTINUE_MODE=pattern` (mặc định, an toàn: chỉ nudge khi text khớp mẫu "định làm tiếp") | `aggressive` (nudge mọi turn text-only có tools, trừ khi `isExplicitCompletionText` và không kết thúc bằng ":").

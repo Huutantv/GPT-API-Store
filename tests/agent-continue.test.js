@@ -73,6 +73,9 @@ for (const t of [
   "Kiểm tra git diff:",
   "Đã update xong. 33 references được sửa across 13 files. Kiểm tra git diff:",
   "Let me read the file:",
+  "Now verify and add on_accent_idx helper to theme.rs.",
+  "Next, update the palette and run the tests.",
+  "Bây giờ tôi thêm helper vào theme.rs.",
 ]) {
   check("promise-true:" + t.slice(0, 24), isContinuationPromiseText(t) === true);
 }

@@ -2640,6 +2640,8 @@ function hasOpenAIAssistantOutput(data) {
   return (
     hasContent(message.content) ||
     hasContent(delta.content) ||
+    hasContent(message.reasoning_content) ||
+    hasContent(delta.reasoning_content) ||
     (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) ||
     (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0)
   );
@@ -3589,8 +3591,9 @@ function isContinuationPromiseText(text) {
     /(tôi|mình|em)\s+sẽ\s+.*(tiếp|đọc|xem|kiểm tra|thực hiện|làm|gọi|chạy|phân tích|liệt kê)/i,
     /(đọc tiếp|kiểm tra tiếp|xem tiếp|làm tiếp|thực hiện tiếp|đọc nốt|kiểm tra nốt|xem nốt)/i,
     /(để tôi|cho tôi)\s+.*(đọc|kiểm tra|xem|làm|thực hiện)/i,
-    /(bước tiếp theo|tiếp theo|giờ tôi|bây giờ tôi|sau đó tôi|next step|next steps|now i|now let)/i,
+    /(bước tiếp theo|tiếp theo|giờ tôi|bây giờ tôi|sau đó tôi|sau đây|kế tiếp|bây giờ|giờ thì)\b[^\n]{0,80}(thêm|kiểm tra|sửa|xem|đọc|chạy|tạo|cập nhật|áp dụng|triển khai|viết|xoá|xóa|bổ sung|dọn|kiểm)/i,
     /\b(i'?ll|i will|let me|next,?\s+i|now i'?ll|i'?m going to|checking|running|reading)\b/i,
+    /\b(now|next|then|finally)\b[^\n]{0,80}\b(add|verify|check|read|run|open|inspect|update|create|write|edit|fix|test|build|look|find|search|apply|implement|remove|move|refactor|ensure)\b/i,
   ];
   if (patterns.some((pattern) => pattern.test(value))) return true;
   // Cau thong bao "sap lam X:" (dong cuoi ket thuc bang dau hai cham) la dau hieu model
@@ -3668,16 +3671,18 @@ async function runAgentRounds(settingsChain, chatBody, obs, hasTools) {
   const maxRounds = agentAutoContinueEnabled() ? agentAutoContinueMax() : 0;
   const messages = Array.isArray(chatBody.messages) ? chatBody.messages.slice() : [];
   const baseBody = { ...chatBody, messages, stream: false };
+  const buildPayload = (profileSettings) => ({ ...baseBody, model: profileSettings.backendModel });
   for (let round = 0; ; round += 1) {
-    const result = await postWithBackendChain(settingsChain, (profileSettings) => ({
-      ...baseBody,
-      model: profileSettings.backendModel,
-    }), "/chat/completions", obs, (response) => {
-      const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
-      const payloadError = backendErrorFromPayload(parsed, response.status || 502);
-      if (payloadError) throw payloadError;
-      return parsed;
-    });
+    // Dung cung co che voi path non-stream cua handler (forceStreamNonstream) de
+    // backend reasoning/stream-only khong tra rong khi goi non-stream.
+    const result = forceStreamNonstreamEnabled()
+      ? await collectBackendStreamToOpenAI(settingsChain, buildPayload, "/chat/completions", obs)
+      : await postWithBackendChain(settingsChain, buildPayload, "/chat/completions", obs, (response) => {
+        const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+        const payloadError = backendErrorFromPayload(parsed, response.status || 502);
+        if (payloadError) throw payloadError;
+        return parsed;
+      });
     if (!shouldAutoContinue(result.data, hasTools, round, maxRounds)) {
       if (round > 0) addLog(`auto-continue done rounds=${round + 1} model=${(result.settings && result.settings.backendModel) || ""}`);
       return result;
@@ -6502,6 +6507,12 @@ async function openAIChatCompletionsHandler(req, res) {
     req.obs.final_backend_status = req.obs.final_backend_status || 200;
     const choice = (data.choices || [])[0] || {};
     if (!hasOpenAIAssistantOutput(data)) {
+      try {
+        const m = choice.message || {};
+        const rc = typeof m.reasoning_content === "string" ? m.reasoning_content.length : 0;
+        const cc = typeof m.content === "string" ? m.content.length : 0;
+        addLog(`empty assistant response backend=${finalSettings.backendModel || ""} finish=${choice.finish_reason || "-"} content_len=${cc} reasoning_len=${rc} tool_calls=${(Array.isArray(m.tool_calls) ? m.tool_calls.length : 0)} usage=${JSON.stringify(data.usage || {})}`);
+      } catch (_) {}
       const err = new Error("Backend response did not include assistant output");
       err.status = 502;
       err.text = JSON.stringify({ error: { message: err.message, type: "api_error", code: "empty_assistant_response" } });
