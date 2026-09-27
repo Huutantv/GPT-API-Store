@@ -3531,6 +3531,19 @@ function agentAutoContinueMax() {
   return Math.max(0, Math.min(3, Math.floor(value)));
 }
 
+// pattern (mac dinh, an toan) = chi nudge khi text khop mau "dinh lam tiep".
+// aggressive = nudge moi turn text-only co tools, tru khi model noi ro da xong.
+function agentAutoContinueMode() {
+  const raw = String(process.env.DORO_AGENT_AUTO_CONTINUE_MODE || "pattern").trim().toLowerCase();
+  return raw === "aggressive" ? "aggressive" : "pattern";
+}
+
+function isExplicitCompletionText(text) {
+  const value = String(text || "").trim();
+  if (!value || value.length > 600) return false;
+  return /(đã xong|đã hoàn thành|đã hoàn tất|hoàn thành|hoàn tất|xong hết|đã xử lý xong|đã làm xong|kết thúc|all done|task complete|task is complete|everything is done|completed|finished|i'?m done)/i.test(value);
+}
+
 function agentContinueSystemMessage() {
   return {
     role: "system",
@@ -3538,6 +3551,7 @@ function agentContinueSystemMessage() {
       "Agent tool workflow policy:",
       "- Khi có tools và task chưa xong, hãy gọi tool cần thiết ngay trong cùng turn.",
       "- Không được kết thúc turn bằng lời hứa kiểu \"tôi sẽ...\", \"I'll continue\", \"next I will\".",
+      "- Không được kết thúc turn bằng câu thông báo có dấu hai chấm kiểu \"Kiểm tra git diff:\", \"Let me read the file:\" — phải gọi tool luôn, không dừng ở dấu hai chấm.",
       "- Sau tool result, kiểm tra kết quả rồi gọi tool kế tiếp, hoặc trả lời cuối chỉ khi công việc thực sự đã xong.",
     ].join("\n"),
   };
@@ -3575,9 +3589,18 @@ function isContinuationPromiseText(text) {
     /(tôi|mình|em)\s+sẽ\s+.*(tiếp|đọc|xem|kiểm tra|thực hiện|làm|gọi|chạy|phân tích|liệt kê)/i,
     /(đọc tiếp|kiểm tra tiếp|xem tiếp|làm tiếp|thực hiện tiếp|đọc nốt|kiểm tra nốt|xem nốt)/i,
     /(để tôi|cho tôi)\s+.*(đọc|kiểm tra|xem|làm|thực hiện)/i,
-    /\b(i'?ll|i will|let me|next,?\s+i|now i'?ll)\b/i,
+    /(bước tiếp theo|tiếp theo|giờ tôi|bây giờ tôi|sau đó tôi|next step|next steps|now i|now let)/i,
+    /\b(i'?ll|i will|let me|next,?\s+i|now i'?ll|i'?m going to|checking|running|reading)\b/i,
   ];
-  return patterns.some((pattern) => pattern.test(value));
+  if (patterns.some((pattern) => pattern.test(value))) return true;
+  // Cau thong bao "sap lam X:" (dong cuoi ket thuc bang dau hai cham) la dau hieu model
+  // dinh goi tool nhung dung turn (vd "Kiểm tra git diff:"). Final answer hiem khi ket
+  // thuc bang ":" va khong co gi theo sau.
+  const lastLine = value.split(/\n/).map((line) => line.trim()).filter(Boolean).pop() || "";
+  if (/[:：]\s*$/.test(lastLine) && /(kiểm tra|đọc|xem|chạy|thực hiện|mở|liệt kê|tìm|sửa|đối chiếu|so sánh|check|read|run|open|inspect|list|verify|examine|look|diff|git|file|repo)/i.test(value)) {
+    return true;
+  }
+  return false;
 }
 
 function agentAutoContinueActive(body) {
@@ -3598,6 +3621,12 @@ function shouldAutoContinue(data, hasTools, round, maxRounds) {
   if (!message) return false;
   if (Array.isArray(message.tool_calls) && message.tool_calls.length) return false;
   const text = typeof message.content === "string" ? message.content : openaiContentToText(message.content);
+  if (agentAutoContinueMode() === "aggressive") {
+    const trimmed = String(text || "").trim();
+    // Ton trong tín hiệu hoàn thành rõ ràng, trừ khi còn là preamble (kết thúc bằng ":").
+    if (isExplicitCompletionText(trimmed) && !/[:：]\s*$/.test(trimmed)) return false;
+    return true;
+  }
   return isContinuationPromiseText(text);
 }
 
@@ -7182,6 +7211,7 @@ app.get("/api/config", (req, res) => {
     agent_continue_guard: agentContinueGuardEnabled(),
     agent_auto_continue: agentAutoContinueEnabled(),
     agent_auto_continue_max: agentAutoContinueMax(),
+    agent_auto_continue_mode: agentAutoContinueMode(),
     safe_stream_failover: safeStreamFailoverEnabled(),
     safe_stream_max_bytes: safeStreamBufferLimitBytes(),
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
@@ -7359,6 +7389,7 @@ app.put("/api/config", (req, res) => {
     "DORO_AGENT_CONTINUE_GUARD",
     "DORO_AGENT_AUTO_CONTINUE",
     "DORO_AGENT_AUTO_CONTINUE_MAX",
+    "DORO_AGENT_AUTO_CONTINUE_MODE",
     "DORO_SAFE_STREAM_FAILOVER_CHAT",
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
@@ -7399,6 +7430,7 @@ app.put("/api/config", (req, res) => {
       const n = Number(value);
       value = Number.isFinite(n) ? String(Math.max(0, Math.min(3, Math.floor(n)))) : "1";
     }
+    if (field === "DORO_AGENT_AUTO_CONTINUE_MODE") value = String(value).trim().toLowerCase() === "aggressive" ? "aggressive" : "pattern";
     if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-7]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;

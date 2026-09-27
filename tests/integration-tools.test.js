@@ -68,7 +68,7 @@ const mock = http.createServer((req, res) => {
       autoContinueCalls[ac[1]] = (autoContinueCalls[ac[1]] || 0) + 1;
       if (autoContinueCalls[ac[1]] === 1) promiseOnly = true;
     }
-    const promiseText = "Tôi sẽ đọc tiếp các module cốt lõi còn lại.";
+    const promiseText = /COLON/.test(blob) ? "Đã update xong. Kiểm tra git diff:" : "Tôi sẽ đọc tiếp các module cốt lõi còn lại.";
 
     if (parsed.stream) {
       res.writeHead(200, { "content-type": "text/event-stream" });
@@ -427,6 +427,16 @@ async function main() {
     check("autocont ant: backend called twice", autoContinueCalls.ant === 2, String(autoContinueCalls.ant));
   }
   {
+    // Anthropic stream (Claude Code): vòng 1 hứa → vòng 2 tool_use, dạng SSE
+    const body = { model: "claude-opus-4-6", max_tokens: 2048, stream: true, messages: [{ role: "user", content: "AUTOCONT:antstream TOOL:write_file hãy ghi file" }], tools: [{ name: "write_file", description: "write", input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } }] };
+    const r = await httpJson("POST", proxyPort, "/v1/messages", body, auth);
+    const got = collectAnthropicToolUse(r.text);
+    check("autocont ant stream: tool_use name after nudge", got.name === "write_file", got.name);
+    check("autocont ant stream: input reconstructed", got.json === '{"path":"out.txt","content":"hello"}', got.json);
+    check("autocont ant stream: message_stop", got.sawStop === true);
+    check("autocont ant stream: backend called twice", autoContinueCalls.antstream === 2, String(autoContinueCalls.antstream));
+  }
+  {
     // Responses (Codex) stream
     const body = {
       model: "gpt-5.6-terra",
@@ -442,6 +452,16 @@ async function main() {
     check("autocont resp stream: completed", got.completed === true);
     check("autocont resp stream: usage has input_tokens", !!(got.completedResponse && got.completedResponse.usage && typeof got.completedResponse.usage.input_tokens === "number"), JSON.stringify(got.completedResponse && got.completedResponse.usage));
     check("autocont resp stream: backend called twice", autoContinueCalls.resp === 2, String(autoContinueCalls.resp));
+  }
+
+  {
+    // Auto-continue cho cau thong bao ket thuc bang dau hai cham ("Kiểm tra git diff:").
+    const body = { model: "gpt-5.6-terra", messages: [{ role: "user", content: "AUTOCONT:colon COLON TOOL:write_file hãy ghi file" }], tools: [{ type: "function", function: { name: "write_file", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } }] };
+    const r = await httpJson("POST", proxyPort, "/v1/chat/completions", body, auth);
+    const j = parseJson(r.text) || {};
+    const call = (((j.choices || [])[0] || {}).message || {}).tool_calls || [];
+    check("autocont colon: tool_call after nudge", call[0] && call[0].function && call[0].function.name === "write_file", JSON.stringify(call).slice(0, 200));
+    check("autocont colon: backend called twice", autoContinueCalls.colon === 2, String(autoContinueCalls.colon));
   }
 
   console.log(`\n${pass} passed, ${failures.length} failed`);

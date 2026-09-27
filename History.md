@@ -1,5 +1,17 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Auto-continue mode: pattern (mặc định) / aggressive (càn quét)
+- Codex/Cline/Kilo dùng tín hiệu ngầm "turn không tool_call = xong" → model dừng sớm thì proxy không biết chắc. Thêm mode để chọn mức bắt.
+- `DORO_AGENT_AUTO_CONTINUE_MODE=pattern` (mặc định, an toàn: chỉ nudge khi text khớp mẫu "định làm tiếp") | `aggressive` (nudge mọi turn text-only có tools, trừ khi `isExplicitCompletionText` và không kết thúc bằng ":").
+- Thêm `agentAutoContinueMode()`, `isExplicitCompletionText()`. Config whitelist + normalize + `GET /api/config` (`agent_auto_continue_mode`) + `.env.example`.
+- Test: `tests/agent-continue.test.js` +9 case (mode, completion, aggressive/pattern). Verify: full suite 224/224 pass.
+
+## 2026-09-27 — Auto-continue bắt thêm "câu thông báo kết thúc bằng dấu hai chấm"
+- Sau khi deploy fix `usage`, hết `Reconnecting /5` nhưng Codex vẫn dừng ở turn text-only kiểu "Kiểm tra git diff:" (model thông báo sắp làm rồi đứng). Pattern cũ không khớp vì không có "tôi sẽ"/"tiếp".
+- `isContinuationPromiseText`: thêm nhận diện dòng cuối kết thúc bằng `:`/`：` + có động từ hành động (kiểm tra/đọc/xem/chạy/diff/git/file/repo/check/read/run...); thêm `i'm going to|checking|running|reading`.
+- Guard: thêm câu cấm kết thúc turn bằng thông báo có dấu hai chấm ("Kiểm tra git diff:", "Let me read the file:").
+- Test: `tests/agent-continue.test.js` +3 case pattern; `tests/integration-tools.test.js` +1 case auto-continue với text "Đã update xong... Kiểm tra git diff:". Verify: full suite 215/215 pass.
+
 ## 2026-09-27 — FIX GỐC: Responses `usage` thiếu `input_tokens` → Codex "stream disconnected"
 - Triệu chứng thật: Codex báo `stream disconnected before completion: failed to parse ResponseCompleted: missing field input_tokens` → reconnect liên tục rồi dừng giữa chừng. Đây là **nguyên nhân gốc** của "hứa rồi dừng".
 - Nguyên nhân: event `response.completed` (và response non-stream/compact) trả `usage` kiểu OpenAI (`prompt_tokens`/`completion_tokens`) hoặc `null`; Codex (Responses API) bắt buộc có `input_tokens`/`output_tokens`.

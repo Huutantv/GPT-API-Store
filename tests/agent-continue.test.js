@@ -43,6 +43,8 @@ const {
   agentContinueGuardEnabled,
   agentAutoContinueEnabled,
   agentAutoContinueMax,
+  agentAutoContinueMode,
+  isExplicitCompletionText,
   prependAgentContinueGuard,
   agentAutoContinueNudgeMessage,
   isContinuationPromiseText,
@@ -68,6 +70,9 @@ for (const t of [
   "Đọc tiếp nhé.",
   "I'll continue reading the rest.",
   "Let me check the remaining files.",
+  "Kiểm tra git diff:",
+  "Đã update xong. 33 references được sửa across 13 files. Kiểm tra git diff:",
+  "Let me read the file:",
 ]) {
   check("promise-true:" + t.slice(0, 24), isContinuationPromiseText(t) === true);
 }
@@ -136,6 +141,31 @@ check("promise-false:too-long", isContinuationPromiseText("Tôi sẽ đọc ti�
   check("nudge: assistant appended", messages[1].role === "assistant" && messages[1].content === "Tôi sẽ đọc tiếp.");
   check("nudge: system nudge appended", messages[2].role === "system" && messages[2].content.includes("chưa hoàn thành"));
   check("nudge: message shape", agentAutoContinueNudgeMessage().role === "system");
+}
+
+// 7. Mode + explicit completion (aggressive).
+{
+  delete process.env.DORO_AGENT_AUTO_CONTINUE_MODE;
+  check("mode: default pattern", agentAutoContinueMode() === "pattern");
+  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "aggressive";
+  check("mode: aggressive", agentAutoContinueMode() === "aggressive");
+  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "bogus";
+  check("mode: invalid -> pattern", agentAutoContinueMode() === "pattern");
+
+  check("completion: true", isExplicitCompletionText("Đã hoàn thành tất cả các bước.") === true);
+  check("completion: false", isExplicitCompletionText("Tôi sẽ đọc tiếp.") === false);
+
+  // aggressive: nudge moi text-only tru khi noi ro da xong.
+  const plain = { choices: [{ message: { role: "assistant", content: "Đang xử lý bước quan trọng." } }] };
+  const done = { choices: [{ message: { role: "assistant", content: "Đã hoàn thành tất cả các bước." } }] };
+  const doneColon = { choices: [{ message: { role: "assistant", content: "Đã hoàn thành. Kiểm tra git diff:" } }] };
+  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "aggressive";
+  check("aggressive: plain nudged", shouldAutoContinue(plain, true, 0, 1) === true);
+  check("aggressive: explicit done respected", shouldAutoContinue(done, true, 0, 1) === false);
+  check("aggressive: done but trailing colon nudged", shouldAutoContinue(doneColon, true, 0, 1) === true);
+  delete process.env.DORO_AGENT_AUTO_CONTINUE_MODE;
+  // pattern mode: plain text khong nudge.
+  check("pattern: plain not nudged", shouldAutoContinue(plain, true, 0, 1) === false);
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);
