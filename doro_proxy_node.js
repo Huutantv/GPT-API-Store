@@ -3515,6 +3515,202 @@ function sseWrite(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
+// ── Agent continue guard + auto-continue (chống "hứa rồi dừng" của agent) ─────
+// Guard: chèn system hint buộc model gọi tool thay vì kết thúc bằng lời hứa.
+function agentContinueGuardEnabled() {
+  return envFlag(process.env.DORO_AGENT_CONTINUE_GUARD, true);
+}
+
+function agentAutoContinueEnabled() {
+  return envFlag(process.env.DORO_AGENT_AUTO_CONTINUE, true);
+}
+
+function agentAutoContinueMax() {
+  const value = Number(process.env.DORO_AGENT_AUTO_CONTINUE_MAX || "1");
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(0, Math.min(3, Math.floor(value)));
+}
+
+function agentContinueSystemMessage() {
+  return {
+    role: "system",
+    content: [
+      "Agent tool workflow policy:",
+      "- Khi có tools và task chưa xong, hãy gọi tool cần thiết ngay trong cùng turn.",
+      "- Không được kết thúc turn bằng lời hứa kiểu \"tôi sẽ...\", \"I'll continue\", \"next I will\".",
+      "- Sau tool result, kiểm tra kết quả rồi gọi tool kế tiếp, hoặc trả lời cuối chỉ khi công việc thực sự đã xong.",
+    ].join("\n"),
+  };
+}
+
+function prependAgentContinueGuard(messages, tools) {
+  if (!agentContinueGuardEnabled()) return Array.isArray(messages) ? messages : [];
+  const original = Array.isArray(messages) ? messages : [];
+  if (!Array.isArray(tools) || !tools.length) return original;
+  const alreadyPresent = original.some((message) =>
+    message && message.role === "system" && String(message.content || "").includes("Agent tool workflow policy:")
+  );
+  if (alreadyPresent) return original;
+  const firstNonSystem = original.findIndex((message) => message && message.role !== "system");
+  if (firstNonSystem === -1) return [...original, agentContinueSystemMessage()];
+  return [
+    ...original.slice(0, firstNonSystem),
+    agentContinueSystemMessage(),
+    ...original.slice(firstNonSystem),
+  ];
+}
+
+function agentAutoContinueNudgeMessage() {
+  return {
+    role: "system",
+    content: "Bạn chưa hoàn thành nhiệm vụ. Không được kết thúc bằng lời hứa. Hãy gọi tool cần thiết ngay bây giờ (đọc/ghi file, chạy lệnh, kiểm tra...) để tiếp tục; chỉ trả lời văn bản khi công việc đã thực sự xong.",
+  };
+}
+
+function isContinuationPromiseText(text) {
+  const value = String(text || "").trim();
+  if (!value || value.length > 400) return false;
+  if (/```|<(?:code|pre)\b/i.test(value)) return false;
+  const patterns = [
+    /(tôi|mình|em)\s+sẽ\s+.*(tiếp|đọc|xem|kiểm tra|thực hiện|làm|gọi|chạy|phân tích|liệt kê)/i,
+    /(đọc tiếp|kiểm tra tiếp|xem tiếp|làm tiếp|thực hiện tiếp|đọc nốt|kiểm tra nốt|xem nốt)/i,
+    /(để tôi|cho tôi)\s+.*(đọc|kiểm tra|xem|làm|thực hiện)/i,
+    /\b(i'?ll|i will|let me|next,?\s+i|now i'?ll)\b/i,
+  ];
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function agentAutoContinueActive(body) {
+  return !!(body && Array.isArray(body.tools) && body.tools.length && agentAutoContinueEnabled());
+}
+
+function anthropicToOpenAIGuarded(body, backendModel) {
+  const payload = anthropicToOpenAI(body, backendModel);
+  payload.messages = prependAgentContinueGuard(payload.messages, payload.tools);
+  return payload;
+}
+
+function shouldAutoContinue(data, hasTools, round, maxRounds) {
+  if (!hasTools || !agentAutoContinueEnabled()) return false;
+  if (round >= maxRounds) return false;
+  const choice = data && (data.choices || [])[0];
+  const message = choice && choice.message;
+  if (!message) return false;
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length) return false;
+  const text = typeof message.content === "string" ? message.content : openaiContentToText(message.content);
+  return isContinuationPromiseText(text);
+}
+
+function appendAutoContinueNudge(messages, data) {
+  if (!Array.isArray(messages)) return;
+  const choice = data && (data.choices || [])[0];
+  const message = choice && choice.message ? choice.message : {};
+  messages.push({
+    role: "assistant",
+    content: typeof message.content === "string" ? message.content : "",
+    tool_calls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+  });
+  messages.push(agentAutoContinueNudgeMessage());
+}
+
+// Phát lỗi dạng Responses SSE khi dùng buffer (không có stream bridge).
+function failBufferedResponsesStream(res, publicModel, error) {
+  const message = error && typeof error === "object" ? error : { message: String(error || "error"), type: "api_error" };
+  const response = withResponsesCompatFields({
+    id: `resp_${Date.now()}`,
+    object: "response",
+    created_at: Math.floor(Date.now() / 1000),
+    status: "failed",
+    model: publicModel,
+    output: [],
+    output_text: "",
+    usage: null,
+  });
+  try {
+    responseSseWrite(res, "response.created", { type: "response.created", response });
+    responseSseWrite(res, "response.failed", { type: "response.failed", error: message });
+    res.write("event: done\ndata: [DONE]\n\n");
+  } catch (_) {}
+  res.end();
+}
+
+
+async function runAgentRounds(settingsChain, chatBody, obs, hasTools) {
+  const maxRounds = agentAutoContinueEnabled() ? agentAutoContinueMax() : 0;
+  const messages = Array.isArray(chatBody.messages) ? chatBody.messages.slice() : [];
+  const baseBody = { ...chatBody, messages, stream: false };
+  for (let round = 0; ; round += 1) {
+    const result = await postWithBackendChain(settingsChain, (profileSettings) => ({
+      ...baseBody,
+      model: profileSettings.backendModel,
+    }), "/chat/completions", obs, (response) => {
+      const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
+      const payloadError = backendErrorFromPayload(parsed, response.status || 502);
+      if (payloadError) throw payloadError;
+      return parsed;
+    });
+    if (!shouldAutoContinue(result.data, hasTools, round, maxRounds)) {
+      if (round > 0) addLog(`auto-continue done rounds=${round + 1} model=${(result.settings && result.settings.backendModel) || ""}`);
+      return result;
+    }
+    appendAutoContinueNudge(messages, result.data);
+    addLog(`auto-continue trigger round=${round + 1} reason=promise model=${(result.settings && result.settings.backendModel) || ""}`);
+  }
+}
+
+// Phát lại 1 chat.completion thành SSE OpenAI (dùng cho buffer auto-continue).
+function emitOpenAIStreamFromChatCompletion(res, data) {
+  const id = data.id || `chatcmpl_${Date.now()}`;
+  const created = data.created || Math.floor(Date.now() / 1000);
+  const model = data.model || "";
+  const choice = (data.choices || [])[0] || {};
+  const message = choice.message || {};
+  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const finish = choice.finish_reason || (toolCalls.length ? "tool_calls" : "stop");
+  const chunk = (delta, finishReason = null) => `data: ${JSON.stringify({ id, object: "chat.completion.chunk", created, model, choices: [{ index: 0, delta, finish_reason: finishReason }] })}\n\n`;
+  res.write(chunk({ role: "assistant" }));
+  if (typeof message.content === "string" && message.content) res.write(chunk({ content: message.content }));
+  toolCalls.forEach((call, index) => {
+    const fn = call.function || {};
+    res.write(chunk({ tool_calls: [{ index, id: call.id || `call_${index}`, type: "function", function: { name: fn.name || "", arguments: fn.arguments || "" } }] }));
+  });
+  res.write(chunk({}, finish));
+  res.write("data: [DONE]\n\n");
+  res.end();
+}
+
+// Phát lại 1 chat.completion thành SSE Anthropic (dùng cho buffer auto-continue).
+function emitAnthropicStreamFromChatCompletion(res, data, model, backendModel) {
+  const id = `msg_${Date.now()}`;
+  const choice = (data.choices || [])[0] || {};
+  const message = choice.message || {};
+  const text = sanitizeAssistantIdentityText(openaiContentToText(message.content), model, backendModel);
+  const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const usage = data.usage || {};
+  sseWrite(res, "message_start", {
+    type: "message_start",
+    message: { id, type: "message", role: "assistant", model, content: [], usage: { input_tokens: Number(usage.prompt_tokens || 0), output_tokens: 0 } },
+  });
+  let index = 0;
+  if (text || !toolCalls.length) {
+    sseWrite(res, "content_block_start", { type: "content_block_start", index, content_block: { type: "text", text: "" } });
+    if (text) sseWrite(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "text_delta", text } });
+    sseWrite(res, "content_block_stop", { type: "content_block_stop", index });
+    index += 1;
+  }
+  for (const call of toolCalls) {
+    const fn = call.function || {};
+    sseWrite(res, "content_block_start", { type: "content_block_start", index, content_block: { type: "tool_use", id: call.id || `toolu_${index}`, name: fn.name || "tool", input: {} } });
+    sseWrite(res, "content_block_delta", { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: fn.arguments || "{}" } });
+    sseWrite(res, "content_block_stop", { type: "content_block_stop", index });
+    index += 1;
+  }
+  const stopReason = toolCalls.length ? "tool_use" : mapFinishReason(choice.finish_reason, false);
+  sseWrite(res, "message_delta", { type: "message_delta", delta: { stop_reason: stopReason, stop_sequence: null }, usage: { output_tokens: Number(usage.completion_tokens || 0) } });
+  sseWrite(res, "message_stop", { type: "message_stop" });
+  res.end();
+}
+
 function setSseHeaders(res) {
   if (res.headersSent) return;
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
@@ -5010,7 +5206,8 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   req.obs.backend_base_url = settings.baseUrl || "";
   addLog(`proxy anthropic->${settings.apiStyle} ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
   printLog(`[proxy] anthropic->${settings.apiStyle} ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${useStream} ip=${req.ip}`);
-  if (useStream) {
+  const agentAutoContinue = Array.isArray(body.tools) && body.tools.length > 0 && agentAutoContinueEnabled();
+  if (useStream && !agentAutoContinue) {
     // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
     for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
       const chainSettings = settingsChain[chainIdx];
@@ -5019,7 +5216,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       req.obs.backend_profile = chainSettings.profileLabel || chainSettings.profileId || "";
       req.obs.backend_model = chainSettings.backendModel || "";
       req.obs.backend_base_url = chainSettings.baseUrl || "";
-      const payload = anthropicToOpenAI(body, chainSettings.backendModel);
+      const payload = anthropicToOpenAIGuarded(body, chainSettings.backendModel);
       payload.model = chainSettings.backendModel;
       applyBackendPayloadLimits(payload, chainSettings);
       applyBackendMessageCompatibility(payload, chainSettings);
@@ -5062,9 +5259,15 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
   }
   try {
     let finalSettings, data;
-    if (forceStreamNonstreamEnabled()) {
+    if (agentAutoContinue) {
+      const chatBody = anthropicToOpenAIGuarded(body, settings.backendModel);
+      chatBody.model = settings.backendModel;
+      const result = await runAgentRounds(settingsChain, chatBody, req.obs, true);
+      finalSettings = result.settings;
+      data = result.data;
+    } else if (forceStreamNonstreamEnabled()) {
       const result = await collectBackendStreamToOpenAI(settingsChain, (profileSettings) => {
-        const payload = anthropicToOpenAI(body, profileSettings.backendModel);
+        const payload = anthropicToOpenAIGuarded(body, profileSettings.backendModel);
         payload.model = profileSettings.backendModel;
         return payload;
       }, "/chat/completions", req.obs);
@@ -5072,7 +5275,7 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
       data = result.data;
     } else {
       const response = await postWithBackendChain(settingsChain, (profileSettings) => {
-        const payload = anthropicToOpenAI(body, profileSettings.backendModel);
+        const payload = anthropicToOpenAIGuarded(body, profileSettings.backendModel);
         payload.model = profileSettings.backendModel;
         return payload;
       }, "/chat/completions", req.obs, (response) => {
@@ -5098,6 +5301,11 @@ app.post(["/v1/messages", "/messages"], async (req, res) => {
     stats.tokens += tokens;
     settleAuthenticatedRequest(req, tokensIn, tokensOut, originalModel);
     addLog(`ok ant ${originalModel} tokens=${tokens}`);
+    if (useStream) {
+      res.statusCode = 200;
+      setSseHeaders(res);
+      return emitAnthropicStreamFromChatCompletion(res, data, publicModel, finalSettings.backendModel);
+    }
     return res.json(out);
   } catch (err) {
     if (err.status) {
@@ -6030,8 +6238,9 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     return sendModelIdentityResponse(req, res, publicModel, "responses", wantsStream, customToolNames, responsesIdentityKind);
   }
   req.obs.previous_response_id = String(original.previous_response_id || "").trim();
-  const streamBridge = wantsStream ? createResponsesStreamBridge(res, publicModel, customToolNames) : null;
   const chatTools = responsesToolsToChatTools(original.tools);
+  const responsesAutoContinue = !!(chatTools && chatTools.length && agentAutoContinueEnabled());
+  const streamBridge = (wantsStream && !responsesAutoContinue) ? createResponsesStreamBridge(res, publicModel, customToolNames) : null;
   if (Array.isArray(original.tools)) {
     const summary = JSON.stringify(responsesToolsSummary(original.tools));
     const message = `responses tools model=${publicModel} ${summary} -> ${chatTools ? chatTools.length : 0}`;
@@ -6053,7 +6262,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const imageCount = countResponsesImages(original.messages || original.input);
   if (imageCount) addLog(`responses images count=${imageCount}`);
   const rawResponseMessages = Array.isArray(original.messages) ? responsesInputToMessages(original.messages) : responsesInputToMessages(original.input);
-  const responseMessages = hydrateResponsesContinuation(original.previous_response_id, rawResponseMessages);
+  const responseMessages = prependAgentContinueGuard(hydrateResponsesContinuation(original.previous_response_id, rawResponseMessages), chatTools);
   req.body = {
     model: original.model || "opus",
     messages: responseMessages,
@@ -6063,7 +6272,7 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
     tools: chatTools,
     tool_choice: chatTools ? responsesToolChoiceToChatToolChoice(original.tool_choice, customToolNames) : undefined,
     parallel_tool_calls: original.parallel_tool_calls,
-    stream: wantsStream,
+    stream: wantsStream && !responsesAutoContinue,
   };
   const admission = reserveAuthenticatedRequest(req, res, auth, original.model || "opus");
   if (!admission.ok) {
@@ -6075,14 +6284,16 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   if (wantsStream) {
     res.statusCode = 200;
     setSseHeaders(res);
-    res.__responsesBridge = true;
-    streamBridge.start();
+    if (!responsesAutoContinue) {
+      res.__responsesBridge = true;
+      streamBridge.start();
+    }
   }
   const oldJson = res.json.bind(res);
   res.json = (data) => {
     if (wantsStream && data && data.error) {
-      streamBridge.fail(data.error);
-      return streamBridge.rawEnd();
+      if (streamBridge) { streamBridge.fail(data.error); return streamBridge.rawEnd(); }
+      return failBufferedResponsesStream(res, publicModel, data.error);
     }
     if (data && data.choices) {
       if (wantsStream) return emitResponsesStreamFromChatCompletion(res, data, publicModel, customToolNames);
@@ -6091,8 +6302,8 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
       return oldJson(response);
     }
     if (wantsStream) {
-      streamBridge.fail({ message: "Unexpected upstream response format", type: "api_error" });
-      return streamBridge.rawEnd();
+      if (streamBridge) { streamBridge.fail({ message: "Unexpected upstream response format", type: "api_error" }); return streamBridge.rawEnd(); }
+      return failBufferedResponsesStream(res, publicModel, { message: "Unexpected upstream response format", type: "api_error" });
     }
     return oldJson(data);
   };
@@ -6123,6 +6334,8 @@ async function openAIChatCompletionsHandler(req, res) {
   const b5 = maybeContextVisionChain(req, res, body.messages, originalModel, openaiErrorPayload);
   if (b5.handled && b5.sent) return;
   if (b5.handled && Array.isArray(b5.messages)) body.messages = b5.messages;
+  const agentAutoContinue = agentAutoContinueActive(body);
+  if (agentAutoContinue) body.messages = prependAgentContinueGuard(body.messages, body.tools);
   const admission = reserveAuthenticatedRequest(req, res, auth, originalModel);
   if (!admission.ok) {
     req.obs.error_type = admission.code === "rate_limit_exceeded" ? "rate_limit" : "credit";
@@ -6142,7 +6355,7 @@ async function openAIChatCompletionsHandler(req, res) {
   req.obs.backend_model = settings.backendModel || "";
   req.obs.backend_base_url = settings.baseUrl || "";
   addLog(`proxy openai->${settings.apiStyle} ${originalModel} -> ${settings.backendModel} active=${activeBackendId()} stream=${!!body.stream} ip=${req.ip}`);
-  if (body.stream) {
+  if (body.stream && !agentAutoContinue) {
     // B-1 fix: lặp qua settingsChain để failover backend khi stream thất bại
     for (let chainIdx = 0; chainIdx < settingsChain.length; chainIdx++) {
       const chainSettings = settingsChain[chainIdx];
@@ -6205,7 +6418,9 @@ async function openAIChatCompletionsHandler(req, res) {
 
     {
       let result;
-      if (forceStreamNonstreamEnabled()) {
+      if (agentAutoContinue) {
+        result = await runAgentRounds(settingsChain, roundBody, req.obs, true);
+      } else if (forceStreamNonstreamEnabled()) {
         result = await collectBackendStreamToOpenAI(settingsChain, (profileSettings) => {
           const payload = { ...roundBody, model: profileSettings.backendModel };
           normalizeOpenAIChatPayloadForBackend(payload, profileSettings);
@@ -6268,6 +6483,11 @@ async function openAIChatCompletionsHandler(req, res) {
     stats.tokens += tokens;
     settleAuthenticatedRequest(req, tokensIn, tokensOut, originalModel);
     addLog(`ok oai ${originalModel} tokens=${tokens}`);
+    if (body.stream) {
+      res.statusCode = 200;
+      setSseHeaders(res);
+      return emitOpenAIStreamFromChatCompletion(res, data);
+    }
     return res.json(data);
   } catch (err) {
     if (err.status) {
@@ -6951,6 +7171,9 @@ app.get("/api/config", (req, res) => {
     },
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
     force_stream_nonstream: forceStreamNonstreamEnabled(),
+    agent_continue_guard: agentContinueGuardEnabled(),
+    agent_auto_continue: agentAutoContinueEnabled(),
+    agent_auto_continue_max: agentAutoContinueMax(),
     safe_stream_failover: safeStreamFailoverEnabled(),
     safe_stream_max_bytes: safeStreamBufferLimitBytes(),
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
@@ -7125,6 +7348,9 @@ app.put("/api/config", (req, res) => {
     "DORO_BACKUP2_API_STYLE",
     "DORO_AUTO_RECOVERY_MS",
     "DORO_FORCE_STREAM_NONSTREAM",
+    "DORO_AGENT_CONTINUE_GUARD",
+    "DORO_AGENT_AUTO_CONTINUE",
+    "DORO_AGENT_AUTO_CONTINUE_MAX",
     "DORO_SAFE_STREAM_FAILOVER_CHAT",
     "DORO_MODEL_FALLBACK",
     "DORO_MODEL_DAILY_LIMIT",
@@ -7159,6 +7385,12 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_BACKUP_ACTIVE_BACKEND") value = normalizeBackupBackendSelection(value);
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AGENT_CONTINUE_GUARD") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AGENT_AUTO_CONTINUE") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_AGENT_AUTO_CONTINUE_MAX") {
+      const n = Number(value);
+      value = Number.isFinite(n) ? String(Math.max(0, Math.min(3, Math.floor(n)))) : "1";
+    }
     if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-7]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;

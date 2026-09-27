@@ -1,5 +1,17 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Agent guard + auto-continue (chống Codex "hứa rồi dừng")
+- Vấn đề: Codex/agent qua proxy hay kết thúc turn bằng lời hứa ("tôi sẽ đọc tiếp...") mà không gọi tool → client dừng giữa chừng. Xác minh: proxy không làm mất tool call (test 3 wire), nguyên nhân là model tự kết thúc turn text-only.
+- `doro_proxy_node.js`:
+  - `agentContinueGuardEnabled()` (`DORO_AGENT_CONTINUE_GUARD`, mặc định bật) + `agentContinueSystemMessage()` + `prependAgentContinueGuard()` (idempotent, chỉ chèn khi request CÓ tools).
+  - `agentAutoContinueEnabled()` (`DORO_AGENT_AUTO_CONTINUE`, mặc định bật) + `agentAutoContinueMax()` (`DORO_AGENT_AUTO_CONTINUE_MAX`, 0-3, mặc định 1).
+  - `isContinuationPromiseText()` (regex VI/EN, text < 400, không code fence) + `shouldAutoContinue()` + `appendAutoContinueNudge()` + `runAgentRounds()` (chạy nhiều vòng backend non-stream, tự nudge khi model dừng bằng lời hứa).
+  - Emit buffer (Phương án A): `emitOpenAIStreamFromChatCompletion`, `emitAnthropicStreamFromChatCompletion` (Responses đã có `emitResponsesStreamFromChatCompletion`).
+  - Áp cho cả 3 wire: `/v1/responses` (Codex), `/v1/chat/completions` (Cline/Kilo), `/v1/messages` (Claude Code). Request CÓ tools + auto-continue → chạy `runAgentRounds` (backend non-stream) rồi phát lại theo wire (mất live token streaming).
+  - Bug fix: chỉ tạo `createResponsesStreamBridge` khi KHÔNG auto-continue (bridge override `res.write` ngay khi tạo, nuốt event emit).
+  - Config: whitelist `PUT /api/config` + normalize + `GET /api/config` (`agent_continue_guard`, `agent_auto_continue`, `agent_auto_continue_max`) + `.env.example`.
+- Test: `tests/agent-continue.test.js` (29 case: pattern, guard idempotent, shouldAutoContinue, nudge); `tests/integration-tools.test.js` thêm 9 case auto-continue (mock vòng 1 hứa → vòng 2 tool call, cả 3 wire). Verify: `node --check` OK; full suite 207/207 pass.
+
 ## 2026-09-27 — Proxy trong suốt với tool call (giữ mặt nạ tên model)
 - Vấn đề: khách dùng agent (Codex/Cline/Kilo/Claude Code) qua proxy hay bị dừng, trong khi gọi backend trực tiếp bình thường. Nguyên nhân: proxy can thiệp quá nhiều vào tool call (chặn/sửa/thêm) và một số nhánh stream trả lỗi khi backend thiếu `finish_reason`.
 - `doro_proxy_node.js` — chuyển sang transparent mặc định (tool của backend đi qua nguyên vẹn):

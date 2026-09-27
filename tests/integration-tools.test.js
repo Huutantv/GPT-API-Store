@@ -51,6 +51,7 @@ function pickTool(parsed) {
 
 // ---- mock backend -----------------------------------------------------------
 const captured = [];
+const autoContinueCalls = {};
 const mock = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => { body += c; });
@@ -59,12 +60,28 @@ const mock = http.createServer((req, res) => {
     try { parsed = JSON.parse(body || "{}"); } catch (_) {}
     captured.push({ url: req.url, body: parsed });
     const { name, args } = pickTool(parsed);
+    // AUTOCONT:<id>: vong dau tra text-only "hứa tiếp", vong sau tra tool call.
+    const blob = JSON.stringify(parsed.messages || "") + JSON.stringify(parsed.input || "");
+    const ac = blob.match(/AUTOCONT:([A-Za-z0-9_]+)/);
+    let promiseOnly = false;
+    if (ac) {
+      autoContinueCalls[ac[1]] = (autoContinueCalls[ac[1]] || 0) + 1;
+      if (autoContinueCalls[ac[1]] === 1) promiseOnly = true;
+    }
+    const promiseText = "Tôi sẽ đọc tiếp các module cốt lõi còn lại.";
 
     if (parsed.stream) {
       res.writeHead(200, { "content-type": "text/event-stream" });
       const chunk = (delta, finish = null) => `data: ${JSON.stringify({ id: "chatcmpl_mock", object: "chat.completion.chunk", created: 1, model: parsed.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
-      const mid = args.length >> 1;
       res.write(chunk({ role: "assistant" }));
+      if (promiseOnly) {
+        res.write(chunk({ content: promiseText }));
+        res.write(chunk({}, "stop"));
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+      const mid = args.length >> 1;
       // Gia lap turn "text + tool call" nhu Codex agent: model noi 1 cau roi goi tool.
       res.write(chunk({ content: "Tôi sẽ đọc tiếp module còn lại. " }));
       res.write(chunk({ tool_calls: [{ index: 0, id: "call_stream", type: "function", function: { name, arguments: "" } }] }));
@@ -77,6 +94,17 @@ const mock = http.createServer((req, res) => {
     }
 
     res.writeHead(200, { "content-type": "application/json" });
+    if (promiseOnly) {
+      res.end(JSON.stringify({
+        id: "chatcmpl_mock",
+        object: "chat.completion",
+        created: 1,
+        model: parsed.model,
+        choices: [{ index: 0, message: { role: "assistant", content: promiseText }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }));
+      return;
+    }
     res.end(JSON.stringify({
       id: "chatcmpl_mock",
       object: "chat.completion",
@@ -372,6 +400,44 @@ async function main() {
     check("responses stream: name kept", item && item.name === "write_file", item && item.name);
     check("responses stream: arguments kept", item && item.arguments === '{"path":"out.txt","content":"hello"}', item && item.arguments);
     check("responses stream: response.completed", got.completed === true);
+  }
+
+  // ── 8. Auto-continue: vòng 1 "hứa tiếp" (không tool) → vòng 2 tool call ────
+  {
+    const writeTool = { type: "function", function: { name: "write_file", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } } };
+    // OpenAI chat non-stream
+    const body = { model: "gpt-5.6-terra", messages: [{ role: "user", content: "AUTOCONT:oai TOOL:write_file hãy ghi file" }], tools: [writeTool] };
+    const r = await httpJson("POST", proxyPort, "/v1/chat/completions", body, auth);
+    const j = parseJson(r.text) || {};
+    const call = (((j.choices || [])[0] || {}).message || {}).tool_calls || [];
+    check("autocont oai: tool_call after nudge", call[0] && call[0].function && call[0].function.name === "write_file", JSON.stringify(call).slice(0, 200));
+    check("autocont oai: args kept", call[0] && call[0].function && call[0].function.arguments === '{"path":"out.txt","content":"hello"}', call[0] && call[0].function && call[0].function.arguments);
+    check("autocont oai: backend called twice", autoContinueCalls.oai === 2, String(autoContinueCalls.oai));
+  }
+  {
+    // Anthropic non-stream
+    const body = { model: "claude-opus-4-6", max_tokens: 2048, messages: [{ role: "user", content: "AUTOCONT:ant TOOL:write_file hãy ghi file" }], tools: [{ name: "write_file", description: "write", input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } }] };
+    const r = await httpJson("POST", proxyPort, "/v1/messages", body, auth);
+    const j = parseJson(r.text) || {};
+    const block = (j.content || []).find((b) => b.type === "tool_use");
+    check("autocont ant: tool_use after nudge", !!block && block.name === "write_file", JSON.stringify(j.content || []).slice(0, 200));
+    check("autocont ant: backend called twice", autoContinueCalls.ant === 2, String(autoContinueCalls.ant));
+  }
+  {
+    // Responses (Codex) stream
+    const body = {
+      model: "gpt-5.6-terra",
+      input: [{ role: "user", content: [{ type: "input_text", text: "AUTOCONT:resp TOOL:write_file hãy thực hiện" }] }],
+      tools: [{ type: "function", name: "write_file", parameters: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } }],
+      stream: true,
+    };
+    const r = await httpJson("POST", proxyPort, "/v1/responses", body, auth);
+    const got = collectResponsesItems(r.text);
+    const item = got.items.find((o) => o.type === "function_call");
+    check("autocont resp stream: function_call after nudge", !!item && item.name === "write_file", JSON.stringify(got.items.map((o) => o.type)));
+    check("autocont resp stream: args kept", item && item.arguments === '{"path":"out.txt","content":"hello"}', item && item.arguments);
+    check("autocont resp stream: completed", got.completed === true);
+    check("autocont resp stream: backend called twice", autoContinueCalls.resp === 2, String(autoContinueCalls.resp));
   }
 
   console.log(`\n${pass} passed, ${failures.length} failed`);
