@@ -10,7 +10,7 @@
   - Bỏ chèn system prompt: xóa `prependAgentToolGuard`/`prependCodexPathGuard`/`prependIdentityGuard`/`prependEncodingGuard` + dọn whitelist `DORO_CODEX_PATH_GUARD` và `.env.example`.
   - Stream thiếu `finish_reason`: tổng hợp chunk terminal (`tool_calls`/`stop`) + `[DONE]` thay vì ném lỗi `truncated_backend_stream` (streamOpenAIWithFailover, collect, 2 anthropic pipe → phát `message_stop`).
 - Giữ nguyên: mặt nạ tên model (`resolveBackendModel`/`publicModelName`/`sanitizeBackendText`/`sanitizeAssistantIdentityText`) và dịch protocol Responses↔Chat cho Codex.
-- Test: xóa `tool-args.test.js`/`codex-guard.test.js`; thêm `tool-passthrough.test.js` (tools/tool_calls/args nguyên vẹn, chỉ strip khi bật `DISABLE_TOOLS`); cập nhật slice `identity.test.js`/`stream-failover.test.js` + case tổng hợp finish_reason. Verify: `node --check` OK; full suite 125/125 pass.
+- Test: xóa `tool-args.test.js`/`codex-guard.test.js`; thêm `tool-passthrough.test.js` (tools/tool_calls/args nguyên vẹn, chỉ strip khi bật `DISABLE_TOOLS`); cập nhật slice `identity.test.js`/`stream-failover.test.js` + case tổng hợp finish_reason. Thêm `integration-tools.test.js`: spawn proxy + backend giả lập, chạy thật 3 wire (OpenAI chat, Anthropic messages, Responses/Codex) với tool đọc/ghi (`read_file`/`write_file`, custom `apply_patch`, history role `tool`, stream) — 44 check pass. Verify: `node --check` OK; full suite 169/169 pass (125 unit + 44 integration).
 
 ## 2026-09-27 — Codex path guard (chống mất file tạm giữa các bước)
 - Vấn đề: khách Codex trên Windows hay mất file tạm giữa các tool call (`exec_command`/`apply_patch` ghi file rồi lệnh sau không thấy) do model dùng đường dẫn tương đối trong khi mỗi lệnh chạy ở working directory khác.
