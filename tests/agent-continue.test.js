@@ -149,11 +149,11 @@ check("promise-false:too-long", isContinuationPromiseText("Tôi sẽ đọc ti�
 // 7. Mode + explicit completion (aggressive).
 {
   delete process.env.DORO_AGENT_AUTO_CONTINUE_MODE;
-  check("mode: default pattern", agentAutoContinueMode() === "pattern");
-  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "aggressive";
-  check("mode: aggressive", agentAutoContinueMode() === "aggressive");
+  check("mode: default aggressive", agentAutoContinueMode() === "aggressive");
+  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "pattern";
+  check("mode: pattern", agentAutoContinueMode() === "pattern");
   process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "bogus";
-  check("mode: invalid -> pattern", agentAutoContinueMode() === "pattern");
+  check("mode: invalid -> aggressive", agentAutoContinueMode() === "aggressive");
 
   check("completion: true", isExplicitCompletionText("Đã hoàn thành tất cả các bước.") === true);
   check("completion: false", isExplicitCompletionText("Tôi sẽ đọc tiếp.") === false);
@@ -162,13 +162,14 @@ check("promise-false:too-long", isContinuationPromiseText("Tôi sẽ đọc ti�
   const plain = { choices: [{ message: { role: "assistant", content: "Đang xử lý bước quan trọng." } }] };
   const done = { choices: [{ message: { role: "assistant", content: "Đã hoàn thành tất cả các bước." } }] };
   const doneColon = { choices: [{ message: { role: "assistant", content: "Đã hoàn thành. Kiểm tra git diff:" } }] };
-  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "aggressive";
+  delete process.env.DORO_AGENT_AUTO_CONTINUE_MODE;
   check("aggressive: plain nudged", shouldAutoContinue(plain, true, 0, 1) === true);
   check("aggressive: explicit done respected", shouldAutoContinue(done, true, 0, 1) === false);
   check("aggressive: done but trailing colon nudged", shouldAutoContinue(doneColon, true, 0, 1) === true);
-  delete process.env.DORO_AGENT_AUTO_CONTINUE_MODE;
+  process.env.DORO_AGENT_AUTO_CONTINUE_MODE = "pattern";
   // pattern mode: plain text khong nudge.
   check("pattern: plain not nudged", shouldAutoContinue(plain, true, 0, 1) === false);
+  delete process.env.DORO_AGENT_AUTO_CONTINUE_MODE;
 }
 
 console.log(`\n${pass} passed, ${failures.length} failed`);

@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Auto-continue: mặc định chuyển sang `aggressive` (fix triệt để hơn)
+- Pattern-based vẫn bỏ sót các câu như "Now verify and add on_accent_idx helper to theme.rs." → chuyển **mặc định `DORO_AGENT_AUTO_CONTINUE_MODE=aggressive`**: nudge mọi turn text-only có tools, trừ khi `isExplicitCompletionText` và không kết thúc bằng ":".
+- Bổ sung pattern `(now|next|then|finally) … (add|verify|check|read|run|update|fix|test|build|apply|implement|…)` + tiếng Việt `(bây giờ|tiếp theo|sau đó|kế tiếp) … (thêm|kiểm tra|sửa|…)`.
+- `pattern` vẫn dùng được qua env nếu muốn tiết kiệm vòng. Config default + `.env.example` + GET config cập nhật.
+- Verify: full suite 231/231 pass.
+
 ## 2026-09-27 — Fix `empty_assistant_response` (backend reasoning trả rỗng)
 - Log: `/v1/chat/completions`, backend `creq/deepseek-v4.1-flash-req`, latency 93.6s, 502 `empty_assistant_response`. Backend trả 200 nhưng assistant rỗng (không content/tool_calls).
 - Nghi vấn: `runAgentRounds` (auto-continue) gọi backend **non-stream** trực tiếp, bỏ qua `DORO_FORCE_STREAM_NONSTREAM=1` → backend reasoning/stream-only trả rỗng.

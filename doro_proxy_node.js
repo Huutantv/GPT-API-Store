@@ -3533,11 +3533,11 @@ function agentAutoContinueMax() {
   return Math.max(0, Math.min(3, Math.floor(value)));
 }
 
-// pattern (mac dinh, an toan) = chi nudge khi text khop mau "dinh lam tiep".
-// aggressive = nudge moi turn text-only co tools, tru khi model noi ro da xong.
+// aggressive (mac dinh) = nudge moi turn text-only co tools, tru khi model noi ro da xong.
+// pattern = chi nudge khi text khop mau "dinh lam tiep" (it ton vong hon, nhung bo sot nhieu).
 function agentAutoContinueMode() {
-  const raw = String(process.env.DORO_AGENT_AUTO_CONTINUE_MODE || "pattern").trim().toLowerCase();
-  return raw === "aggressive" ? "aggressive" : "pattern";
+  const raw = String(process.env.DORO_AGENT_AUTO_CONTINUE_MODE || "aggressive").trim().toLowerCase();
+  return raw === "pattern" ? "pattern" : "aggressive";
 }
 
 function isExplicitCompletionText(text) {
@@ -7441,7 +7441,7 @@ app.put("/api/config", (req, res) => {
       const n = Number(value);
       value = Number.isFinite(n) ? String(Math.max(0, Math.min(3, Math.floor(n)))) : "1";
     }
-    if (field === "DORO_AGENT_AUTO_CONTINUE_MODE") value = String(value).trim().toLowerCase() === "aggressive" ? "aggressive" : "pattern";
+    if (field === "DORO_AGENT_AUTO_CONTINUE_MODE") value = String(value).trim().toLowerCase() === "pattern" ? "pattern" : "aggressive";
     if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
     if (/^DORO_BACKEND[1-7]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
