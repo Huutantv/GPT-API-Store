@@ -22,7 +22,7 @@ function slice(fromMarker, toMarker) {
   return SRC.slice(start, end);
 }
 
-const envFlagCluster = slice("function envFlag(", "function defaultUserAssistantOnlyForModel(");
+const envFlagCluster = slice("function envFlag(", "function backendRequiresFlattenedToolHistory(");
 const optionalIntCluster = slice("function optionalPositiveInt(", "function vnDateTimeAfterDays(");
 const sseCluster = slice("function setSseHeaders(", "function incompleteBackendStreamError(");
 const incompleteCluster = slice("function incompleteBackendStreamError(", "function safeStreamFailoverEnabled(");
@@ -46,10 +46,8 @@ function logPreview(t){ return String(t || "").slice(0, 40); }
 function recordBackendErrorObservation(){}
 function backendErrorFromPayload(){ return null; }
 function anthropicStreamEventToOpenAIChunks(parsed){ return [parsed]; }
-function filterHiddenReasoningDelta(t){ return t; }
 function sanitizeAssistantIdentityChunk(t){ return t; }
 function flushAssistantIdentityChunk(){ return ""; }
-function assertNoMojibakeForSourceEdit(){}
 function normalizeOpenAIAssistantPayload(){}
 function hasOpenAIAssistantOutput(item){ const d=((item.choices||[{}])[0]||{}).delta||{}; return !!(d.content || d.tool_calls); }
 function trackBackendSuccess(){}
@@ -71,7 +69,6 @@ const credit = { settleRequest(){} };
 function startSseHeartbeat(res){ res.__heartbeats = (res.__heartbeats || 0) + 1; return function stop(){}; }
 function sseWrite(res, event, data){ res._chunks.push("event: " + event + "\\ndata: " + JSON.stringify(data) + "\\n\\n"); }
 function anthropicErrorPayload(status, message){ return { type: "error", error: { type: "api_error", message: message || "err" } }; }
-function messagesLookLikeSourceEdit(){ return false; }
 async function pipeOpenAIStreamToAnthropic(resp, res){ res._piped = true; }
 async function pipeAnthropicStreamToAnthropic(resp, res){ res._piped = true; }
 `;
@@ -338,6 +335,26 @@ async function runStreamKeys(res, keys, deferErrorToCaller) {
     await runStreamKeys(res, ["k1", "k2"], false);
     check("key failover: all keys 403 -> error to client", !!res._json || res._chunks.join("").includes("[DONE]"));
     ctx.__respByKey = null;
+  }
+
+  // ── Truncated stream, buffering OFF: synthesize finish_reason, no throw ────
+  {
+    process.env.DORO_SAFE_STREAM_FAILOVER_CHAT = "0";
+    const res = makeRes();
+    ctx.__nextResp = sseResponse(TRUNCATED_OPENAI);
+    let threw = null;
+    try {
+      await runStream(res, true);
+    } catch (e) {
+      threw = e;
+    }
+    process.env.DORO_SAFE_STREAM_FAILOVER_CHAT = "1";
+    const out = res._chunks.join("");
+    check("truncated synth: no throw", !threw);
+    check("truncated synth: content delivered", out.includes("hello ") && out.includes("world"));
+    check("truncated synth: finish_reason emitted", out.includes('"finish_reason":"stop"'));
+    check("truncated synth: DONE emitted", out.includes("[DONE]"));
+    check("truncated synth: ended", res._ended === true);
   }
 
   console.log(`\n${pass} passed, ${failures.length} failed`);

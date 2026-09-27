@@ -15,14 +15,13 @@ function slice(fromMarker, toMarker) {
   return SRC.slice(start, end);
 }
 
-const sanitizeCluster = slice("function stripHiddenReasoningText", "function identitySystemMessage");
+const sanitizeCluster = slice("function identityGreetingEnabled", "function contentToSearchableText");
 const questionCluster = slice("function contentToSearchableText", "function sendModelIdentityResponse");
-const constants = slice("const MOJIBAKE_VI_RE", "function contentToSearchableText");
 const stub = "function sanitizeBackendText(text, backendModel, publicModel){let cleaned=String(text||\"\");if(backendModel&&publicModel&&backendModel!==publicModel){cleaned=cleaned.split(backendModel).join(publicModel);}return cleaned;}";
 
 const ctx = { console, process };
 vm.createContext(ctx);
-vm.runInContext([stub, constants, sanitizeCluster, questionCluster].join("\n"), ctx);
+vm.runInContext([stub, sanitizeCluster, questionCluster].join("\n"), ctx);
 
 const {
   hasAssistantIdentityLeak,

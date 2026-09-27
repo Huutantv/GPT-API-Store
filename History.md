@@ -1,5 +1,17 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Proxy trong suốt với tool call (giữ mặt nạ tên model)
+- Vấn đề: khách dùng agent (Codex/Cline/Kilo/Claude Code) qua proxy hay bị dừng, trong khi gọi backend trực tiếp bình thường. Nguyên nhân: proxy can thiệp quá nhiều vào tool call (chặn/sửa/thêm) và một số nhánh stream trả lỗi khi backend thiếu `finish_reason`.
+- `doro_proxy_node.js` — chuyển sang transparent mặc định (tool của backend đi qua nguyên vẹn):
+  - Bỏ chặn tool: default `DISABLE_TOOLS`/`USER_ASSISTANT_ONLY` về `false` (bỏ auto-detect deepseek); `backendRequiresFlattenedToolHistory` chỉ theo cờ admin; xóa `assertNoMojibakeForSourceEdit` + `mojibakeBlockedError` + regex mojibake.
+  - Bỏ sửa tool call: xóa `normalizeToolArgumentsJson`/`repairInvalidJsonBackslashes`/`normalizeToolCallsInMessage`/`flattenOrphanToolMessages`/`dropUnansweredToolCalls`; Responses translation truyền raw args (`rawToolArgumentsString`).
+  - Bỏ strip content: xóa `stripHiddenReasoningText`/`filterHiddenReasoningDelta`/`stripThinkingFromMessages` + `DORO_STRIP_THINKING_INPUT`; giữ `truncateHistorySafe`.
+  - Bỏ thêm tool: xóa 4 server tool `doro_*` (`serverToolsEnabled`/`serverToolSchemas`/`executeServerTool`/`runServerToolCalls`) + vòng lặp server-tool ở non-stream.
+  - Bỏ chèn system prompt: xóa `prependAgentToolGuard`/`prependCodexPathGuard`/`prependIdentityGuard`/`prependEncodingGuard` + dọn whitelist `DORO_CODEX_PATH_GUARD` và `.env.example`.
+  - Stream thiếu `finish_reason`: tổng hợp chunk terminal (`tool_calls`/`stop`) + `[DONE]` thay vì ném lỗi `truncated_backend_stream` (streamOpenAIWithFailover, collect, 2 anthropic pipe → phát `message_stop`).
+- Giữ nguyên: mặt nạ tên model (`resolveBackendModel`/`publicModelName`/`sanitizeBackendText`/`sanitizeAssistantIdentityText`) và dịch protocol Responses↔Chat cho Codex.
+- Test: xóa `tool-args.test.js`/`codex-guard.test.js`; thêm `tool-passthrough.test.js` (tools/tool_calls/args nguyên vẹn, chỉ strip khi bật `DISABLE_TOOLS`); cập nhật slice `identity.test.js`/`stream-failover.test.js` + case tổng hợp finish_reason. Verify: `node --check` OK; full suite 125/125 pass.
+
 ## 2026-09-27 — Codex path guard (chống mất file tạm giữa các bước)
 - Vấn đề: khách Codex trên Windows hay mất file tạm giữa các tool call (`exec_command`/`apply_patch` ghi file rồi lệnh sau không thấy) do model dùng đường dẫn tương đối trong khi mỗi lệnh chạy ở working directory khác.
 - `doro_proxy_node.js`: thêm `codexPathGuardEnabled()` (`DORO_CODEX_PATH_GUARD`, mặc định bật), `isCodexToolset()` (nhận `exec_command`/`write_stdin`/`apply_patch`), `codexPathGuardMessage()` + `prependCodexPathGuard()` (idempotent, chèn 1 system hint ở firstNonSystem: dùng đường dẫn tuyệt đối, reuse đúng path, truyền `working_directory`, ưu tiên 1 lệnh create+consume). Áp tại `/v1/responses` và 3 điểm của chat/completions (stream + 2 builder non-stream). Guard chỉ kích hoạt khi có tool-set Codex.
