@@ -464,6 +464,24 @@ async function main() {
     check("autocont colon: backend called twice", autoContinueCalls.colon === 2, String(autoContinueCalls.colon));
   }
 
+  {
+    // Responses compact (Codex 2.x): phai co DUNG 1 compaction output item
+    // (message role=system) — truoc day output:[] gay loi
+    // "remote compaction v2 expected exactly one compaction output item".
+    const body = {
+      model: "gpt-5.6-terra",
+      input: [{ role: "user", content: [{ type: "input_text", text: "Tóm tắt đoạn hội thoại dài về sửa theme.rs." }] }],
+    };
+    const r = await httpJson("POST", proxyPort, "/v1/responses/compact", body, auth);
+    const j = parseJson(r.text) || {};
+    const output = Array.isArray(j.output) ? j.output : [];
+    check("compact: status 200", r.status === 200, `status=${r.status}`);
+    check("compact: exactly one output item", output.length === 1, String(output.length));
+    check("compact: item is message/system", output[0] && output[0].type === "message" && output[0].role === "system", JSON.stringify(output[0] && output[0].type));
+    check("compact: text non-empty", !!(output[0] && output[0].content && output[0].content[0] && output[0].content[0].text), "empty text");
+    check("compact: is completed", j.status === "completed", j.status);
+  }
+
   console.log(`\n${pass} passed, ${failures.length} failed`);
   if (failures.length) {
     console.log("Failed:\n - " + failures.join("\n - "));

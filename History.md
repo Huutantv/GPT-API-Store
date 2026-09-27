@@ -1,5 +1,11 @@
 # History — GPT-API-Store (doro-proxy)
 
+## 2026-09-27 — Fix /responses/compact: Codex 2.x "compact expected exactly one output item"
+- Triệu chứng treo máy Codex: `remote compaction v2 expected exactly one compaction output item, got 0 from 1 output items`. KHÁC lỗi #1 (usage) và #2 (hứa rồi đứng) — đây là request `/v1/responses/compact` riêng.
+- Nguyên nhân: `/responses/compact` là stub trả `output: []`; Codex 2.x bắt buộc compact response phải có ĐÚNG 1 compaction output item (`type: "message", role: "system"`) = nội dung đã nén. Rỗng → client Fatal error.
+- `doro_proxy_node.js`: thêm `compactResponsesText()` (gom text từ `messages`/`input`, bỏ ảnh/binary, cap 200k, có fallback) + `/responses/compact` trả `output: [{type:"message", role:"system", content:[{type:"output_text", text}]}]`.
+- Test: `tests/integration-tools.test.js` +5 check (status 200, exactly 1 item, message/system, text non-empty, completed). Verify: `node --check` OK; full suite **238/238** pass.
+
 ## 2026-09-27 — Auto-continue: 4 fix cho lỗi #2 "model hứa rồi đứng"
 - Bối cảnh: guard + auto-continue đã bắt phần lớn, nhưng còn 4 lỗ hổng khiến agent (Codex/Cline/Kilo) vẫn dừng giữa task.
 - `doro_proxy_node.js`:

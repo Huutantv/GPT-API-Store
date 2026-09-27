@@ -6253,20 +6253,62 @@ function emitResponsesStreamFromChatCompletion(res, data, publicModel, customToo
   endResponsesStream(res);
 }
 
+// Sinh noi dung tom tat cho /responses/compact. Client gui input lao hoi so ai
+// (messages | input | previous_response_id); ta gom text lai, bo qua anh/binary.
+function compactResponsesText(body) {
+  const source = body && typeof body === "object" ? body : {};
+  const parts = [];
+  const pushText = (value) => {
+    if (typeof value === "string" && value.trim()) parts.push(value.trim());
+  };
+  const collect = (value) => {
+    if (!value) return;
+    if (typeof value === "string") { pushText(value); return; }
+    if (Array.isArray(value)) { value.forEach(collect); return; }
+    if (typeof value !== "object") return;
+    if (typeof value.text === "string") { pushText(value.text); return; }
+    if (typeof value.input_text === "string") { pushText(value.input_text); return; }
+    if (typeof value.output_text === "string") { pushText(value.output_text); return; }
+    if (value.content != null) collect(value.content);
+    else if (value.input != null) collect(value.input);
+  };
+  collect(source.messages);
+  if (!parts.length) collect(source.input);
+  const text = parts.join("\n");
+  if (!text) {
+    return "Context summary: the conversation so far has no extractable text content.";
+  }
+  if (text.length <= 200000) return text;
+  return `${text.slice(0, 200000)}\n\n[truncated by doro-proxy compact]`;
+}
+
 app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
   const original = req.body || {};
   const publicModel = publicModelName(original.model || "opus");
+  // Codex 2.x (Responses API) bắt buộc compact response phải có DUNG 1 compaction
+  // output item dạng message role=system = nội dung đã nén. Trả rỗng -> client
+  // lỗi "remote compaction v2 expected exactly one compaction output item, got 0".
+  const compactText = compactResponsesText(original);
+  const textId = `msg_${Date.now()}`;
   const response = withResponsesCompatFields({
     id: `resp_${Date.now()}`,
     object: "response",
     created_at: Math.floor(Date.now() / 1000),
     status: "completed",
     model: publicModel,
-    output: [],
-    output_text: "",
+    output: [
+      {
+        id: textId,
+        type: "message",
+        status: "completed",
+        role: "system",
+        content: [{ type: "output_text", text: compactText, annotations: [] }],
+      },
+    ],
+    output_text: compactText,
     usage: normalizeResponsesUsage(null),
   });
-  addLog(`responses compact ok model=${publicModel}`);
+  addLog(`responses compact ok model=${publicModel} text_len=${compactText.length}`);
   res.json(response);
 });
 
