@@ -466,7 +466,7 @@ async function main() {
 
   {
     // Responses compact (Codex 2.x): phai co DUNG 1 compaction output item
-    // (message role=system) — truoc day output:[] gay loi
+    // type="compaction" + encrypted_content — truoc day output:[] gay loi
     // "remote compaction v2 expected exactly one compaction output item".
     const body = {
       model: "gpt-5.6-terra",
@@ -477,9 +477,70 @@ async function main() {
     const output = Array.isArray(j.output) ? j.output : [];
     check("compact: status 200", r.status === 200, `status=${r.status}`);
     check("compact: exactly one output item", output.length === 1, String(output.length));
-    check("compact: item is message/system", output[0] && output[0].type === "message" && output[0].role === "system", JSON.stringify(output[0] && output[0].type));
-    check("compact: text non-empty", !!(output[0] && output[0].content && output[0].content[0] && output[0].content[0].text), "empty text");
+    check("compact: item is compaction", output[0] && output[0].type === "compaction" && typeof output[0].encrypted_content === "string" && output[0].encrypted_content.length > 10, JSON.stringify(output[0]));
+    check("compact: encrypted_content non-empty", !!(output[0] && output[0].encrypted_content && output[0].encrypted_content.startsWith("gAAAAAB")), String(output[0] && output[0].encrypted_content && output[0].encrypted_content.slice(0,20)));
     check("compact: is completed", j.status === "completed", j.status);
+
+    // Remote compaction v2 - non-stream: client gửi compaction_trigger
+    {
+      const v2body = {
+        model: "gpt-5.6-terra",
+        input: [
+          { role: "user", content: [{ type: "input_text", text: "Lịch sử dài cần nén" }] },
+          { type: "compaction_trigger" },
+        ],
+        stream: false,
+      };
+      const r2 = await httpJson("POST", proxyPort, "/v1/responses", v2body, auth);
+      const j2 = parseJson(r2.text) || {};
+      const out2 = Array.isArray(j2.output) ? j2.output : [];
+      check("compact v2 non-stream: status 200", r2.status === 200, `status=${r2.status} body=${r2.text.slice(0,200)}`);
+      check("compact v2 non-stream: exactly one compaction", out2.length === 1 && out2[0].type === "compaction", JSON.stringify(out2.map(o=>o.type)));
+      check("compact v2 non-stream: encrypted_content", !!(out2[0] && out2[0].encrypted_content && out2[0].encrypted_content.startsWith("gAAAAAB")), String(out2[0] && out2[0].encrypted_content && out2[0].encrypted_content.slice(0,20)));
+      check("compact v2 non-stream: usage has input_tokens", !!(j2.usage && typeof j2.usage.input_tokens === "number"), JSON.stringify(j2.usage));
+    }
+
+    // Remote compaction v2 - stream: trả SSE chứa compaction
+    {
+      const v2bodyStream = {
+        model: "gpt-5.6-terra",
+        input: [
+          { role: "user", content: [{ type: "input_text", text: "Lịch sử dài cần nén stream" }] },
+          { type: "compaction_trigger" },
+        ],
+        stream: true,
+      };
+      const r3 = await httpJson("POST", proxyPort, "/v1/responses", v2bodyStream, auth);
+      const sse = r3.text || "";
+      check("compact v2 stream: status 200", r3.status === 200, `status=${r3.status}`);
+      check("compact v2 stream: has compaction item", sse.includes('"type":"compaction"') || sse.includes('"type": "compaction"'), sse.slice(0,500));
+      check("compact v2 stream: has encrypted_content", sse.includes("encrypted_content") && sse.includes("gAAAAAB"), sse.slice(0,800));
+      check("compact v2 stream: completed", sse.includes("response.completed"), sse.slice(0,500));
+    }
+
+    // Compaction replay: request chứa compaction blob cũ phải được decode và forward
+    {
+      // Lấy blob từ compact trước đó
+      const blob = output[0] && output[0].encrypted_content;
+      const replayBody = {
+        model: "gpt-5.6-terra",
+        input: [
+          { role: "user", content: [{ type: "input_text", text: "Hello trước compact" }] },
+          { type: "compaction", encrypted_content: blob, id: "cmp_test" },
+          { role: "user", content: [{ type: "input_text", text: "Hello sau compact, tiếp tục task" }] },
+        ],
+        stream: false,
+      };
+      const beforeLen = captured.length;
+      const r4 = await httpJson("POST", proxyPort, "/v1/responses", replayBody, auth);
+      const j4 = parseJson(r4.text) || {};
+      // Backend phải nhận được decoded summary như system message, không nhận raw compaction
+      const sent = captured[beforeLen] && captured[beforeLen].body;
+      const sentMessages = sent && Array.isArray(sent.messages) ? sent.messages : [];
+      const hasSummary = sentMessages.some(m => m.role === "system" && typeof m.content === "string" && m.content.includes("Conversation summary"));
+      check("compaction replay: backend receives decoded summary", hasSummary, JSON.stringify(sentMessages).slice(0,500));
+      check("compaction replay: status 200", r4.status === 200, `status=${r4.status}`);
+    }
   }
 
   console.log(`\n${pass} passed, ${failures.length} failed`);

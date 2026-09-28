@@ -5519,6 +5519,23 @@ function responsesInputToMessages(input) {
       continue;
     }
 
+    if (item.type === "compaction") {
+      flushPendingToolCalls();
+      const decoded = decodeCompactionContent(item.encrypted_content);
+      if (decoded) {
+        messages.push({ role: "system", content: `Conversation summary (compacted):\n${decoded}` });
+      } else if (item.encrypted_content) {
+        // Fallback: blob thật của OpenAI không decode được thì giữ placeholder để không mất context marker
+        messages.push({ role: "system", content: `Conversation compacted (blob ${String(item.encrypted_content).slice(0, 64)}...)` });
+      }
+      continue;
+    }
+
+    if (item.type === "compaction_trigger") {
+      // Trigger do Codex thêm vào cuối input cho remote v2 — không forward như user message
+      continue;
+    }
+
     if (item.type && item.type !== "message") continue;
     flushPendingToolCalls();
     const role = item.role === "developer" ? "system" : (item.role || "user");
@@ -6266,6 +6283,12 @@ function compactResponsesText(body) {
     if (typeof value === "string") { pushText(value); return; }
     if (Array.isArray(value)) { value.forEach(collect); return; }
     if (typeof value !== "object") return;
+    // Compaction blob: decode để summary không mất context đã nén trước đó
+    if (value.type === "compaction" && value.encrypted_content) {
+      const decoded = decodeCompactionContent(value.encrypted_content);
+      if (decoded) { pushText(decoded); return; }
+    }
+    if (value.type === "compaction_trigger") return;
     if (typeof value.text === "string") { pushText(value.text); return; }
     if (typeof value.input_text === "string") { pushText(value.input_text); return; }
     if (typeof value.output_text === "string") { pushText(value.output_text); return; }
@@ -6282,15 +6305,76 @@ function compactResponsesText(body) {
   return `${text.slice(0, 200000)}\n\n[truncated by doro-proxy compact]`;
 }
 
-app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
-  const original = req.body || {};
-  const publicModel = publicModelName(original.model || "opus");
-  // Codex 2.x (Responses API) bắt buộc compact response phải có DUNG 1 compaction
-  // output item dạng message role=system = nội dung đã nén. Trả rỗng -> client
-  // lỗi "remote compaction v2 expected exactly one compaction output item, got 0".
-  const compactText = compactResponsesText(original);
-  const textId = `msg_${Date.now()}`;
-  const response = withResponsesCompatFields({
+// ── Compaction helpers (remote v2) ────────────────────────────────────────────
+// Codex remote compaction v2 yêu cầu output là EXACTLY ONE item type="compaction"
+// với encrypted_content. Trước đây proxy trả message/system nên client đếm
+// compaction_count=0 -> "got 0 from 1/2". Gist: blob là Fernet gAAAAAB...
+// Proxy synthetic: tạo compaction giả, replay sẽ decode để forward tới backend.
+function encodeCompactionContent(text) {
+  const raw = String(text || "");
+  // Prefix Fernet-like để client thấy giống blob thật, phần sau là base64 của summary.
+  // Client không validate, chỉ server (proxy) decode lại.
+  const b64 = Buffer.from(raw, "utf8").toString("base64");
+  // Tránh vượt max body: cắt 120k char tương đương ~90k token
+  const trimmed = b64.length > 120000 ? b64.slice(0, 120000) : b64;
+  return `gAAAAAB${trimmed}`;
+}
+
+function decodeCompactionContent(encrypted) {
+  const raw = String(encrypted || "").trim();
+  if (!raw) return "";
+  let b64 = raw;
+  if (raw.startsWith("gAAAAAB")) b64 = raw.slice(7);
+  // Thử decode base64, nếu fail thì trả raw (trường hợp blob thật của OpenAI)
+  try {
+    const decoded = Buffer.from(b64, "base64").toString("utf8");
+    // Nếu decode ra text có nghĩa (chứa khoảng trắng hoặc \n) thì dùng, ngược lại trả raw
+    if (decoded && decoded.length > 10 && /[\s\n]/.test(decoded)) return decoded;
+    // Nếu decode thất bại hoặc ra binary, trả raw để không mất
+    if (decoded && decoded.trim()) return decoded;
+  } catch (_) {}
+  return "";
+}
+
+function hasCompactionTrigger(body) {
+  const src = body && typeof body === "object" ? body : {};
+  const scan = (val) => {
+    if (!val) return false;
+    if (Array.isArray(val)) return val.some(scan);
+    if (typeof val === "object") {
+      if (val.type === "compaction_trigger") return true;
+      // Một số client gửi {type:"compaction", ...} như trigger? Không, chỉ trigger là compaction_trigger
+      if (val.input != null && scan(val.input)) return true;
+      if (val.content != null && scan(val.content)) return true;
+    }
+    return false;
+  };
+  return scan(src.input) || scan(src.messages) || scan(src.instructions);
+}
+
+function extractCompactionSummaries(input) {
+  const out = [];
+  const scan = (val) => {
+    if (!val) return;
+    if (Array.isArray(val)) { val.forEach(scan); return; }
+    if (typeof val === "object") {
+      if (val.type === "compaction" && val.encrypted_content) {
+        const decoded = decodeCompactionContent(val.encrypted_content);
+        if (decoded) out.push(decoded);
+        else if (typeof val.summary === "string" && val.summary.trim()) out.push(val.summary.trim());
+      }
+      if (val.input != null) scan(val.input);
+      if (val.content != null) scan(val.content);
+    }
+  };
+  scan(input);
+  return out;
+}
+
+function makeCompactionResponse(publicModel, compactText) {
+  const compactionId = `cmp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const encrypted = encodeCompactionContent(compactText);
+  return withResponsesCompatFields({
     id: `resp_${Date.now()}`,
     object: "response",
     created_at: Math.floor(Date.now() / 1000),
@@ -6298,17 +6382,42 @@ app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
     model: publicModel,
     output: [
       {
-        id: textId,
-        type: "message",
+        id: compactionId,
+        type: "compaction",
         status: "completed",
-        role: "system",
-        content: [{ type: "output_text", text: compactText, annotations: [] }],
+        encrypted_content: encrypted,
       },
     ],
     output_text: compactText,
     usage: normalizeResponsesUsage(null),
   });
-  addLog(`responses compact ok model=${publicModel} text_len=${compactText.length}`);
+}
+
+function emitCompactionSse(res, publicModel, compactText) {
+  const response = makeCompactionResponse(publicModel, compactText);
+  // Stream theo format Responses SSE: created -> output_item.added/done -> completed
+  const compactionItem = response.output[0];
+  responseSseWrite(res, "response.created", { type: "response.created", response: { ...response, status: "in_progress", output: [] } });
+  responseSseWrite(res, "response.in_progress", { type: "response.in_progress", response: { ...response, status: "in_progress", output: [] } });
+  responseSseWrite(res, "response.output_item.added", { type: "response.output_item.added", output_index: 0, item: { ...compactionItem, status: "in_progress" }, response_id: response.id });
+  responseSseWrite(res, "response.output_item.done", { type: "response.output_item.done", output_index: 0, item: compactionItem, response_id: response.id });
+  // usage + completed
+  responseSseWrite(res, "response.completed", { type: "response.completed", response });
+  endResponsesStream(res);
+  // Lưu state để previous_response_id hydrate (nếu client dùng)
+  rememberResponsesState(response);
+  return response;
+}
+
+app.post(["/v1/responses/compact", "/responses/compact"], async (req, res) => {
+  const original = req.body || {};
+  const publicModel = publicModelName(original.model || "opus");
+  // Codex 2.x (Responses API) bắt buộc compact response phải có DUNG 1 compaction
+  // output item type="compaction" + encrypted_content. Trước đây trả message/system
+  // nên compaction_count=0 -> "got 0 from 1/2".
+  const compactText = compactResponsesText(original);
+  const response = makeCompactionResponse(publicModel, compactText);
+  addLog(`responses compact ok model=${publicModel} text_len=${compactText.length} cmp_id=${response.output[0].id}`);
   res.json(response);
 });
 
@@ -6329,6 +6438,36 @@ app.post(["/v1/responses", "/responses"], async (req, res) => {
   const customToolNames = new Set((Array.isArray(original.tools) ? original.tools : [])
     .filter((tool) => tool && tool.type === "custom" && String(tool.name || "").trim())
     .map((tool) => String(tool.name).trim()));
+  // ── Remote compaction v2 (Codex) ────────────────────────────────────────────
+  // Client gửi normal /v1/responses + {"type":"compaction_trigger"} cuối input.
+  // Server phải trả exactly one compaction item, không forward sang backend deepseek.
+  if (hasCompactionTrigger(original)) {
+    const compactText = compactResponsesText(original);
+    const admission = reserveAuthenticatedRequest(req, res, auth, original.model || "opus");
+    if (!admission.ok) {
+      req.obs.error_type = admission.code === "rate_limit_exceeded" ? "rate_limit" : "credit";
+      req.obs.error_message = admission.message;
+      return res.status(admission.status || 429).json(openaiErrorPayload(admission.status || 429, admission.message, "permission_error", admission.code));
+    }
+    if (wantsStream) {
+      res.statusCode = 200;
+      setSseHeaders(res);
+      emitCompactionSse(res, publicModel, compactText);
+      const tokensIn = Math.ceil(compactText.length / 4);
+      settleAuthenticatedRequest(req, tokensIn, 0, original.model || "opus");
+      addLog(`responses compaction_v2 stream ok model=${publicModel} text_len=${compactText.length}`);
+      return;
+    } else {
+      const response = makeCompactionResponse(publicModel, compactText);
+      rememberResponsesState(response);
+      res.json(response);
+      const tokensIn = Math.ceil(compactText.length / 4);
+      settleAuthenticatedRequest(req, tokensIn, 0, original.model || "opus");
+      addLog(`responses compaction_v2 ok model=${publicModel} text_len=${compactText.length}`);
+      return;
+    }
+  }
+
   const identityMessages = Array.isArray(original.messages)
     ? responsesInputToMessages(original.messages)
     : responsesInputToMessages(original.input);
