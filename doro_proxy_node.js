@@ -361,12 +361,13 @@ function backend5VisionProfile() {
 function resolveBackendModel(requestedModel, profile = backendProfile(activeBackendIds()[0] || "1")) {
   const backendModel = profile.backendModel || DEFAULT_BACKEND_MODEL;
   const normalized = normalizeModelName(requestedModel);
-  // Tất cả model GPT và alias cũ đều remap sang backend model
+  // Tất cả model GPT và alias cũ đều remap sang backend model; codex-* (codex-auto-review) cũng remap
   if (normalized.startsWith("gpt-")) return backendModel;
   if (normalized.startsWith("claude-")) return backendModel;
   if (normalized.startsWith("glm-")) return backendModel;
   if (normalized.startsWith("deepseek-")) return backendModel;
   if (normalized.startsWith("qwen-")) return backendModel;
+  if (normalized.startsWith("codex")) return backendModel;
   const directAliases = new Set(["opus", "sonnet", "haiku"]);
   if (directAliases.has(normalized)) return backendModel;
   const defaults = [
@@ -2025,9 +2026,11 @@ function reserveAuthenticatedRequest(req, res, auth, model) {
   const result = credit.reserveRequest(auth && auth.token, req.reqId, model);
   if (!result.ok) return result;
   req.__doroReservation = result.reservation;
+  req.__doroSettled = false;
 
   const refundUnsettled = () => {
     try {
+      if (req.__doroSettled) return;
       const refund = credit.refundRequest(req.reqId);
       if (refund.ok && refund.state === "refunded" && !refund.duplicate) {
         addLog(`CREDIT REFUND req=${req.reqId} key=${maskSecret(auth.token)}`);
@@ -2043,10 +2046,24 @@ function reserveAuthenticatedRequest(req, res, auth, model) {
 
 function settleAuthenticatedRequest(req, tokensIn, tokensOut, model) {
   const result = credit.settleRequest(req.reqId, tokensIn, tokensOut, model);
-  if (!result.ok && result.state !== "settled") {
-    throw new Error(`Unable to settle request credit: ${result.state || "unknown"}`);
+  if (result.ok) {
+    req.__doroSettled = true;
+    return result;
   }
-  return result;
+  // Already settled -> idempotent, treat as success (client may retry same reqId)
+  if (result.state === "settled") {
+    req.__doroSettled = true;
+    return result;
+  }
+  // Refunded means client closed before settle or duplicate refund (race with finish/close).
+  // Upstream already succeeded (200) but credit was refunded, don't throw 502 for client.
+  // Just log and return as ok to avoid "Unable to settle" 502.
+  if (result.state === "refunded") {
+    req.__doroSettled = true;
+    addLog(`CREDIT SETTLE REFUNDED req=${req.reqId} key=${maskSecret((req.__doroAuth && req.__doroAuth.token) || "")} tokensIn=${tokensIn} tokensOut=${tokensOut} (client closed before settle, credit already refunded)`);
+    return { ok: true, state: "refunded", duplicate: true };
+  }
+  throw new Error(`Unable to settle request credit: ${result.state || "unknown"}`);
 }
 
 // Fail-closed admin auth + brute-force throttle (5 sai / 10 phút / IP -> 429).
@@ -2912,6 +2929,29 @@ function normalizeOpenAIChatPayloadForBackend(payload, settings) {
       return { ...message, content };
     });
     if (contentChanged) addLog(`chat content normalized for ${settings.profileLabel}: messages=${contentChanged}`);
+    // Taphoaai qwen strict: System message must be at the beginning. Reorder if needed.
+    // Safe for all backends (OpenAI spec recommends system first). Handle both system and developer.
+    if (payload.messages.length > 1) {
+      const isSystemLike = (m) => m && typeof m === "object" && (m.role === "system" || m.role === "developer");
+      let seenNonSystem = false;
+      let needsReorder = false;
+      for (const m of payload.messages) {
+        if (!m || typeof m !== "object") continue;
+        if (isSystemLike(m)) {
+          if (seenNonSystem) { needsReorder = true; break; }
+        } else {
+          seenNonSystem = true;
+        }
+      }
+      // Also reorder if first message is not system-like but later has system-like (covers developer)
+      if (needsReorder || (payload.messages.length > 0 && !isSystemLike(payload.messages[0]) && payload.messages.some(isSystemLike))) {
+        const systemMessages = payload.messages.filter(isSystemLike);
+        const nonSystem = payload.messages.filter((m) => !isSystemLike(m));
+        // Preserve original order among system and non-system groups
+        payload.messages = [...systemMessages, ...nonSystem];
+        addLog(`chat payload reordered system to beginning for ${settings.profileLabel}: system=${systemMessages.length} total=${payload.messages.length} firstRole=${payload.messages[0] && payload.messages[0].role} needsReorder=${needsReorder}`);
+      }
+    }
   }
 
   if (stripped.length) addLog(`chat payload stripped for ${settings.profileLabel}: ${stripped.join(",")}`);
@@ -3904,6 +3944,20 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
           data.usage.completion_tokens = data.usage.completion_tokens || Math.ceil(contentText.length / 4);
           data.usage.total_tokens = data.usage.total_tokens || (data.usage.prompt_tokens || 0) + (data.usage.completion_tokens || 0);
         }
+        if (!hasOpenAIAssistantOutput(data)) {
+          const emptyErr = new Error("Backend response did not include assistant output");
+          emptyErr.status = 502;
+          emptyErr.code = "empty_assistant_response";
+          emptyErr.text = JSON.stringify({ error: { message: emptyErr.message, type: "api_error", code: emptyErr.code } });
+          try {
+            const ch = (data.choices || [])[0] || {};
+            const m = ch.message || {};
+            const rc = typeof m.reasoning_content === "string" ? m.reasoning_content.length : 0;
+            const cc = typeof m.content === "string" ? m.content.length : 0;
+            addLog(`empty assistant response backend=${settings.backendModel || ""} finish=${ch.finish_reason || "-"} content_len=${cc} reasoning_len=${rc} tool_calls=${(Array.isArray(m.tool_calls) ? m.tool_calls.length : 0)} usage=${JSON.stringify(data.usage || {})} (stream collect, will failover if has next backend)`);
+          } catch (_) {}
+          throw emptyErr;
+        }
         trackModelRequest(payload.model);
         trackBackendSuccess(settings.profileId);
         return { data, settings, payload };
@@ -3937,6 +3991,20 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
                 data.usage = data.usage || {};
                 data.usage.completion_tokens = data.usage.completion_tokens || Math.ceil(contentText.length / 4);
                 data.usage.total_tokens = data.usage.total_tokens || (data.usage.prompt_tokens || 0) + (data.usage.completion_tokens || 0);
+              }
+              if (!hasOpenAIAssistantOutput(data)) {
+                const emptyErr = new Error("Backend response did not include assistant output");
+                emptyErr.status = 502;
+                emptyErr.code = "empty_assistant_response";
+                emptyErr.text = JSON.stringify({ error: { message: emptyErr.message, type: "api_error", code: emptyErr.code } });
+                try {
+                  const ch = (data.choices || [])[0] || {};
+                  const m = ch.message || {};
+                  const rc = typeof m.reasoning_content === "string" ? m.reasoning_content.length : 0;
+                  const cc = typeof m.content === "string" ? m.content.length : 0;
+                  addLog(`empty assistant response backend=${settings.backendModel || ""} finish=${ch.finish_reason || "-"} content_len=${cc} reasoning_len=${rc} tool_calls=${(Array.isArray(m.tool_calls) ? m.tool_calls.length : 0)} usage=${JSON.stringify(data.usage || {})} (stream retry collect, will failover if has next backend)`);
+                } catch (_) {}
+                throw emptyErr;
               }
               trackModelRequest(nextModel);
               trackBackendSuccess(settings.profileId);
@@ -6687,6 +6755,22 @@ async function openAIChatCompletionsHandler(req, res) {
           const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
           const payloadError = backendErrorFromPayload(parsed, response.status || 502);
           if (payloadError) throw payloadError;
+          // Treat empty assistant output as backend failure to allow failover to next backend
+          // (prevents 502 empty_assistant_response when another backend could succeed)
+          if (!hasOpenAIAssistantOutput(parsed)) {
+            const emptyErr = new Error("Backend response did not include assistant output");
+            emptyErr.status = 502;
+            emptyErr.code = "empty_assistant_response";
+            emptyErr.text = JSON.stringify({ error: { message: emptyErr.message, type: "api_error", code: emptyErr.code } });
+            try {
+              const ch = (parsed.choices || [])[0] || {};
+              const m = ch.message || {};
+              const rc = typeof m.reasoning_content === "string" ? m.reasoning_content.length : 0;
+              const cc = typeof m.content === "string" ? m.content.length : 0;
+              addLog(`empty assistant response backend=${profileSettings.backendModel || ""} finish=${ch.finish_reason || "-"} content_len=${cc} reasoning_len=${rc} tool_calls=${(Array.isArray(m.tool_calls) ? m.tool_calls.length : 0)} usage=${JSON.stringify(parsed.usage || {})} (will failover if has next backend)`);
+            } catch (_) {}
+            throw emptyErr;
+          }
           return parsed;
         });
       }
