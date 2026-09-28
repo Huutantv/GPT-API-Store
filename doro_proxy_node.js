@@ -2931,8 +2931,15 @@ function normalizeOpenAIChatPayloadForBackend(payload, settings) {
     if (contentChanged) addLog(`chat content normalized for ${settings.profileLabel}: messages=${contentChanged}`);
     // Taphoaai qwen strict: System message must be at the beginning. Reorder if needed.
     // Safe for all backends (OpenAI spec recommends system first). Handle both system and developer.
+    // Also strip instructions field which qwen strict may reject if present alongside system in messages.
+    if (payload.instructions != null) {
+      delete payload.instructions;
+      stripped.push("instructions");
+    }
     if (payload.messages.length > 1) {
       const isSystemLike = (m) => m && typeof m === "object" && (m.role === "system" || m.role === "developer");
+      // Always ensure system-like messages are at the very beginning for qwen/yolo strict backends.
+      // Detect any system-like after first non-system, or first message not system-like but later has system.
       let seenNonSystem = false;
       let needsReorder = false;
       for (const m of payload.messages) {
@@ -2943,13 +2950,27 @@ function normalizeOpenAIChatPayloadForBackend(payload, settings) {
           seenNonSystem = true;
         }
       }
-      // Also reorder if first message is not system-like but later has system-like (covers developer)
-      if (needsReorder || (payload.messages.length > 0 && !isSystemLike(payload.messages[0]) && payload.messages.some(isSystemLike))) {
+      const firstIsSystemLike = payload.messages.length > 0 && isSystemLike(payload.messages[0]);
+      const hasLaterSystemLike = payload.messages.some((m, idx) => idx > 0 && isSystemLike(m));
+      // Log for qwen/yolo for debugging large payloads
+      if (settings && settings.backendModel && /qwen|yolo/i.test(settings.backendModel)) {
+        const roles = payload.messages.slice(0, 8).map((m) => (m && m.role) || "?").join(",");
+        addLog(`qwen debug roles first8=[${roles}] total=${payload.messages.length} hasSystem=${payload.messages.some(isSystemLike)} needsReorder=${needsReorder} firstIsSystem=${firstIsSystemLike} hasLater=${hasLaterSystemLike}`);
+      }
+      if (needsReorder || (!firstIsSystemLike && hasLaterSystemLike)) {
         const systemMessages = payload.messages.filter(isSystemLike);
         const nonSystem = payload.messages.filter((m) => !isSystemLike(m));
-        // Preserve original order among system and non-system groups
-        payload.messages = [...systemMessages, ...nonSystem];
+        // Convert developer to system for strict backends
+        const normalizedSystem = systemMessages.map((m) => (m.role === "developer" ? { ...m, role: "system" } : m));
+        payload.messages = [...normalizedSystem, ...nonSystem];
         addLog(`chat payload reordered system to beginning for ${settings.profileLabel}: system=${systemMessages.length} total=${payload.messages.length} firstRole=${payload.messages[0] && payload.messages[0].role} needsReorder=${needsReorder}`);
+      }
+      // Fallback: if still first is not system but has system later (should not happen after above), force
+      if (payload.messages.length > 0 && !isSystemLike(payload.messages[0]) && payload.messages.some(isSystemLike)) {
+        const systemMessages = payload.messages.filter(isSystemLike);
+        const nonSystem = payload.messages.filter((m) => !isSystemLike(m));
+        payload.messages = [...systemMessages.map((m) => (m.role === "developer" ? { ...m, role: "system" } : m)), ...nonSystem];
+        addLog(`chat payload force reordered system to beginning for ${settings.profileLabel}`);
       }
     }
   }
