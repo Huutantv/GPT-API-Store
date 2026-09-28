@@ -30,6 +30,12 @@ const PUBLIC_MODELS = [
   { id: "claude-opus-5", object: "model", owned_by: "openai" },
   { id: "claude-sonnet-5", object: "model", owned_by: "openai" },
   { id: "qwen-3.6", object: "model", owned_by: "openai" },
+  // Taphoaai backend 3
+  { id: "yolo", object: "model", owned_by: "openai" },
+  { id: "yolo-small", object: "model", owned_by: "openai" },
+  { id: "qwen3.8-27b", object: "model", owned_by: "openai" },
+  { id: "qwen3.8-flash", object: "model", owned_by: "openai" },
+  { id: "qwen3.8-max", object: "model", owned_by: "openai" },
 ];
 
 function loadLocalEnv(force = true) {
