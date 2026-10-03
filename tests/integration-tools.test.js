@@ -70,6 +70,30 @@ const mock = http.createServer((req, res) => {
     }
     const promiseText = /COLON/.test(blob) ? "Đã update xong. Kiểm tra git diff:" : "Tôi sẽ đọc tiếp các module cốt lõi còn lại.";
 
+    // REASONING_ONLY: backend chỉ trả reasoning, không có content/tool_calls -> proxy phải coi là empty và failover
+    if (blob.includes("REASONING_ONLY")) {
+      if (parsed.stream) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const chunk = (delta, finish = null) => `data: ${JSON.stringify({ id: "chatcmpl_mock", object: "chat.completion.chunk", created: 1, model: parsed.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
+        res.write(chunk({ role: "assistant" }));
+        res.write(chunk({ reasoning_content: "thinking for a long time..." }));
+        res.write(chunk({}, "stop"));
+        res.write("data: [DONE]\n\n");
+        res.end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chatcmpl_mock",
+        object: "chat.completion",
+        created: 1,
+        model: parsed.model,
+        choices: [{ index: 0, message: { role: "assistant", content: "", reasoning_content: "thinking for a long time..." }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      }));
+      return;
+    }
+
     if (parsed.stream) {
       res.writeHead(200, { "content-type": "text/event-stream" });
       const chunk = (delta, finish = null) => `data: ${JSON.stringify({ id: "chatcmpl_mock", object: "chat.completion.chunk", created: 1, model: parsed.model, choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`;
@@ -262,6 +286,9 @@ async function main() {
     DORO_SAFE_STREAM_FAILOVER_CHAT: "0",
     DORO_FORCE_STREAM_NONSTREAM: "0",
     DORO_TRUNCATE_HISTORY: "0",
+    DORO_BACKEND_REQUEST_RETRIES: "1",
+    DORO_RETRY_BASE_DELAY_MS: "10",
+    DORO_RETRY_JITTER_MS: "0",
     DORO_BACKEND1_DISABLE_TOOLS: "0",
     DORO_BACKEND1_USER_ASSISTANT_ONLY: "0",
     DORO_ACCESS_LOG_DIR: logDir,
@@ -540,6 +567,14 @@ async function main() {
       const hasSummary = sentMessages.some(m => m.role === "system" && typeof m.content === "string" && m.content.includes("Conversation summary"));
       check("compaction replay: backend receives decoded summary", hasSummary, JSON.stringify(sentMessages).slice(0,500));
       check("compaction replay: status 200", r4.status === 200, `status=${r4.status}`);
+    }
+
+    // Reasoning-only backend should be treated as empty and not considered valid output (hồi quy thinking tràn)
+    {
+      const body = { model: "gpt-5.6-terra", messages: [{ role: "user", content: "REASONING_ONLY hello" }] };
+      const r = await httpJson("POST", proxyPort, "/v1/chat/completions", body, auth);
+      check("reasoning-only: returns 502 empty", r.status === 502, `status=${r.status} body=${r.text.slice(0,300)}`);
+      check("reasoning-only: error code empty", r.text.includes("empty_assistant_response"), r.text.slice(0,300));
     }
   }
 
