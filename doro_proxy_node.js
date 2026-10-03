@@ -456,7 +456,21 @@ function blockModel(model, reason) {
   }
 }
 
+// Alias gpt-5.6 family -> gpt-5.5 de Codex doc/ghi giong nhau (khach yeu cau A)
+const GPT56_TO_55 = new Map([
+  ["gpt-5.6-terra", "gpt-5.5"],
+  ["gpt-5.6-luna", "gpt-5.5"],
+  ["gpt-5.6-sol", "gpt-5.5"],
+  ["gpt-5.6", "gpt-5.5"],
+]);
+function aliasGpt56To55(model) {
+  const n = normalizeModelName(model);
+  return GPT56_TO_55.get(n) || model;
+}
+
 function selectBestModel(preferredModel) {
+  const aliased = aliasGpt56To55(preferredModel);
+  preferredModel = aliased;
   const chain = getModelFallbackChain();
   // Nếu preferred model không trong chain, dùng trực tiếp
   if (!chain.includes(preferredModel) && !isModelBlocked(preferredModel)) {
@@ -484,6 +498,7 @@ function isQuotaExceededError(status, text) {
 }
 
 function getSettings(requestedModel) {
+  requestedModel = aliasGpt56To55(requestedModel);
   loadLocalEnv(true);
   const activeIds = activeBackendIds();
   const profile = activeIds.map((id) => backendProfile(id)).find((item) => item.apiKeys.length) || backendProfile(activeIds[0] || "1");
@@ -505,6 +520,7 @@ function getSettings(requestedModel) {
 }
 
 function getSettingsChain(requestedModel) {
+  requestedModel = aliasGpt56To55(requestedModel);
   loadLocalEnv(true);
   if (autoSwitchEnabled()) return getAutoSwitchSettingsChain(requestedModel);
   const ids = orderActiveBackendIds(activeBackendIds());
