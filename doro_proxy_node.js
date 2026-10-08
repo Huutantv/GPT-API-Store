@@ -1491,6 +1491,7 @@ function isBackendCompatibilityError(status, text = "", code = "") {
     "unknown parameter",
     "unknown field",
     "malformed request",
+    "system message must be at the beginning",
   ].some((marker) => lower.includes(marker));
 }
 
@@ -2883,6 +2884,47 @@ function logInvalidAssistantToolCalls(requestTools, message, publicModel, backen
   } catch (_) {}
 }
 
+function toolValidationRetryEnabled() {
+  return envFlag(process.env.DORO_TOOL_VALIDATION_RETRY, true);
+}
+function toolValidationRetryMax() {
+  const v = optionalPositiveInt(process.env.DORO_TOOL_VALIDATION_RETRY_MAX);
+  return v > 0 ? Math.min(v, 3) : 2;
+}
+function findMissingRequiredToolCalls(requestTools, message) {
+  const missingList = [];
+  try {
+    const calls = message && Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    if (!calls.length || !Array.isArray(requestTools) || !requestTools.length) return missingList;
+    const schemas = {};
+    for (const tool of requestTools) {
+      const fn = tool && tool.function;
+      if (fn && fn.name) schemas[fn.name] = (fn.parameters && typeof fn.parameters === "object") ? fn.parameters : {};
+    }
+    for (const call of calls) {
+      const fn = call && call.function;
+      if (!fn || !fn.name) continue;
+      const schema = schemas[fn.name];
+      if (!schema) continue;
+      const required = Array.isArray(schema.required) ? schema.required : [];
+      if (!required.length) continue;
+      let args;
+      try { args = JSON.parse(fn.arguments || "{}"); } catch (_) { args = null; }
+      if (!args || typeof args !== "object" || Array.isArray(args)) {
+        missingList.push({ name: fn.name, missing: [...required], args_keys: [], raw: String(fn.arguments||"").slice(0,200) });
+        continue;
+      }
+      const missing = required.filter((key) => args[key] === undefined || args[key] === "" );
+      if (missing.length) missingList.push({ name: fn.name, missing, args_keys: Object.keys(args), raw: String(fn.arguments||"").slice(0,200) });
+    }
+  } catch (_) {}
+  return missingList;
+}
+function toolValidationNudgeText(missingList) {
+  const lines = missingList.map((m) => "- " + m.name + ": missing [" + m.missing.join(",") + "] (got keys: [" + (m.args_keys.join(",")||"none") + "])");
+  return "Tool input validation failed on previous turn. The following tool calls were missing required parameters and were NOT executed:\n" + lines.join("\n") + "\nPlease retry the SAME tool calls with all required parameters included. For \"read\" you MUST include \"filePath\" (e.g. {\"filePath\": \"src/AuthController.java\"}). For \"grep\" you MUST include \"pattern\". Do not leave arguments empty.";
+}
+
 function flattenOrphanToolMessages(messages) {
   if (!Array.isArray(messages)) return messages;
   const flattened = [];
@@ -3011,9 +3053,12 @@ function hasOpenAIAssistantOutput(data) {
     if (Array.isArray(value)) return value.length > 0;
     return false;
   };
+  const hasReasoning = (obj) => hasContent(obj.reasoning_content) || hasContent(obj.reasoning) || hasContent(obj.reasoning_text);
   return (
     hasContent(message.content) ||
     hasContent(delta.content) ||
+    hasReasoning(message) ||
+    hasReasoning(delta) ||
     (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) ||
     (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0)
   );
@@ -4228,7 +4273,7 @@ async function postStreamWithKeyFailover(url, payload, orderedKeys, obs, setting
         return fetchWithTimeout(url, { method: "POST", headers: backendWireHeaders(orderedKeys[i], settings), body: JSON.stringify(payload), timeoutMs: Math.min(backendStreamTimeoutMs, ttfbTimeoutMs()) });
       });
       if (obs) obs.final_backend_status = resp.status;
-      if ((isRetryableAcrossKeys(resp.status) || isKeyScopedFailure(resp.status, text, "")) && i < orderedKeys.length - 1) {
+      if ((isRetryableAcrossKeys(resp.status) || isKeyScopedFailure(resp.status, "", "")) && i < orderedKeys.length - 1) {
         trackBackendKeyResult(orderedKeys[i], { status: resp.status });
         if (obs) { obs.is_retry = true; obs.retry_count += 1; }
         addLog(`backend retry(stream) status=${resp.status} key=${i + 1}/${orderedKeys.length}`);
@@ -4299,6 +4344,15 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
         const { resp } = await postStreamWithKeyFailover(url, wirePayload, ordered, obs, settings);
         trackBackendLatency(settings.profileId, Date.now() - _t0);
         const data = await collectOpenAIStream(resp);
+        if (!hasOpenAIAssistantOutput(data)) {
+          const emptyErr = new Error("Backend response did not include assistant output");
+          emptyErr.status = 502;
+          emptyErr.code = "empty_assistant_response";
+          const preview = JSON.stringify(data).slice(0,800);
+          emptyErr.text = JSON.stringify({ error: { message: emptyErr.message, type: "api_error", code: emptyErr.code, preview }});
+          try { addLog("empty_assistant_response(stream) backend="+settings.profileLabel+" preview="+preview.slice(0,120)); } catch(_){}
+          throw emptyErr;
+        }
         if (!data.usage || !data.usage.total_tokens) {
           const contentText = String(((((data.choices || [])[0]) || {}).message || {}).content || "");
           data.usage = data.usage || {};
@@ -6843,10 +6897,13 @@ async function openAIChatCompletionsHandler(req, res) {
   try {
     const internalTools = serverToolsEnabled() ? serverToolSchemas() : [];
     const mergedTools = mergeOpenAITools(body.tools, internalTools);
-    const maxRounds = internalTools.length ? serverToolMaxRounds() : 1;
+    const validationMax = toolValidationRetryEnabled() ? toolValidationRetryMax() : 0;
+    const baseMaxRounds = internalTools.length ? serverToolMaxRounds() : 1;
+    const maxRounds = baseMaxRounds + validationMax;
     let messages = Array.isArray(body.messages) ? body.messages : [];
     let data = null;
     let finalSettings = settings;
+    let toolRetryCount = 0;
     const totalUsage = { total_tokens: 0, prompt_tokens: 0, completion_tokens: 0 };
 
     for (let round = 0; round < maxRounds; round += 1) {
@@ -6877,6 +6934,15 @@ async function openAIChatCompletionsHandler(req, res) {
           const parsed = parseBackendJsonResponse(response.text, response.status, "chat.completions");
           const payloadError = backendErrorFromPayload(parsed, response.status || 502);
           if (payloadError) throw payloadError;
+          if (!hasOpenAIAssistantOutput(parsed)) {
+            const emptyErr = new Error("Backend response did not include assistant output");
+            emptyErr.status = 502;
+            emptyErr.code = "empty_assistant_response";
+            const preview = JSON.stringify(parsed).slice(0,800);
+            emptyErr.text = JSON.stringify({ error: { message: emptyErr.message, type: "api_error", code: emptyErr.code, preview }});
+            try { addLog(`empty_assistant_response backend=${response.status} preview=${preview.slice(0,120)}`); } catch(_){}
+            throw emptyErr;
+          }
           return parsed;
         });
       }
@@ -6894,6 +6960,22 @@ async function openAIChatCompletionsHandler(req, res) {
 
       const choice = (data.choices || [])[0] || {};
       const message = choice.message || {};
+      const missingRequired = findMissingRequiredToolCalls(mergedTools || body.tools, message);
+      if (missingRequired.length && toolRetryCount < validationMax) {
+        toolRetryCount += 1;
+        const nudge = toolValidationNudgeText(missingRequired);
+        addLog("tool validation retry " + toolRetryCount + "/" + validationMax + " backend=" + (finalSettings && finalSettings.profileLabel) + " missing=" + missingRequired.map((m)=>m.name+":"+m.missing.join(",")).join(";") + " preview=" + JSON.stringify(message.tool_calls).slice(0,120));
+        messages = [
+          ...messages,
+          {
+            role: "assistant",
+            content: typeof message.content === "string" ? message.content : "",
+            tool_calls: message.tool_calls || [],
+          },
+          { role: "user", content: nudge },
+        ];
+        continue;
+      }
       const toolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
       const serverToolNames = new Set(internalTools.map((tool) => tool.function.name));
       const hasExternalToolCall = toolCalls.some((call) => !serverToolNames.has(String(call && call.function && call.function.name || "")));
@@ -6935,9 +7017,13 @@ async function openAIChatCompletionsHandler(req, res) {
     req.obs.final_backend_status = req.obs.final_backend_status || 200;
     const choice = (data.choices || [])[0] || {};
     if (!hasOpenAIAssistantOutput(data)) {
+      const choiceDbg = (data.choices || [])[0] || {};
+      const msg = choiceDbg.message || {};
+      const detail = "empty handler final backend="+(finalSettings && finalSettings.profileLabel)+" finish="+(choiceDbg.finish_reason || "?")+" content_len="+String(msg.content||"").length+" reasoning_len="+String(msg.reasoning_content||msg.reasoning||"").length+" tool_calls="+(Array.isArray(msg.tool_calls)?msg.tool_calls.length:0)+" usage="+JSON.stringify(data.usage||{})+" preview="+JSON.stringify(data).slice(0,500);
+      try { addLog(detail); } catch(_){}
       const err = new Error("Backend response did not include assistant output");
       err.status = 502;
-      err.text = JSON.stringify({ error: { message: err.message, type: "api_error", code: "empty_assistant_response" } });
+      err.text = JSON.stringify({ error: { message: err.message, type: "api_error", code: "empty_assistant_response", detail } });
       err.code = "empty_assistant_response";
       throw err;
     }
