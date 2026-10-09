@@ -5305,6 +5305,309 @@ app.use((req, res, next) => {
   }
   return next();
 });
+// ─── Forward Mode (DORO_FWD_MODE + DORO_FWD_URL + DORO_FWD_BILLING) ─────────────
+// Bước demi chuyển dự án: khi bật, mọi request AI vào /v1/* được chuyển nguyên trạng
+// sang DORO_FWD_URL — stream raw body, KHÔNG sanitize, KHÔNG dùng backend pool.
+// Billing (DORO_FWD_BILLING, mặc định bật theo Forward Mode): vẫn giữ luồng tiền zplay —
+// auth key + reserve credit (RPM/hết credit/hết hạn chặn như thường), AI chạy ở target,
+// settle theo usage thật đọc từ phản hồi (JSON/SSE cả 3 wire); target không trả usage
+// thì ước tính từ kích thước request. /health, webhook, admin, portal, checkout vẫn
+// thuộc server này. Bật/tắt + đổi URL live từ Admin > tab Backend > thẻ "Forward Mode",
+// áp dụng ngay không cần restart.
+const { Readable } = require("stream");
+const FWD_ROUTE_PATHS = [
+  "/v1/chat/completions", "/chat/completions",
+  "/v1/messages", "/messages",
+  "/v1/responses/compact", "/responses/compact",
+  "/v1/responses", "/responses",
+  "/v1/models", "/models",
+  "/v1/embeddings", "/embeddings",
+];
+const FWD_REQUEST_SKIP = new Set([
+  "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
+  "te", "trailer", "upgrade", "host", "expect",
+]);
+const FWD_RESPONSE_SKIP = new Set([
+  "transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length", "upgrade",
+]);
+let _fwdUrlCache = { raw: null, url: null, error: "" };
+function fwdModeConfig() {
+  const enabled = envFlag(process.env.DORO_FWD_MODE, false);
+  const raw = String(process.env.DORO_FWD_URL || "").trim();
+  let target = null;
+  let error = "";
+  if (enabled) {
+    if (_fwdUrlCache.raw !== raw) {
+      _fwdUrlCache = { raw, url: null, error: "" };
+      if (!raw) _fwdUrlCache.error = "DORO_FWD_MODE đang bật nhưng DORO_FWD_URL chưa được nhập";
+      else {
+        try {
+          const parsed = new URL(raw);
+          if (parsed.protocol === "http:" || parsed.protocol === "https:") _fwdUrlCache.url = parsed;
+          else _fwdUrlCache.error = "DORO_FWD_URL phải dùng http:// hoặc https://";
+        } catch (_) {
+          _fwdUrlCache.error = "DORO_FWD_URL không phải URL hợp lệ";
+        }
+      }
+    }
+    target = _fwdUrlCache.url;
+    error = _fwdUrlCache.error;
+  }
+  return { enabled, raw, target, error };
+}
+function isFwdRoute(req) {
+  const pathName = req.path || "";
+  for (const base of FWD_ROUTE_PATHS) {
+    if (pathName === base || pathName === `${base}/`) return true;
+  }
+  return false;
+}
+function buildFwdRequestHeaders(req) {
+  const headers = {};
+  for (const [name, raw] of Object.entries(req.headers || {})) {
+    const lower = String(name).toLowerCase();
+    if (FWD_REQUEST_SKIP.has(lower) || raw === undefined) continue;
+    headers[lower] = Array.isArray(raw) ? raw.join(", ") : String(raw);
+  }
+  // Đường hầm sạch: ép upstream trả raw identity để không phải decode/re-encode gzip/br.
+  headers["accept-encoding"] = "identity";
+  const ip = String(clientIp(req) || "");
+  headers["x-forwarded-for"] = headers["x-forwarded-for"] ? `${headers["x-forwarded-for"]}, ${ip}` : ip;
+  if (!headers["x-forwarded-host"]) headers["x-forwarded-host"] = String(req.get("host") || "");
+  const via = "1.1 zplay-forward";
+  headers["via"] = headers["via"] ? `${headers["via"]}, ${via}` : via;
+  return headers;
+}
+function fwdUpstreamErrorPayload(error) {
+  const detail = String((error && error.message) || "forward_request_failed");
+  if (error && error.name === "AbortError") {
+    return { status: 504, body: { error: { message: "Forward mode: target server không phản hồi kịp (timeout)", type: "forward_timeout", code: "forward_timeout" }, detail } };
+  }
+  return { status: 502, body: { error: { message: `Forward mode: không kết nối được target server: ${detail}`, type: "forward_upstream_error", code: "forward_upstream_error" }, detail } };
+}
+function fwdBillingEnabled() {
+  if (!envFlag(process.env.DORO_FWD_MODE, false)) return false;
+  return envFlag(process.env.DORO_FWD_BILLING, true);
+}
+const FWD_BILLABLE_PATHS = new Set([
+  "/v1/chat/completions", "/chat/completions",
+  "/v1/messages", "/messages",
+  "/v1/responses/compact", "/responses/compact",
+  "/v1/responses", "/responses",
+]);
+function isFwdBillable(req) {
+  return req.method === "POST" && FWD_BILLABLE_PATHS.has(req.path);
+}
+function fwdBodyLimitBytes() {
+  const raw = String(process.env.DORO_FWD_BODY_LIMIT || process.env.DORO_BODY_LIMIT || "50mb").trim().toLowerCase();
+  const match = raw.match(/^(\d+(?:\.\d+)?)\s*(kb|mb|gb)?$/);
+  if (!match) return 50 * 1024 * 1024;
+  const mult = { kb: 1024, mb: 1024 * 1024, gb: 1024 * 1024 * 1024 }[match[2] || ""] || 1;
+  return Math.max(1024, Math.floor(Number(match[1]) * mult));
+}
+function fwdWireError(req, status, message, code) {
+  if (String(req.path || "").startsWith("/v1/messages") || String(req.path || "") === "/messages") {
+    return { status, body: { type: "error", error: { type: status === 401 ? "authentication_error" : "permission_error", message }, ...(code ? { code } : {}) } };
+  }
+  return { status, body: openaiErrorPayload(status, message, status === 401 ? "authentication_error" : "permission_error", code) };
+}
+async function readFwdBody(req, limitBytes) {
+  const declared = Number(req.get("content-length") || 0);
+  if (Number.isFinite(declared) && declared > limitBytes) return null;
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += piece.length;
+    if (total > limitBytes) return null;
+    chunks.push(piece);
+  }
+  return Buffer.concat(chunks, total);
+}
+function fwdModelFromBody(buf) {
+  if (!buf || !buf.length) return "";
+  try {
+    const data = JSON.parse(buf.toString("utf8"));
+    return String((data && data.model) || "").slice(0, 80);
+  } catch (_) {}
+  try {
+    const m = buf.subarray(0, 8192).toString("utf8").match(/"model"\s*:\s*"([^"]{1,80})"/);
+    return m ? m[1] : "";
+  } catch (_) {
+    return "";
+  }
+}
+function fwdUsageFromText(text) {
+  // Quét mọi object "usage" xuất hiện trong tail stream/JSON; lấy MAX từng field
+  // (Anthropic: usage input ở message_start, output ở message_delta cuối stream).
+  if (!text) return null;
+  let maxIn = 0;
+  let maxOut = 0;
+  let idx = -1;
+  while (true) {
+    idx = text.indexOf('"usage"', idx + 1);
+    if (idx === -1) break;
+    const braceStart = text.indexOf("{", idx);
+    if (braceStart === -1 || braceStart - idx > 16) break;
+    let depth = 0;
+    let end = -1;
+    for (let i = braceStart; i < text.length && i - braceStart < 4096; i += 1) {
+      const ch = text[i];
+      if (ch === "{") depth += 1;
+      else if (ch === "}") { depth -= 1; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) continue;
+    try {
+      const obj = JSON.parse(text.slice(braceStart, end + 1));
+      const inT = Number(obj.input_tokens ?? obj.prompt_tokens ?? 0) || 0;
+      const outT = Number(obj.output_tokens ?? obj.completion_tokens ?? 0) || 0;
+      if (inT > maxIn) maxIn = inT;
+      if (outT > maxOut) maxOut = outT;
+    } catch (_) {}
+  }
+  if (maxIn <= 0 && maxOut <= 0) return null;
+  return { tokensIn: maxIn, tokensOut: maxOut };
+}
+function fwdEstimatedTokens(reqBytes) {
+  const estTokens = Math.max(1, Math.ceil(Number(reqBytes || 0) / 4) + 200);
+  return { tokensIn: Math.floor(estTokens * 0.7), tokensOut: Math.ceil(estTokens * 0.3) };
+}
+async function handleForwardMode(req, res, billing) {
+  const cfg = fwdModeConfig();
+  if (!cfg.target) {
+    addLog(`FWD reject method=${req.method} path=${req.path} ${cfg.error || "DORO_FWD_URL chưa được nhập"}`);
+    return res.status(503).json({ error: { message: `Forward mode đang bật nhưng ${cfg.error || "DORO_FWD_URL chưa được nhập"}`, type: "forward_mode_misconfigured", code: "forward_mode_misconfigured" }, detail: cfg.error });
+  }
+  let rawBody = null;
+  if (billing) {
+    const auth = checkAuth(req);
+    if (!auth.ok) {
+      const err = fwdWireError(req, auth.status || 401, authErrorMessage(req, auth, authErrorContext(req, auth)), auth.code);
+      addLog(`FWD auth-reject method=${req.method} path=${req.path} key=${maskSecret(extractToken(req))} status=${err.status} msg=${auth.message || ""}`);
+      return res.status(err.status).json(err.body);
+    }
+    req.__doroAuth = auth;
+    const limitBytes = fwdBodyLimitBytes();
+    rawBody = await readFwdBody(req, limitBytes);
+    if (rawBody === null) {
+      addLog(`FWD body-too-large method=${req.method} path=${req.path} limit=${limitBytes}`);
+      return res.status(413).json(openaiErrorPayload(413, `Forward mode: request body vượt giới hạn ${limitBytes} bytes`, "invalid_request_error", "forward_body_too_large"));
+    }
+    const fwdModel = fwdModelFromBody(rawBody);
+    if (!req.reqId) req.reqId = nextReqId();
+    const admission = reserveAuthenticatedRequest(req, res, auth, fwdModel);
+    if (!admission.ok) {
+      addLog(`FWD reserve-reject method=${req.method} path=${req.path} key=${maskSecret(auth.token)} status=${admission.status || 429} msg=${admission.message || ""}`);
+      const err = fwdWireError(req, admission.status || 429, admission.message || "Credit error", admission.code);
+      return res.status(err.status).json(err.body);
+    }
+    req.__fwdModel = fwdModel;
+    req.__fwdReqBytes = rawBody.length;
+  }
+  let targetUrl;
+  try {
+    targetUrl = new URL(String(req.originalUrl || req.url || "/"), cfg.target).toString();
+  } catch (_) {
+    targetUrl = cfg.target.origin + (req.path || "/");
+  }
+  const isBodyRequest = ["POST", "PUT", "PATCH"].includes(req.method);
+  const controller = new AbortController();
+  let aborted = false;
+  const abort = () => { if (!aborted) { aborted = true; try { controller.abort(); } catch (_) {} } };
+  res.once("close", abort);
+  const timeoutMs = Math.max(10000, Number(process.env.DORO_FWD_TIMEOUT_MS || "600000") || 600000);
+  const timer = setTimeout(() => { abort(); addLog(`FWD timeout method=${req.method} path=${req.path} target=${targetUrl} ms=${timeoutMs}`); }, timeoutMs);
+  let upstream = null;
+  try {
+    const fetchBody = billing
+      ? (rawBody && rawBody.length ? rawBody : undefined)
+      : (isBodyRequest ? Readable.toWeb(req) : undefined);
+    const fetchHeaders = buildFwdRequestHeaders(req);
+    if (billing && rawBody) {
+      fetchHeaders["content-length"] = String(rawBody.length);
+      delete fetchHeaders["transfer-encoding"];
+    }
+    upstream = await fetch(targetUrl, {
+      method: req.method,
+      headers: fetchHeaders,
+      body: fetchBody,
+      signal: controller.signal,
+      ...(isBodyRequest && !billing ? { duplex: "half" } : {}),
+    });
+  } catch (error) {
+    clearTimeout(timer);
+    if (aborted) return undefined;
+    const mapped = fwdUpstreamErrorPayload(error);
+    addLog(`FWD error method=${req.method} path=${req.path} target=${targetUrl} status=${mapped.status} error=${mapped.detail}`);
+    if (!res.headersSent) return res.status(mapped.status).json(mapped.body);
+    try { res.end(); } catch (_) {}
+    return undefined;
+  }
+  const responseHeaders = {};
+  upstream.headers.forEach((value, name) => {
+    const lower = String(name).toLowerCase();
+    if (!FWD_RESPONSE_SKIP.has(lower)) responseHeaders[lower] = value;
+  });
+  res.writeHead(upstream.status, responseHeaders);
+  const contentType = String(upstream.headers.get("content-type") || "").toLowerCase();
+  const captureUsage = billing && upstream.status < 400 && (contentType.includes("json") || contentType.includes("event-stream") || contentType.includes("text"));
+  const usageParts = [];
+  let usageBytes = 0;
+  const USAGE_WINDOW_BYTES = 262144;
+  try {
+    if (upstream.body) {
+      for await (const chunk of upstream.body) {
+        if (aborted) break;
+        const piece = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (captureUsage) {
+          // Sliding window: usage nằm ở cuối stream → chỉ giữ ~256KB đuôi.
+          usageParts.push(piece.toString("utf8"));
+          usageBytes += piece.length;
+          while (usageParts.length > 1 && usageBytes - Buffer.byteLength(usageParts[0]) >= USAGE_WINDOW_BYTES) {
+            usageBytes -= Buffer.byteLength(usageParts.shift());
+          }
+        }
+        const ok = res.write(piece);
+        if (!ok) await new Promise((resolve) => res.once("drain", resolve));
+      }
+    }
+  } catch (error) {
+    if (!aborted) addLog(`FWD stream error method=${req.method} path=${req.path} error=${String((error && error.message) || error)}`);
+  } finally {
+    clearTimeout(timer);
+    try { res.end(); } catch (_) {}
+  }
+  if (billing && req.__doroReservation) {
+    try {
+      if (!aborted && upstream.status < 400) {
+        const tail = usageParts.join("");
+        let usage = fwdUsageFromText(tail) || fwdUsageFromText(rawBody ? rawBody.toString("utf8").slice(0, 65536) : "");
+        let est = 0;
+        if (!usage) { usage = fwdEstimatedTokens(req.__fwdReqBytes); est = 1; }
+        const modelLabel = `fwd${req.__fwdModel ? ":" + req.__fwdModel : ""}`;
+        const settle = settleAuthenticatedRequest(req, usage.tokensIn, usage.tokensOut, modelLabel);
+        addLog(`FWD billed req=${req.reqId} key=${maskSecret(req.__doroAuth.token)} in=${usage.tokensIn} out=${usage.tokensOut} est=${est} remaining=${settle.remaining}${settle.token_remaining === undefined ? "" : " token_remaining=" + settle.token_remaining}`);
+      }
+      // status >=400 hoặc client abort giữa stream: KHÔNG settle → refund tự động
+      // (hook refundUnsettled đã gắn trong reserveAuthenticatedRequest, như luồng thường).
+    } catch (error) {
+      addLog(`FWD settle error req=${req.reqId} error=${String((error && error.message) || error)}`);
+    }
+  }
+  addLog(`FWD ok method=${req.method} path=${req.path} target=${targetUrl} status=${upstream.status} billing=${billing ? 1 : 0} ip=${clientIp(req) || "?"}`);
+  return undefined;
+}
+app.use((req, res, next) => {
+  if (!fwdModeConfig().enabled || !isFwdRoute(req)) return next();
+  const billing = fwdBillingEnabled() && isFwdBillable(req);
+  return handleForwardMode(req, res, billing).catch((error) => {
+    addLog(`FWD fatal method=${req.method} path=${req.path} error=${String((error && error.message) || error)}`);
+    if (!res.headersSent) res.status(500).json({ error: { message: "Forward mode failed", type: "forward_error", code: "forward_error" } });
+    else { try { res.end(); } catch (_) {} }
+    return undefined;
+  });
+});
+
 // Reserve a bounded amount of process memory before parsing JSON. This protects
 // the whole service from a burst of otherwise valid large requests; rejected
 // callers get a retryable 503 instead of causing an out-of-memory process crash.
@@ -7719,6 +8022,13 @@ app.get("/api/config", (req, res) => {
     },
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
     force_stream_nonstream: forceStreamNonstreamEnabled(),
+    fwd_mode: {
+      enabled: envFlag(process.env.DORO_FWD_MODE, false),
+      url: String(process.env.DORO_FWD_URL || "").trim(),
+      error: fwdModeConfig().error,
+      timeout_ms: Math.max(10000, Number(process.env.DORO_FWD_TIMEOUT_MS || "600000") || 600000),
+      billing: fwdBillingEnabled(),
+    },
     safe_stream_failover: safeStreamFailoverEnabled(),
     safe_stream_max_bytes: safeStreamBufferLimitBytes(),
     model_fallback_chain: (process.env.DORO_MODEL_FALLBACK || "").trim(),
@@ -7902,6 +8212,10 @@ app.put("/api/config", (req, res) => {
     "DORO_DAILY_REPORT",
     "DORO_DAILY_REPORT_TIME",
     "DORO_AUTO_WARMUP_MIN_SPREAD_MS",
+    "DORO_FWD_MODE",
+    "DORO_FWD_URL",
+    "DORO_FWD_TIMEOUT_MS",
+    "DORO_FWD_BILLING",
   ]) {
     // Chß╗ë xß╗¡ l├¢ field c├│ trong body ÔÇö trã░ß╗øc ─æ├óy field vß║»ng mß║Àt bß╗ï normalize th├ánh
     // "0"/default rß╗ôi ghi ─æ├¿ (VD lã░u Telegram lß║íi reset to├án bß╗Ö cß╗Ø backend).
@@ -7924,6 +8238,23 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_FWD_MODE") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_FWD_BILLING") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_FWD_URL") {
+      if (value) {
+        try {
+          const parsedFwdUrl = new URL(value);
+          if (parsedFwdUrl.protocol !== "http:" && parsedFwdUrl.protocol !== "https:") throw new Error("bad protocol");
+        } catch (_) {
+          return res.status(400).json({ detail: "DORO_FWD_URL không hợp lệ (cần http:// hoặc https://)" });
+        }
+      } else {
+        // Giá trị rỗng = xóa URL chủ đích (chủ động clear, không phải field vắng mặt).
+        updates[field] = "";
+        continue;
+      }
+    }
+    if (field === "DORO_FWD_TIMEOUT_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (/^DORO_BACKEND[1-7]_WEIGHT$/.test(field)) {
       pendingWeights[field] = value;
       continue;

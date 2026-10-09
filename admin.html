@@ -1158,6 +1158,37 @@ summary::-webkit-details-marker{display:none}
     </div>
     <div id="modelLimitsResults" class="hidden space-y-3"></div>
   </div>
+  <!-- Forward Mode -->
+  <div class="bg-dark-700 border border-white/10 rounded-xl p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h3 class="font-bold text-base flex items-center gap-2">&#x1F9ED; Forward Mode &#8212; chuy&#7843; ti&#7871;m sang d&#7921; &#225;n kh&#225;c</h3>
+      <div class="flex items-center gap-2">
+        <span id="fwdModeBadge" class="text-xs px-2 py-1 rounded-full bg-white/10 text-gray-400">&#272;ang t&#7855;t</span>
+        <button onclick="saveFwdMode()" class="px-4 py-1.5 bg-primary hover:bg-primary/90 rounded-lg text-xs font-semibold transition">L&#432;u</button>
+      </div>
+    </div>
+    <p class="text-xs text-gray-400">Khi b&#7855;t: m&#7885;i request AI (/v1/chat/completions, /v1/messages, /v1/responses, /v1/models&#8230;) &#273;&#432;&#7903;c chuy&#7843;n <b>nguy&#234;n tr&#7841;ng</b> (gi&#7919; header, body, streaming) sang URL d&#432;&#7899;i. /health, webhook, portal, checkout, admin v&#7841;n thu&#7897;c server n&#224;y. &#110;&#7893;i URL khi n&#224;o c&#361;ng &#225;p d&#7909;ng ngay, kh&#244;ng c&#7847;n restart.</p>
+    <label class="flex items-center gap-2 cursor-pointer select-none">
+      <input id="fwdModeEnabled" type="checkbox" onchange="fwdModeTogglePreview()" class="w-4 h-4 accent-primary">
+      <span class="text-sm">B&#8595;t Forward Mode</span>
+    </label>
+    <label class="flex items-center gap-2 cursor-pointer select-none">
+      <input id="fwdModeBilling" type="checkbox" class="w-4 h-4 accent-primary">
+      <span class="text-sm">Gi&#7919; t&#7853;i ti&#7873;n zplay (auth key + tr&#7919; credit/token theo usage th&#7853;t)</span>
+    </label>
+    <p class="text-xs text-gray-500">&#272;&#225;u n&#224;y = ch&#7841;y &#8220;k&#233;p&#8221;: kh&#225;ch v&#7851;n b&#7883; tr&#7919; credit, sao k&#234; portal ghi <code>fwd:model</code>, RPM/v&#7841;t c&#243;/h&#7871;t h&#7841;n v&#7841;n ch&#7875;n; AI ch&#7841;y &#7903; URL m&#7899;i. T&#7855;t n&#7871;u mu&#7889;n forward mi&#7877;n ph&#237; (m&#7855;t &#273;&#244;t &#273;&#224;y kh&#225;ch sang d&#7921; &#225;n m&#7899;i &#8212; key kh&#244;ng b&#7883; tr&#7919;).</p>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">URL &#273;&#237;ch (nh&#7853;p v&#244; &#273;&#226;y)</label>
+      <input id="fwdModeUrl" placeholder="https://api.du-an-moi.vn" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:16px">
+      <p class="text-xs text-gray-500 mt-1">Kh&#225;ch g&#7885;i zplay.io.vn/v1/&#8230; s&#7869; &#273;&#432;&#7903;c ghep &#273;&#432;&#7907;ng d&#225;n &#273;&#432;&#7901;ng sang sau URL n&#224;y. &#270;&#7891;t tr&#7855;ng &#273;&#7879; x&#243;a URL &#273;&#227; l&#432;u.</p>
+    </div>
+    <div>
+      <label class="text-xs text-gray-400 block mb-1">Timeout m&#7895;i request (ms)</label>
+      <input id="fwdModeTimeout" type="number" min="10000" placeholder="600000" class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+      <p class="text-xs text-gray-500 mt-1">M&#7857;c &#273;&#7883;nh 600000 (10 ph&#250;t) &#273;&#7875; kh&#244;ng c&#7855;t stream d&#224;i.</p>
+    </div>
+    <p id="fwdModeMsg" class="text-xs text-gray-400"></p>
+  </div>
 </div>
 
 <!-- Tab: Settings -->
@@ -1841,7 +1872,7 @@ function showTab(name) {
   if (name === "ops") loadOps();
   if (name === "orders") loadOrders();
   if (name === "packages") loadPackages();
-  if (name === "backend") { setupBackendCards(); loadBackendConfig(); startModelUsageRefresh(); }
+  if (name === "backend") { setupBackendCards(); loadBackendConfig(); loadFwdMode(); startModelUsageRefresh(); }
   if (name === "settings") loadTelegramSettings();
   if (name === "ipguard") loadIpGuardAll();
   if (name === "keyshare") loadKeyshare();
@@ -3394,6 +3425,68 @@ async function saveModelFallback() {
   } else {
     msg.className = "text-xs text-red-400";
     msg.textContent = data.detail || "Loi";
+  }
+}
+async function loadFwdMode() {
+  try {
+    var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
+    var fm = data.fwd_mode || {};
+    var enabledEl = document.getElementById("fwdModeEnabled");
+    var urlEl = document.getElementById("fwdModeUrl");
+    var timeoutEl = document.getElementById("fwdModeTimeout");
+    var billingEl = document.getElementById("fwdModeBilling");
+    if (enabledEl) enabledEl.checked = !!fm.enabled;
+    if (urlEl) urlEl.value = fm.url || "";
+    if (timeoutEl) timeoutEl.value = fm.timeout_ms || 600000;
+    if (billingEl) billingEl.checked = fm.billing !== false;
+    fwdModeRenderBadge(fm);
+  } catch (_) {}
+}
+
+function fwdModeRenderBadge(fm) {
+  var badge = document.getElementById("fwdModeBadge");
+  if (!badge) return;
+  if (fm.enabled && fm.error) {
+    badge.className = "text-xs px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-300";
+    badge.textContent = "\u26a0 " + fm.error;
+  } else if (fm.enabled) {
+    badge.className = "text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-300";
+    badge.textContent = "\u25b6 \u0110ang forward \u2192 " + (fm.url || "?") + (fm.billing === false ? " (mi\u1ec5n ph\u00ed)" : " (gi\u1eef t\u1ea1i ti\u1ec1n)");
+  } else {
+    badge.className = "text-xs px-2 py-1 rounded-full bg-white/10 text-gray-400";
+    badge.textContent = "\u0110ang t\u1ea5t";
+  }
+}
+
+function fwdModeTogglePreview() {
+  var badge = document.getElementById("fwdModeBadge");
+  var enabled = document.getElementById("fwdModeEnabled").checked;
+  fwdModeRenderBadge({ enabled: enabled, url: document.getElementById("fwdModeUrl").value.trim(), error: enabled && !document.getElementById("fwdModeUrl").value.trim() ? "ch\u01b0a nh\u1eadp URL" : "" });
+}
+
+async function saveFwdMode() {
+  var msg = document.getElementById("fwdModeMsg");
+  var enabled = document.getElementById("fwdModeEnabled").checked;
+  var url = document.getElementById("fwdModeUrl").value.trim();
+  var timeout = document.getElementById("fwdModeTimeout").value.trim();
+  var billingEl = document.getElementById("fwdModeBilling");
+  if (enabled && !url) { msg.className = "text-xs text-red-400"; msg.textContent = "B\u1eadt Forward th\u00ec ph\u1ea3i nh\u1eadp URL \u0111\u00edch"; return; }
+  var updates = {};
+  updates.DORO_FWD_MODE = enabled ? "1" : "0";
+  updates.DORO_FWD_URL = url;
+  updates.DORO_FWD_BILLING = billingEl && billingEl.checked ? "1" : "0";
+  if (timeout) updates.DORO_FWD_TIMEOUT_MS = timeout;
+  msg.className = "text-xs text-gray-400";
+  msg.textContent = "\u0110ang l\u01b0u...";
+  var r = await fetch(BASE + "/api/config", { method: "PUT", headers: authHeaders(), body: JSON.stringify(updates) });
+  var data = await r.json();
+  if (data.ok) {
+    msg.className = "text-xs text-green-400";
+    msg.textContent = "\u0110\u00e3 l\u01b0u v\u00e0 \u00e1p d\u1ee5ng ngay cho request ti\u1ebfp theo (kh\u00f4ng c\u1ea7n restart).";
+    loadFwdMode();
+  } else {
+    msg.className = "text-xs text-red-400";
+    msg.textContent = data.detail || "L\u1ed7i";
   }
 }
 
