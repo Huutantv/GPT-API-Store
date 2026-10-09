@@ -4387,6 +4387,15 @@ async function collectBackendStreamToOpenAI(settingsChain, payloadBuilder, pathS
               const { resp } = await postStreamWithKeyFailover(url, wirePayload, ordered, obs, settings);
               trackBackendLatency(settings.profileId, Date.now() - _t0);
               const data = await collectOpenAIStream(resp);
+              if (!hasOpenAIAssistantOutput(data)) {
+                const emptyErr = new Error("Backend response did not include assistant output");
+                emptyErr.status = 502;
+                emptyErr.code = "empty_assistant_response";
+                const preview = JSON.stringify(data).slice(0,800);
+                emptyErr.text = JSON.stringify({ error: { message: emptyErr.message, type: "api_error", code: emptyErr.code, preview }});
+                try { addLog("empty_assistant_response(stream) backend="+settings.profileLabel+" preview="+preview.slice(0,120)); } catch(_){}
+                throw emptyErr;
+              }
               if (!data.usage || !data.usage.total_tokens) {
                 const contentText = String(((((data.choices || [])[0]) || {}).message || {}).content || "");
                 data.usage = data.usage || {};
