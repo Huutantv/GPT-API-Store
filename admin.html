@@ -1168,10 +1168,19 @@ summary::-webkit-details-marker{display:none}
       </div>
     </div>
     <p class="text-xs text-gray-400">Khi b&#7855;t: m&#7885;i request AI (/v1/chat/completions, /v1/messages, /v1/responses, /v1/models&#8230;) &#273;&#432;&#7903;c chuy&#7843;n <b>nguy&#234;n tr&#7841;ng</b> (gi&#7919; header, body, streaming) sang URL d&#432;&#7899;i. /health, webhook, portal, checkout, admin v&#7841;n thu&#7897;c server n&#224;y. &#110;&#7893;i URL khi n&#224;o c&#361;ng &#225;p d&#7909;ng ngay, kh&#244;ng c&#7847;n restart.</p>
-    <label class="flex items-center gap-2 cursor-pointer select-none">
-      <input id="fwdModeEnabled" type="checkbox" onchange="fwdModeTogglePreview()" class="w-4 h-4 accent-primary">
-      <span class="text-sm">B&#8595;t Forward Mode</span>
-    </label>
+    <div class="flex items-center gap-3">
+      <span class="text-sm text-gray-400">Ch&#7871;&#273;&#7897;:</span>
+      <select id="fwdModeSelect" onchange="fwdModeTogglePreview()" class="px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-primary" style="font-size:16px">
+        <option value="0">&#272;ang t&#7855;t &#8212; server n&#224;y ph&#7909;c v&#7905; t&#7845;t c&#7843;</option>
+        <option value="2">TEST &#8212; ch&#7881; key trong danh s&#225;ch b&#7883; forward</option>
+        <option value="1">B&#8595;t to&#224;n b&#7897; &#8212; m&#7885;i kh&#225;ch &#273;&#7877;u b&#7883; forward</option>
+      </select>
+    </div>
+    <div id="fwdModeKeysBox">
+      <label class="text-xs text-gray-400 block mb-1">Danh s&#225;ch key &#273;&#432;&#7903;c forward (ch&#7871;&#273;&#7897; TEST &#8212; m&#7895;i d&#242;ng 1 key, ho&#7863;c c&#225;ch nhau b&#7857ng d&#7845;u ph&#7849;y)</label>
+      <textarea id="fwdModeKeys" rows="3" placeholder="sk-abc123...&#10;sk-def456..." class="w-full px-3 py-2 bg-dark-900 border border-white/10 rounded-lg text-sm font-mono focus:outline-none focus:border-primary" style="font-size:14px"></textarea>
+      <p class="text-xs text-gray-500 mt-1">Ch&#7881; nh&#7919;ng key &#7903; &#273;&#226;y b&#7883; &#273;&#432;a sang URL m&#7899;i; m&#7885;i kh&#225;ch kh&#225;c v&#7851;n ch&#7841;y b&#236;nh th&#432;&#7901;&#7903;ng &#7903; server này. D&#225;n key &#273;&#227; che &#273;&#7897; (12 k&#253; t&#7915; &#273;&#7847;u/cu&#7889;i) v&#7845;n kh&#7899;p.</p>
+    </div>
     <label class="flex items-center gap-2 cursor-pointer select-none">
       <input id="fwdModeBilling" type="checkbox" class="w-4 h-4 accent-primary">
       <span class="text-sm">Gi&#7919; t&#7853;i ti&#7873;n zplay (auth key + tr&#7919; credit/token theo usage th&#7853;t)</span>
@@ -3431,16 +3440,25 @@ async function loadFwdMode() {
   try {
     var data = await fetch(BASE + "/api/config", { headers: authHeaders() }).then(function(r) { return r.json(); });
     var fm = data.fwd_mode || {};
-    var enabledEl = document.getElementById("fwdModeEnabled");
+    var selEl = document.getElementById("fwdModeSelect");
     var urlEl = document.getElementById("fwdModeUrl");
     var timeoutEl = document.getElementById("fwdModeTimeout");
     var billingEl = document.getElementById("fwdModeBilling");
-    if (enabledEl) enabledEl.checked = !!fm.enabled;
+    var keysEl = document.getElementById("fwdModeKeys");
+    if (selEl) selEl.value = fm.test ? "2" : (fm.enabled ? "1" : "0");
     if (urlEl) urlEl.value = fm.url || "";
     if (timeoutEl) timeoutEl.value = fm.timeout_ms || 600000;
     if (billingEl) billingEl.checked = fm.billing !== false;
+    if (keysEl) keysEl.value = fm.keys || "";
+    fwdModeShowKeysBox();
     fwdModeRenderBadge(fm);
   } catch (_) {}
+}
+
+function fwdModeShowKeysBox() {
+  var sel = document.getElementById("fwdModeSelect");
+  var box = document.getElementById("fwdModeKeysBox");
+  if (box) box.style.display = (sel && sel.value === "2") ? "" : "none";
 }
 
 function fwdModeRenderBadge(fm) {
@@ -3449,9 +3467,12 @@ function fwdModeRenderBadge(fm) {
   if (fm.enabled && fm.error) {
     badge.className = "text-xs px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-300";
     badge.textContent = "\u26a0 " + fm.error;
+  } else if (fm.test) {
+    badge.className = "text-xs px-2 py-1 rounded-full bg-sky-500/20 text-sky-300";
+    badge.textContent = "\ud83e\uddea TEST \u2192 " + (fm.url || "?") + " (" + (fm.keys_count || 0) + " key)";
   } else if (fm.enabled) {
     badge.className = "text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-300";
-    badge.textContent = "\u25b6 \u0110ang forward \u2192 " + (fm.url || "?") + (fm.billing === false ? " (mi\u1ec5n ph\u00ed)" : " (gi\u1eef t\u1ea1i ti\u1ec1n)");
+    badge.textContent = "\u25b6 Forward to\u00e0n b\u1ed9 \u2192 " + (fm.url || "?") + (fm.billing === false ? " (mi\u1ec5n ph\u00ed)" : " (gi\u1eef t\u1ea1i ti\u1ec1n)");
   } else {
     badge.className = "text-xs px-2 py-1 rounded-full bg-white/10 text-gray-400";
     badge.textContent = "\u0110ang t\u1ea5t";
@@ -3459,22 +3480,31 @@ function fwdModeRenderBadge(fm) {
 }
 
 function fwdModeTogglePreview() {
-  var badge = document.getElementById("fwdModeBadge");
-  var enabled = document.getElementById("fwdModeEnabled").checked;
-  fwdModeRenderBadge({ enabled: enabled, url: document.getElementById("fwdModeUrl").value.trim(), error: enabled && !document.getElementById("fwdModeUrl").value.trim() ? "ch\u01b0a nh\u1eadp URL" : "" });
+  fwdModeShowKeysBox();
+  var sel = document.getElementById("fwdModeSelect");
+  var mode = sel ? sel.value : "0";
+  var enabled = mode !== "0";
+  var url = document.getElementById("fwdModeUrl").value.trim();
+  var keysEl = document.getElementById("fwdModeKeys");
+  var keysCount = mode === "2" ? String((keysEl ? keysEl.value : "")).split(/[\s,;]+/).filter(function(s){ return s.trim().length >= 6; }).length : 0;
+  fwdModeRenderBadge({ enabled: enabled, test: mode === "2", url: url, keys_count: keysCount, error: enabled && !url ? "ch\u01b0a nh\u1eadp URL" : "" });
 }
 
 async function saveFwdMode() {
   var msg = document.getElementById("fwdModeMsg");
-  var enabled = document.getElementById("fwdModeEnabled").checked;
+  var sel = document.getElementById("fwdModeSelect");
+  var mode = sel ? sel.value : "0";
   var url = document.getElementById("fwdModeUrl").value.trim();
   var timeout = document.getElementById("fwdModeTimeout").value.trim();
   var billingEl = document.getElementById("fwdModeBilling");
-  if (enabled && !url) { msg.className = "text-xs text-red-400"; msg.textContent = "B\u1eadt Forward th\u00ec ph\u1ea3i nh\u1eadp URL \u0111\u00edch"; return; }
+  var keysEl = document.getElementById("fwdModeKeys");
+  if (mode !== "0" && !url) { msg.className = "text-xs text-red-400"; msg.textContent = "B\u1eadt Forward th\u00ec ph\u1ea3i nh\u1eadp URL \u0111\u00edch"; return; }
+  if (mode === "2" && !(keysEl && keysEl.value.trim())) { msg.className = "text-xs text-red-400"; msg.textContent = "Ch\u1ebf \u0111\u1ed9 TEST c\u1ea7n nh\u1eadp \u00edt nh\u1ea5t 1 key"; return; }
   var updates = {};
-  updates.DORO_FWD_MODE = enabled ? "1" : "0";
+  updates.DORO_FWD_MODE = mode;
   updates.DORO_FWD_URL = url;
   updates.DORO_FWD_BILLING = billingEl && billingEl.checked ? "1" : "0";
+  updates.DORO_FWD_KEYS = keysEl ? keysEl.value.trim() : "";
   if (timeout) updates.DORO_FWD_TIMEOUT_MS = timeout;
   msg.className = "text-xs text-gray-400";
   msg.textContent = "\u0110ang l\u01b0u...";

@@ -5338,8 +5338,27 @@ const FWD_RESPONSE_SKIP = new Set([
   "transfer-encoding", "connection", "keep-alive", "content-encoding", "content-length", "upgrade",
 ]);
 let _fwdUrlCache = { raw: null, url: null, error: "" };
+let _fwdKeysCache = { raw: null, list: [] };
+function fwdTestKeys() {
+  const raw = String(process.env.DORO_FWD_KEYS || "").trim();
+  if (_fwdKeysCache.raw !== raw) {
+    _fwdKeysCache = { raw, list: raw.split(/[\s,;]+/).map((s) => s.trim()).filter((s) => s.length >= 6) };
+  }
+  return _fwdKeysCache.list;
+}
+function fwdKeyMatch(token, list) {
+  if (!token) return false;
+  for (const entry of list) {
+    if (entry === token) return true;
+    // cho khop theo dau/cuoi (du dai 12 ky tu) de dan key bi che do trong admin cung duoc
+    if (entry.length >= 12 && (token.startsWith(entry) || token.endsWith(entry))) return true;
+  }
+  return false;
+}
 function fwdModeConfig() {
-  const enabled = envFlag(process.env.DORO_FWD_MODE, false);
+  const modeRaw = String(process.env.DORO_FWD_MODE || "").trim().toLowerCase();
+  const test = ["2", "test", "keys"].includes(modeRaw);
+  const enabled = test || envFlag(process.env.DORO_FWD_MODE, false);
   const raw = String(process.env.DORO_FWD_URL || "").trim();
   let target = null;
   let error = "";
@@ -5360,7 +5379,7 @@ function fwdModeConfig() {
     target = _fwdUrlCache.url;
     error = _fwdUrlCache.error;
   }
-  return { enabled, raw, target, error };
+  return { enabled, test, raw, target, error };
 }
 function isFwdRoute(req) {
   const pathName = req.path || "";
@@ -5605,8 +5624,12 @@ async function handleForwardMode(req, res, billing) {
   return undefined;
 }
 app.use((req, res, next) => {
-  if (!fwdModeConfig().enabled || !isFwdRoute(req)) return next();
-  const billing = fwdBillingEnabled() && isFwdBillable(req);
+  const cfg = fwdModeConfig();
+  if (!cfg.enabled || !isFwdRoute(req)) return next();
+  // Che do test (DORO_FWD_MODE=2): CHỈ key nam trong DORO_FWD_KEYS bi forward;
+  // moi khac chay binh thuong o server nay. Test luan luon co billing (giu tien zplay).
+  if (cfg.test && !fwdKeyMatch(extractToken(req), fwdTestKeys())) return next();
+  const billing = cfg.test ? true : fwdBillingEnabled() && isFwdBillable(req);
   return handleForwardMode(req, res, billing).catch((error) => {
     addLog(`FWD fatal method=${req.method} path=${req.path} error=${String((error && error.message) || error)}`);
     if (!res.headersSent) res.status(500).json({ error: { message: "Forward mode failed", type: "forward_error", code: "forward_error" } });
@@ -8030,11 +8053,14 @@ app.get("/api/config", (req, res) => {
     auto_recovery_ms: Number(process.env.DORO_AUTO_RECOVERY_MS || "120000"),
     force_stream_nonstream: forceStreamNonstreamEnabled(),
     fwd_mode: {
-      enabled: envFlag(process.env.DORO_FWD_MODE, false),
+      enabled: fwdModeConfig().enabled,
+      test: fwdModeConfig().test,
       url: String(process.env.DORO_FWD_URL || "").trim(),
       error: fwdModeConfig().error,
       timeout_ms: Math.max(10000, Number(process.env.DORO_FWD_TIMEOUT_MS || "600000") || 600000),
       billing: fwdBillingEnabled(),
+      keys: String(process.env.DORO_FWD_KEYS || "").trim(),
+      keys_count: fwdTestKeys().length,
     },
     safe_stream_failover: safeStreamFailoverEnabled(),
     safe_stream_max_bytes: safeStreamBufferLimitBytes(),
@@ -8223,6 +8249,7 @@ app.put("/api/config", (req, res) => {
     "DORO_FWD_URL",
     "DORO_FWD_TIMEOUT_MS",
     "DORO_FWD_BILLING",
+    "DORO_FWD_KEYS",
   ]) {
     // Chß╗ë xß╗¡ l├¢ field c├│ trong body ÔÇö trã░ß╗øc ─æ├óy field vß║»ng mß║Àt bß╗ï normalize th├ánh
     // "0"/default rß╗ôi ghi ─æ├¿ (VD lã░u Telegram lß║íi reset to├án bß╗Ö cß╗Ø backend).
@@ -8245,7 +8272,10 @@ app.put("/api/config", (req, res) => {
     if (field === "DORO_AUTO_RECOVERY_MS") value = optionalPositiveInt(value) ? String(optionalPositiveInt(value)) : "";
     if (field === "DORO_FORCE_STREAM_NONSTREAM") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_SAFE_STREAM_FAILOVER_CHAT") value = envFlag(value) ? "1" : "0";
-    if (field === "DORO_FWD_MODE") value = envFlag(value) ? "1" : "0";
+    if (field === "DORO_FWD_MODE") {
+      const m = value.toLowerCase();
+      value = ["2", "test", "keys"].includes(m) ? "2" : envFlag(value) ? "1" : "0";
+    }
     if (field === "DORO_FWD_BILLING") value = envFlag(value) ? "1" : "0";
     if (field === "DORO_FWD_URL") {
       if (value) {
