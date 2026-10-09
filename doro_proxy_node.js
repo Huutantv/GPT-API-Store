@@ -15,7 +15,6 @@ function creditDbPath() {
 const DEFAULT_BASE_URL = "https://doro.lol/v1";
 const DEFAULT_BACKEND_MODEL = "deepseek-v4-pro";
 const PUBLIC_MODELS = [
-  { id: "gpt-5.6-terra", object: "model", owned_by: "openai" },
   { id: "gpt-5.6-luna", object: "model", owned_by: "openai" },
   { id: "gpt-5.6-sol", object: "model", owned_by: "openai" },
   { id: "gpt-5.5", object: "model", owned_by: "openai" },
@@ -1507,8 +1506,7 @@ function publicModelName(requestedModel, backendModel) {
   const value = String(requestedModel || "").trim();
   if (value) return value;
   return String(process.env.DORO_PUBLIC_MODEL || "").trim()
-    || String(backendModel || "").trim()
-    || "gpt-5.6-terra";
+    || String(backendModel || "").trim();
 }
 
 function sanitizeBackendText(text, backendModel, publicModel) {
